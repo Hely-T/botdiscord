@@ -19,9 +19,9 @@ class Example(commands.Cog):
             created_at TEXT
         ''')
     
-    @commands.command(name='profile')
-    async def profile(self, ctx):
-        """Xem profile người dùng"""
+    @commands.command(name='example_profile')
+    async def example_profile(self, ctx):
+        """Xem profile demo người dùng"""
         user_id = ctx.author.id
         
         # Tìm user trong database
