@@ -27,11 +27,9 @@ python main.py
 
 ## Git workflow
 
-```bash
-git add .
-git commit -m "cập nhật tài liệu"
-git push
-```
+- Local: sửa code -> test -> `git add` -> `git commit` -> `git push`
+- Server: pull code mới -> reload cogs nếu cần
+- Không commit `.env`, database `.db`, hoặc logs
 
 ## GitHub setup
 
@@ -39,12 +37,21 @@ git push
 - Add remote với `git remote add origin <url>`
 - Push nhánh `main`
 
+## Workflow cho cog mới
+
+1. Tạo file cog trong `cogs/`
+2. Nếu có logic thì tạo service trong `services/`
+3. Test local
+4. Commit và push
+5. Cập nhật tài liệu nếu có lệnh mới
+
 ## Khi thêm feature mới
 
 1. Tạo model nếu cần
 2. Tạo service nếu có logic
 3. Tạo cog để expose command
 4. Cập nhật `COMMANDS_REFERENCE.md` nếu có lệnh mới
+5. Cập nhật `docs/ARCHITECTURE.md` nếu thay đổi kiến trúc
 
 ## Trạng thái hiện tại
 
@@ -53,3 +60,8 @@ git push
 - Docs đã được rút gọn
 - Sẵn sàng để mở rộng thêm feature
 
+## Git workflow cho cộng đồng
+
+- Nhánh `main` là bản ổn định
+- Push code sau khi test xong
+- Dùng docs rút gọn để onboarding nhanh
