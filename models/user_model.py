@@ -16,6 +16,9 @@ class User:
     role: UserRole = UserRole.USER
     points: int = 0
     level: int = 1
+    total_hours: float = 0.0
+    total_donate: int = 0
+    total_money: int = 0
     
     def validate(self):
         """Validate dữ liệu user"""
@@ -27,6 +30,12 @@ class User:
             raise ValueError("Points không thể âm")
         if self.level < 1:
             raise ValueError("Level phải >= 1")
+        if self.total_hours < 0:
+            raise ValueError("Hours không thể âm")
+        if self.total_donate < 0:
+            raise ValueError("Donate không thể âm")
+        if self.total_money < 0:
+            raise ValueError("Money không thể âm")
     
     def is_admin(self) -> bool:
         return self.role == UserRole.ADMIN
@@ -47,3 +56,21 @@ class User:
         if self.points < amount:
             raise ValueError("Không đủ points")
         self.points -= amount
+
+    def add_hours(self, hours: float):
+        """Thêm giờ hoạt động"""
+        if hours <= 0:
+            raise ValueError("Hours phải > 0")
+        self.total_hours += hours
+
+    def add_donate(self, amount: int):
+        """Thêm donate"""
+        if amount <= 0:
+            raise ValueError("Amount phải > 0")
+        self.total_donate += amount
+
+    def add_money(self, amount: int):
+        """Thêm tiền"""
+        if amount <= 0:
+            raise ValueError("Amount phải > 0")
+        self.total_money += amount

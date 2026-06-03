@@ -17,6 +17,8 @@ APP_NAME = os.getenv('APP_NAME', 'Discord Bot')
 # ============================================
 DISCORD_TOKEN = os.getenv('DISCORD_TOKEN')
 BOT_PREFIX = os.getenv('BOT_PREFIX', '!')
+SUPPORT_SERVER_URL = os.getenv('SUPPORT_SERVER_URL', 'https://discord.com')
+PROFILE_HOUR_RATE_VND = int(os.getenv('PROFILE_HOUR_RATE_VND', '0'))
 
 # Parse DISCORD_OWNER_IDS (comma-separated)
 DISCORD_OWNER_IDS_STR = os.getenv('DISCORD_OWNER_IDS', '')

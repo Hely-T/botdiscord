@@ -1,55 +1,63 @@
 # Commands Reference
 
 Tài liệu này chỉ giữ những lệnh chính đang dùng trong bot.
+Prefix của bot lấy từ biến môi trường `BOT_PREFIX`.
+
+## Help
+
+- `{prefix}help`
+  - Mở command directory dạng category + nút bấm
+- `{prefix}help <command>`
+  - Xem hướng dẫn chi tiết của một lệnh
 
 ## Role management
 
-- `!addrole @role command`
+- `{prefix}addrole @role command`
   - Cấp quyền dùng command cho role
   - Quyền: Admin
-- `!removerole @role command`
+- `{prefix}removerole @role command`
   - Xóa quyền của role
   - Quyền: Admin
-- `!perms command`
+- `{prefix}perms command`
   - Xem role nào đang có quyền dùng command
   - Quyền: mọi người
-- `!myroles [@user]`
+- `{prefix}myroles [@user]`
   - Xem role của bạn hoặc user khác
   - Quyền: mọi người
-- `!rolescommands @role`
+- `{prefix}rolescommands @role`
   - Xem role đang dùng được những lệnh nào
   - Quyền: mọi người
 
 ## User management
 
-- `!profile [@user]`
-  - Xem profile user
-- `!addpoints @user amount`
+- `{prefix}profile [@user]`
+  - Xem profile user theo card mới: avatar + tổng giờ/donate/tiền
+- `{prefix}addpoints @user amount`
   - Cộng points cho user
   - Quyền: Admin
-- `!topusers [limit]`
+- `{prefix}topusers [limit]`
   - Xem top user theo points
 
 ## Admin / Git management
 
-- `!gitpull`
+- `{prefix}gitpull`
   - Pull code mới nhất từ GitHub
-  - Alias: `!pull`, `!update`
+  - Alias: `{prefix}pull`, `{prefix}update`
   - Quyền: owner
-- `!gitstatus`
+- `{prefix}gitstatus`
   - Xem trạng thái git hiện tại
-  - Alias: `!status`
+  - Alias: `{prefix}status`
   - Quyền: owner
-- `!reload [cog_name]`
+- `{prefix}reload [cog_name]`
   - Reload một cog hoặc toàn bộ cogs
   - Quyền: owner
-- `!load [cog_name]`
+- `{prefix}load [cog_name]`
   - Load một cog mới
   - Quyền: owner
-- `!unload [cog_name]`
+- `{prefix}unload [cog_name]`
   - Unload một cog
   - Quyền: owner
-- `!cogs`
+- `{prefix}cogs`
   - Liệt kê các cog đang load
   - Quyền: owner
 
@@ -57,5 +65,6 @@ Tài liệu này chỉ giữ những lệnh chính đang dùng trong bot.
 
 - `role_cog.py` xử lý toàn bộ nhóm lệnh role
 - `user_cog.py` xử lý nhóm lệnh user
+- `help_cog.py` xử lý command directory + tra cứu lệnh
 - `admin_cog.py` xử lý nhóm lệnh quản lý git và reload
 - `command_role.db` là database cho quyền command

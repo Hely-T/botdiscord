@@ -6,7 +6,6 @@ User Service Layer
 
 from utils import CogDatabase, get_timestamp
 from models.user_model import User, UserRole
-from models.constants import DEFAULT_ROLE, POINTS_PER_MESSAGE
 
 class UserService:
     """Service xử lý user operations"""
@@ -24,9 +23,26 @@ class UserService:
             role TEXT DEFAULT 'user',
             points INTEGER DEFAULT 0,
             level INTEGER DEFAULT 1,
+            total_hours REAL DEFAULT 0,
+            total_donate INTEGER DEFAULT 0,
+            total_money INTEGER DEFAULT 0,
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL
         ''')
+        self._ensure_schema_columns()
+
+    def _ensure_schema_columns(self):
+        """Đảm bảo các cột mới tồn tại cho database cũ"""
+        columns = {row['name'] for row in self.db.fetch('PRAGMA table_info(users)')}
+        required_columns = {
+            'total_hours': 'REAL DEFAULT 0',
+            'total_donate': 'INTEGER DEFAULT 0',
+            'total_money': 'INTEGER DEFAULT 0',
+        }
+
+        for column_name, column_sql in required_columns.items():
+            if column_name not in columns:
+                self.db.execute(f'ALTER TABLE users ADD COLUMN {column_name} {column_sql}')
     
     def get_or_create_user(self, user_id: int, username: str) -> User:
         """Lấy user hoặc tạo mới"""
@@ -38,7 +54,10 @@ class UserService:
                 username=username,
                 role=UserRole.USER,
                 points=0,
-                level=1
+                level=1,
+                total_hours=0,
+                total_donate=0,
+                total_money=0,
             )
             user.validate()
             self.create_user(user)
@@ -57,7 +76,10 @@ class UserService:
             username=result['username'],
             role=UserRole(result['role']),
             points=result['points'],
-            level=result['level']
+            level=result['level'],
+            total_hours=result['total_hours'] if 'total_hours' in result.keys() else 0,
+            total_donate=result['total_donate'] if 'total_donate' in result.keys() else 0,
+            total_money=result['total_money'] if 'total_money' in result.keys() else 0,
         )
     
     def create_user(self, user: User):
@@ -70,6 +92,9 @@ class UserService:
             'role': user.role.value,
             'points': user.points,
             'level': user.level,
+            'total_hours': user.total_hours,
+            'total_donate': user.total_donate,
+            'total_money': user.total_money,
             'created_at': get_timestamp(),
             'updated_at': get_timestamp()
         })

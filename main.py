@@ -23,7 +23,12 @@ async def main():
     intents.message_content = True
     ssl_context = ssl.create_default_context(cafile='/etc/ssl/cert.pem')
     connector = aiohttp.TCPConnector(ssl=ssl_context)
-    bot = commands.Bot(command_prefix=BOT_PREFIX, intents=intents, connector=connector)
+    bot = commands.Bot(
+        command_prefix=BOT_PREFIX,
+        intents=intents,
+        connector=connector,
+        help_command=None,
+    )
 
     @bot.event
     async def on_ready():
