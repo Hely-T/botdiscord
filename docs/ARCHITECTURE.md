@@ -1,45 +1,127 @@
 # Architecture
 
-Bot được chia theo 4 lớp chính để dễ mở rộng và tránh nhồi logic vào một chỗ.
+Bot được chia theo catalog cogs, service layer và database riêng theo nghiệp vụ.
 
-## 1) `main.py`
+## Luồng chạy chính
 
-- Điểm khởi động bot
-- Load config và cogs
-- Chỉ giữ phần bootstrapping, không chứa business logic
+`main.py -> load cogs -> Discord command -> Cog -> Service -> Database -> Response`
 
-## 2) `cogs/`
+## Entry point
 
-- Nhận command từ Discord
-- Validate input cơ bản
-- Gọi service tương ứng
-- Trả response bằng text hoặc embed
+`main.py` chịu trách nhiệm:
 
-## 3) `services/`
+- Tạo bot instance.
+- Bật `message_content`.
+- Cấu hình SSL context cho Discord API.
+- Load toàn bộ `_cog.py` trong `cogs/` và subfolder.
+- Sync slash commands.
+- Xử lý lỗi command cơ bản.
 
-- Chứa business logic
-- Xử lý dữ liệu và quy tắc nghiệp vụ
-- Gọi helper/database qua `utils.py`
+## Cog loader
 
-## 4) `models/`
+`cogs/cog_loader_utils.py` load recursive theo folder:
 
-- Khai báo data structure, constant, schema nội bộ
-- Giữ dữ liệu rõ ràng và dễ tái sử dụng
+- File hợp lệ phải kết thúc bằng `_cog.py`.
+- Có thể load/reload/unload một cog riêng.
+- Có thể load/reload/unload cả catalog folder.
+- Alias catalog quản trị như `admin`, `mod`, `operator` được map về `administrator`.
 
-## 5) `utils.py`
+## Catalog cogs
 
-- `CogDatabase`
-- `RolePermissionManager`
-- helper cho prefix, splash, logging
+```text
+cogs/
+├── help_cog.py
+├── user/
+│   └── user_cog.py
+├── booking/
+│   ├── luong_cog.py
+│   ├── star_cog.py
+│   └── top_cog.py
+├── role/
+│   └── role_cog.py
+└── administrator/
+    ├── ban_cog.py
+    ├── booking_settings_cog.py
+    ├── cash_cog.py
+    ├── customize_cog.py
+    ├── luong_cog.py
+    ├── mute_cog.py
+    ├── operator_cog.py
+    ├── responsive_cog.py
+    ├── security_cog.py
+    ├── star_cog.py
+    ├── time_cog.py
+    └── user_admin_cog.py
+```
 
-## Nguyên tắc
+## Quy tắc tạo cog mới
 
-- Cogs không nên đụng trực tiếp vào SQL
-- Services không nên phụ thuộc Discord-specific code
-- Models không nên chứa logic nặng
-- `main.py` chỉ nên là entry point
+- Mỗi catalog là một folder.
+- Những lệnh liên quan thì gộp chung trong cùng một cog.
+- Không tách mỗi command thành một file riêng.
+- Không gom toàn bộ catalog vào một file quá lớn.
 
-## Luồng chuẩn
+Ví dụ:
 
-`Discord command -> Cog -> Service -> Utils/Database -> Response`
+- Lương admin: `addluong`, `subluong`, `tongluong` nằm trong `administrator/luong_cog.py`.
+- Ban: `ban`, `unban` nằm trong `administrator/ban_cog.py`.
+- Role permission: `addrole`, `removerole`, `setrole`, `perms`, `myroles`, `rolescommands` nằm trong `role/role_cog.py`.
+- Booking lương: `luong`, `tinhluong` nằm trong `booking/luong_cog.py`.
 
+## Services
+
+```text
+services/
+├── admin_service.py
+├── booking_service.py
+├── git_service.py
+├── guild_settings_service.py
+├── responsive_service.py
+├── role_permission_service.py
+├── settings_service.py
+└── user_service.py
+```
+
+Service xử lý business logic và làm việc với database qua `utils.CogDatabase`.
+
+## Databases
+
+Database tự tạo trong `database/` khi bot chạy.
+
+- `users.db`: user profile, cash, luong, star, giờ, donate, tổng tiền.
+- `booking.db`: booking stats, chi tiết mốc giờ, cấu hình giá, quà.
+- `command_role.db`: quyền dùng command theo Discord role.
+- `bot_admins.db`: admin mềm của bot.
+- `bot_settings.db`: prefix và setting global.
+- `guild_settings.db`: antiraid và role hệ thống như `booking`.
+- `responsive.db`: responsive profile, auto response, submitted form.
+
+## Quyền sử dụng
+
+- Hard admin lấy từ `DISCORD_OWNER_IDS` trong `.env`.
+- Admin mềm lưu trong `bot_admins.db`.
+- Role permission lưu trong `command_role.db`.
+- Role hệ thống như `booking` lưu trong `guild_settings.db`.
+
+Với lệnh cần quản trị, điều kiện thường là:
+
+- Là hard admin hoặc admin DB.
+- Hoặc có Discord role đã được cấp quyền command trong DB.
+
+## Economy
+
+- Mọi giá trị tiền dùng đơn vị VNĐ.
+- Hỗ trợ nhập `100000`, `100k`, `1m`, `1b`, `100.000`, `100,000`, `0,5m`.
+- Hiển thị tiền dạng `100,000 VNĐ`.
+- `cash`, `give`, `addcash`, `subcash` dùng chung nguồn tiền trong `users.db`.
+
+## Responsive profile
+
+`responsive_cog.py` xử lý:
+
+- `ar`: thêm, sửa, xóa, gắn target, set ảnh, set description.
+- `form`: gửi form để user tự điền.
+- `res`: gọi auto response theo key.
+- `up`: gửi profile lên channel chỉ định.
+
+Profile có thể dùng số `0`, tự crop thumbnail vuông khi set `turl`, và có thể lấy nội dung từ form user đã gửi.

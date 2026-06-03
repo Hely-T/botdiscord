@@ -1,29 +1,37 @@
 # Discord Bot - Python
 
-Bot Discord được xây dựng bằng `discord.py`, theo hướng module hóa để dễ mở rộng, dễ bảo trì và dễ chia sẻ cho cộng đồng.
+Bot Discord viết bằng `discord.py`, được tổ chức theo hướng catalog cogs để dễ mở rộng, dễ reload từng nhóm lệnh và dễ bảo trì khi thêm tính năng mới.
 
-## Tổng quan nhanh
+## Tính năng chính
 
-- `main.py` - entry point để khởi động bot
-- `config.py` - cấu hình và biến môi trường
-- `utils.py` - helper dùng chung
-- `cogs/` - nơi chứa các command
-- `services/` - business logic
-- `models/` - data structures
-- `docs/` - tài liệu rút gọn và chuẩn hóa
-
-## Tài liệu cho cộng đồng
-
-- [docs/README.md](docs/README.md)
-- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
-- [docs/COMMANDS_REFERENCE.md](docs/COMMANDS_REFERENCE.md)
-- [docs/PROJECT_STATUS.md](docs/PROJECT_STATUS.md)
+- Help menu theo category: User, Booking, Role Management, Administrator.
+- Quản lý user: profile, cash, give, top users.
+- Booking: gửi booking, ghi nhận giờ book, tiền nạp, tính lương qua DM, top book/top nạp/top quà.
+- Economy: mọi giá trị tiền dùng đơn vị VNĐ, hỗ trợ nhập nhanh `100k`, `1m`, `1b`, `100,000`.
+- Role permission: cấp quyền dùng command theo Discord role trong database.
+- Admin bot: hard admin từ `.env`, admin mềm trong database.
+- Responsive profile và auto response: `ar`, `form`, `res`, `up`.
+- Operator: pull/status/reload/load/unload/cogs/prefix.
+- Slash command hiện có: `/antiraid`.
 
 ## Cách chạy
 
 ```bash
 pip install -r requirements.txt
 python main.py
+```
+
+## Biến môi trường cần có
+
+Tạo file `.env` ở thư mục gốc:
+
+```env
+DISCORD_TOKEN=your_discord_bot_token
+DISCORD_OWNER_IDS=123456789,987654321
+BOT_PREFIX=b
+APP_NAME=Discord Bot
+SUPPORT_SERVER_URL=https://discord.com
+PROFILE_HOUR_RATE_VND=0
 ```
 
 ## Cấu trúc dự án
@@ -34,32 +42,42 @@ BOT DISCORD/
 ├── config.py
 ├── utils.py
 ├── requirements.txt
-├── .env.example
-├── .gitignore
 ├── cogs/
+│   ├── help_cog.py
+│   ├── user/
+│   ├── booking/
+│   ├── role/
+│   └── administrator/
 ├── services/
 ├── models/
 ├── docs/
 └── README.md
 ```
 
-## Những gì bot đang có
+## Quy tắc cog
 
-- Hệ thống command theo cog
-- Hệ thống service để tách business logic
-- Models để chuẩn hóa dữ liệu
-- Helper dùng chung cho database, prefix, embed, logging
-- Bộ docs đã rút gọn để dễ đọc hơn
+- Mỗi catalog là một folder trong `cogs/`.
+- Những lệnh liên quan thì gộp chung một cog.
+- Không tách mỗi lệnh thành một file riêng.
+- Không gom toàn bộ catalog vào một file quá lớn.
 
-## Hướng phát triển
+Ví dụ:
 
-- Thêm feature mới bằng cách tạo model, service và cog tương ứng
-- Cập nhật `docs/COMMANDS_REFERENCE.md` khi thêm lệnh mới
-- Cập nhật `docs/PROJECT_STATUS.md` khi thay đổi tiến độ hoặc setup
+- `cogs/booking/luong_cog.py`: `luong`, `tinhluong`.
+- `cogs/booking/star_cog.py`: `star`.
+- `cogs/administrator/luong_cog.py`: `addluong`, `subluong`, `tongluong`.
+- `cogs/administrator/ban_cog.py`: `ban`, `unban`.
+- `cogs/role/role_cog.py`: `addrole`, `removerole`, `setrole`, `perms`, `myroles`, `rolescommands`.
+
+## Tài liệu chi tiết
+
+- [Docs Overview](docs/README.md)
+- [Architecture](docs/ARCHITECTURE.md)
+- [Commands Reference](docs/COMMANDS_REFERENCE.md)
+- [Project Status](docs/PROJECT_STATUS.md)
 
 ## Lưu ý
 
-- `.env` chỉ dùng local, không commit
-- Database `.db` sẽ được tạo tự động khi chạy bot
-- Nếu bạn muốn xem phần chi tiết hơn, đọc trong `docs/`
-
+- Không commit `.env`, database `.db`, logs hoặc `__pycache__`.
+- Database sẽ tự tạo trong thư mục `database/` khi bot chạy.
+- Sau khi pull code mới trên server, có thể dùng lệnh reload/load theo catalog hoặc theo cog.
