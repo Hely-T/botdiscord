@@ -3,6 +3,10 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+# SSL certificates on macOS / Python.org builds
+os.environ.setdefault('SSL_CERT_FILE', '/etc/ssl/cert.pem')
+os.environ.setdefault('SSL_CERT_DIR', '/etc/ssl')
+
 # ============================================
 # Application Configuration
 # ============================================
