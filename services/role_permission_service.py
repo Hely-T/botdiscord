@@ -37,6 +37,15 @@ class RolePermissionService:
             command_name=command_name.lower(),
             created_by=created_by
         )
+
+    def save_role(self, guild_id: int, role_id: int, role_name: str, hierarchy_level: int = 0) -> bool:
+        """Lưu tên role để các lệnh kiểm tra quyền hiển thị dễ đọc hơn."""
+        return self.manager.add_role_hierarchy(
+            guild_id=guild_id,
+            role_id=role_id,
+            role_name=role_name,
+            hierarchy_level=hierarchy_level,
+        )
     
     def remove_command_role(self, guild_id: int, role_id: int, command_name: str) -> bool:
         """

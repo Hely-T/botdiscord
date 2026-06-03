@@ -292,14 +292,19 @@ class RolePermissionManager:
             → Role 456 được dùng lệnh 'ban'
         """
         try:
-            self.db.insert('command_permissions', {
-                'guild_id': guild_id,
-                'role_id': role_id,
-                'command_name': command_name,
-                'is_allowed': 1,
-                'created_by': created_by,
-                'created_at': get_timestamp()
-            })
+            timestamp = get_timestamp()
+            success = self.db.execute('''
+                INSERT INTO command_permissions
+                (guild_id, role_id, command_name, is_allowed, created_by, created_at)
+                VALUES (?, ?, ?, 1, ?, ?)
+                ON CONFLICT(guild_id, role_id, command_name)
+                DO UPDATE SET
+                    is_allowed = 1,
+                    created_by = excluded.created_by,
+                    created_at = excluded.created_at
+            ''', (guild_id, role_id, command_name, created_by, timestamp))
+            if not success:
+                return False
             print(f'✅ Thêm quyền: Role {role_id} → Command "{command_name}" (Server {guild_id})')
             return True
         except Exception as e:
@@ -385,7 +390,7 @@ class RolePermissionManager:
             → [{'role_id': 456, 'role_name': 'Moderator'}, ...]
         """
         return self.db.fetch('''
-            SELECT cp.role_id, rh.role_name
+            SELECT cp.role_id, COALESCE(rh.role_name, 'Role ' || cp.role_id) AS role_name
             FROM command_permissions cp
             LEFT JOIN role_hierarchy rh ON cp.guild_id = rh.guild_id AND cp.role_id = rh.role_id
             WHERE cp.guild_id = ? AND cp.command_name = ? AND cp.is_allowed = 1
@@ -456,14 +461,28 @@ class RolePermissionManager:
             True nếu thành công
         """
         try:
-            self.db.insert('role_hierarchy', {
-                'guild_id': guild_id,
-                'role_id': role_id,
+            existing = self.db.select_one(
+                'role_hierarchy',
+                'guild_id = ? AND role_id = ?',
+                (guild_id, role_id),
+            )
+            payload = {
                 'role_name': role_name,
                 'hierarchy_level': hierarchy_level,
-                'created_at': get_timestamp()
+                'created_at': get_timestamp(),
+            }
+            if existing:
+                return self.db.update(
+                    'role_hierarchy',
+                    payload,
+                    'guild_id = ? AND role_id = ?',
+                    (guild_id, role_id),
+                )
+            return self.db.insert('role_hierarchy', {
+                'guild_id': guild_id,
+                'role_id': role_id,
+                **payload,
             })
-            return True
         except Exception as e:
             print(f'❌ Lỗi add_role_hierarchy: {e}')
             return False
@@ -475,12 +494,23 @@ class RolePermissionManager:
 
 def get_prefix():
     """
-    Lấy prefix từ .env
+    Lấy prefix hiện tại của bot
     
     Mặc định: !
     """
-    from config import BOT_PREFIX
-    return BOT_PREFIX
+    global _SETTINGS_SERVICE_CACHE
+    try:
+        if "_SETTINGS_SERVICE_CACHE" not in globals():
+            _SETTINGS_SERVICE_CACHE = None
+        if _SETTINGS_SERVICE_CACHE is None:
+            from services.settings_service import SettingsService
+
+            _SETTINGS_SERVICE_CACHE = SettingsService()
+        return _SETTINGS_SERVICE_CACHE.get_prefix()
+    except Exception:
+        from config import BOT_PREFIX
+
+        return BOT_PREFIX
 
 
 def get_command_help(command_name: str, prefix: str = None) -> str:

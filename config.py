@@ -3,6 +3,8 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
 # SSL certificates on macOS / Python.org builds
 os.environ.setdefault('SSL_CERT_FILE', '/etc/ssl/cert.pem')
 os.environ.setdefault('SSL_CERT_DIR', '/etc/ssl')
@@ -44,9 +46,9 @@ ADMIN_EMAIL = os.getenv('ADMIN_EMAIL', '')
 # ============================================
 # Paths
 # ============================================
-DATABASE_DIR = 'database'
-LOGS_DIR = 'logs'
-COGS_DIR = 'cogs'
+DATABASE_DIR = os.path.join(BASE_DIR, 'database')
+LOGS_DIR = os.path.join(BASE_DIR, 'logs')
+COGS_DIR = os.path.join(BASE_DIR, 'cogs')
 
 # ============================================
 # Validation

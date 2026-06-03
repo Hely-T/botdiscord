@@ -6,6 +6,7 @@ class UserRole(Enum):
     """Vai trò người dùng"""
     ADMIN = "admin"
     MODERATOR = "moderator"
+    BOOKING = "booking"
     USER = "user"
 
 @dataclass
@@ -16,6 +17,9 @@ class User:
     role: UserRole = UserRole.USER
     points: int = 0
     level: int = 1
+    cash: int = 0
+    luong: int = 0
+    star: int = 0
     total_hours: float = 0.0
     total_donate: int = 0
     total_money: int = 0
@@ -30,6 +34,12 @@ class User:
             raise ValueError("Points không thể âm")
         if self.level < 1:
             raise ValueError("Level phải >= 1")
+        if self.cash < 0:
+            raise ValueError("Cash không thể âm")
+        if self.luong < 0:
+            raise ValueError("Luong không thể âm")
+        if self.star < 0:
+            raise ValueError("Star không thể âm")
         if self.total_hours < 0:
             raise ValueError("Hours không thể âm")
         if self.total_donate < 0:
@@ -56,6 +66,48 @@ class User:
         if self.points < amount:
             raise ValueError("Không đủ points")
         self.points -= amount
+
+    def add_cash(self, amount: int):
+        """Thêm cash"""
+        if amount <= 0:
+            raise ValueError("Amount phải > 0")
+        self.cash += amount
+
+    def remove_cash(self, amount: int):
+        """Trừ cash"""
+        if amount <= 0:
+            raise ValueError("Amount phải > 0")
+        if self.cash < amount:
+            raise ValueError("Không đủ cash")
+        self.cash -= amount
+
+    def add_luong(self, amount: int):
+        """Thêm lương"""
+        if amount <= 0:
+            raise ValueError("Amount phải > 0")
+        self.luong += amount
+
+    def remove_luong(self, amount: int):
+        """Trừ lương"""
+        if amount <= 0:
+            raise ValueError("Amount phải > 0")
+        if self.luong < amount:
+            raise ValueError("Không đủ lương")
+        self.luong -= amount
+
+    def add_star(self, amount: int):
+        """Thêm star"""
+        if amount <= 0:
+            raise ValueError("Amount phải > 0")
+        self.star += amount
+
+    def remove_star(self, amount: int):
+        """Trừ star"""
+        if amount <= 0:
+            raise ValueError("Amount phải > 0")
+        if self.star < amount:
+            raise ValueError("Không đủ star")
+        self.star -= amount
 
     def add_hours(self, hours: float):
         """Thêm giờ hoạt động"""

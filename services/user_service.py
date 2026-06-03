@@ -23,6 +23,9 @@ class UserService:
             role TEXT DEFAULT 'user',
             points INTEGER DEFAULT 0,
             level INTEGER DEFAULT 1,
+            cash INTEGER DEFAULT 0,
+            luong INTEGER DEFAULT 0,
+            star INTEGER DEFAULT 0,
             total_hours REAL DEFAULT 0,
             total_donate INTEGER DEFAULT 0,
             total_money INTEGER DEFAULT 0,
@@ -38,6 +41,9 @@ class UserService:
             'total_hours': 'REAL DEFAULT 0',
             'total_donate': 'INTEGER DEFAULT 0',
             'total_money': 'INTEGER DEFAULT 0',
+            'cash': 'INTEGER DEFAULT 0',
+            'luong': 'INTEGER DEFAULT 0',
+            'star': 'INTEGER DEFAULT 0',
         }
 
         for column_name, column_sql in required_columns.items():
@@ -55,6 +61,9 @@ class UserService:
                 role=UserRole.USER,
                 points=0,
                 level=1,
+                cash=0,
+                luong=0,
+                star=0,
                 total_hours=0,
                 total_donate=0,
                 total_money=0,
@@ -77,6 +86,9 @@ class UserService:
             role=UserRole(result['role']),
             points=result['points'],
             level=result['level'],
+            cash=result['cash'] if 'cash' in result.keys() else 0,
+            luong=result['luong'] if 'luong' in result.keys() else 0,
+            star=result['star'] if 'star' in result.keys() else 0,
             total_hours=result['total_hours'] if 'total_hours' in result.keys() else 0,
             total_donate=result['total_donate'] if 'total_donate' in result.keys() else 0,
             total_money=result['total_money'] if 'total_money' in result.keys() else 0,
@@ -92,6 +104,9 @@ class UserService:
             'role': user.role.value,
             'points': user.points,
             'level': user.level,
+            'cash': user.cash,
+            'luong': user.luong,
+            'star': user.star,
             'total_hours': user.total_hours,
             'total_donate': user.total_donate,
             'total_money': user.total_money,
@@ -112,14 +127,93 @@ class UserService:
             'user_id = ?',
             (user_id,)
         )
-    
+
+    def _update_numeric_field(self, user_id: int, field_name: str, amount: float):
+        user = self.get_user(user_id)
+        if not user:
+            raise ValueError(f"User {user_id} không tồn tại")
+
+        current_value = getattr(user, field_name)
+        new_value = current_value + amount
+
+        if field_name == 'total_hours':
+            if new_value < 0:
+                raise ValueError("Hours không thể âm")
+        else:
+            if new_value < 0:
+                raise ValueError(f"{field_name} không thể âm")
+
+        setattr(user, field_name, new_value)
+        self.db.update('users',
+            {
+                field_name: new_value,
+                'updated_at': get_timestamp()
+            },
+            'user_id = ?',
+            (user_id,)
+        )
+
+    def add_cash(self, user_id: int, amount: int):
+        self._update_numeric_field(user_id, 'cash', amount)
+
+    def remove_cash(self, user_id: int, amount: int):
+        self._update_numeric_field(user_id, 'cash', -amount)
+
+    def transfer_cash(self, from_user_id: int, from_username: str, to_user_id: int, to_username: str, amount: int):
+        if amount <= 0:
+            raise ValueError("Số tiền phải lớn hơn 0")
+
+        sender = self.get_or_create_user(from_user_id, from_username)
+        receiver = self.get_or_create_user(to_user_id, to_username)
+
+        if sender.cash < amount:
+            raise ValueError("Không đủ cash để chuyển")
+
+        self.remove_cash(from_user_id, amount)
+        self.add_cash(to_user_id, amount)
+
+        return {
+            "sender_cash": self.get_user(from_user_id).cash,
+            "receiver_cash": self.get_user(to_user_id).cash,
+        }
+
+    def add_luong(self, user_id: int, amount: int):
+        self._update_numeric_field(user_id, 'luong', amount)
+
+    def remove_luong(self, user_id: int, amount: int):
+        self._update_numeric_field(user_id, 'luong', -amount)
+
+    def add_star(self, user_id: int, amount: int):
+        self._update_numeric_field(user_id, 'star', amount)
+
+    def remove_star(self, user_id: int, amount: int):
+        self._update_numeric_field(user_id, 'star', -amount)
+
+    def add_hours(self, user_id: int, hours: float):
+        self._update_numeric_field(user_id, 'total_hours', hours)
+
+    def remove_hours(self, user_id: int, hours: float):
+        self._update_numeric_field(user_id, 'total_hours', -hours)
+
     def get_top_users(self, limit: int = 10) -> list:
         """Lấy top users theo points"""
         return self.db.fetch(
             'SELECT * FROM users ORDER BY points DESC LIMIT ?',
             (limit,)
         )
-    
+
+    def get_top_stars(self, limit: int = 10) -> list:
+        """Lấy top users theo star"""
+        return self.db.fetch(
+            'SELECT * FROM users ORDER BY star DESC, points DESC LIMIT ?',
+            (limit,)
+        )
+
+    def get_total_luong(self) -> int:
+        """Lấy tổng lương của toàn bộ users"""
+        result = self.db.fetch_one('SELECT COALESCE(SUM(luong), 0) AS total_luong FROM users')
+        return int(result['total_luong']) if result else 0
+
     def set_user_role(self, user_id: int, role: UserRole):
         """Thay đổi role user"""
         user = self.get_user(user_id)

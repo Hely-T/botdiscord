@@ -1,22 +1,32 @@
 import discord
 from discord.ext import commands
-import ssl
 import os
+import ssl
 import aiohttp
-from config import DISCORD_TOKEN, BOT_PREFIX, COGS_DIR, LOGS_DIR
+import sys
+from config import DISCORD_TOKEN, COGS_DIR, LOGS_DIR
+from cogs.cog_loader_utils import iter_cog_modules
+from utils import get_prefix
 
 # Tạo các thư mục nếu chưa tồn tại
 os.makedirs(LOGS_DIR, exist_ok=True)
 
-# Load cogs từ thư mục cogs
+if COGS_DIR not in sys.path:
+    sys.path.insert(0, COGS_DIR)
+
+# Load cogs từ thư mục cogs và các subfolder catalog
 async def load_cogs(bot):
-    for filename in os.listdir(COGS_DIR):
-        if filename.endswith('.py') and filename != '__init__.py':
-            try:
-                await bot.load_extension(f'{COGS_DIR}.{filename[:-3]}')
-                print(f'✅ Đã tải cog: {filename}')
-            except Exception as e:
-                print(f'❌ Lỗi khi tải {filename}: {e}')
+    for module_name in iter_cog_modules():
+        try:
+            await bot.load_extension(module_name)
+            print(f'✅ Đã tải cog: {module_name}')
+        except Exception as e:
+            print(f'❌ Lỗi khi tải {module_name}: {e}')
+
+
+def prefix_callable(bot, message):
+    prefix = get_prefix()
+    return commands.when_mentioned_or(prefix)(bot, message)
 
 async def main():
     intents = discord.Intents.default()
@@ -24,7 +34,7 @@ async def main():
     ssl_context = ssl.create_default_context(cafile='/etc/ssl/cert.pem')
     connector = aiohttp.TCPConnector(ssl=ssl_context)
     bot = commands.Bot(
-        command_prefix=BOT_PREFIX,
+        command_prefix=prefix_callable,
         intents=intents,
         connector=connector,
         help_command=None,
@@ -32,16 +42,29 @@ async def main():
 
     @bot.event
     async def on_ready():
+        if not getattr(bot, "_tree_synced", False):
+            try:
+                await bot.tree.sync()
+                bot._tree_synced = True
+                print("✅ Đã sync slash commands")
+            except Exception as e:
+                print(f"❌ Lỗi sync slash commands: {e}")
+
+        current_prefix = get_prefix()
         print(f'{bot.user} đã trực tuyến!')
         print(f'Bot ID: {bot.user.id}')
-        await bot.change_presence(activity=discord.Activity(type=discord.ActivityType.watching, name=f'{BOT_PREFIX}help'))
+        await bot.change_presence(activity=discord.Activity(type=discord.ActivityType.watching, name=f'{current_prefix}help'))
 
     @bot.event
     async def on_command_error(ctx, error):
+        current_prefix = get_prefix()
         if isinstance(error, commands.CommandNotFound):
-            await ctx.send(f"❌ Lệnh không tồn tại! Gõ `{BOT_PREFIX}help` để xem danh sách lệnh.")
+            invoked = (ctx.invoked_with or "").lower()
+            if invoked.startswith("form") and len(invoked) > len("form"):
+                return
+            await ctx.send(f"❌ Lệnh không tồn tại! Gõ `{current_prefix}help` để xem danh sách lệnh.")
         elif isinstance(error, commands.MissingRequiredArgument):
-            await ctx.send(f"❌ Thiếu tham số! Gõ `{BOT_PREFIX}help {ctx.command}` để xem hướng dẫn.")
+            await ctx.send(f"❌ Thiếu tham số! Gõ `{current_prefix}help {ctx.command}` để xem hướng dẫn.")
         else:
             await ctx.send(f"❌ Lỗi: {error}")
             print(f"Lỗi: {error}")
