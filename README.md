@@ -81,3 +81,4 @@ Ví dụ:
 - Không commit `.env`, database `.db`, logs hoặc `__pycache__`.
 - Database sẽ tự tạo trong thư mục `database/` khi bot chạy.
 - Sau khi pull code mới trên server, có thể dùng lệnh reload/load theo catalog hoặc theo cog.
+Initializing repository
