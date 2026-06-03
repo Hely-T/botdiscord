@@ -1,7 +1,6 @@
 import discord
 from discord.ext import commands
 import os
-import sys
 from config import DISCORD_TOKEN, BOT_PREFIX, COGS_DIR, LOGS_DIR
 
 # Tạo các thư mục nếu chưa tồn tại
