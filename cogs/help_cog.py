@@ -160,6 +160,18 @@ def _find_command(command_name: str) -> tuple[Optional[dict], Optional[dict]]:
     return None, None
 
 
+def _is_role_management_key(command_name: str) -> bool:
+    return command_name.lower() in {"role", "roles", "rolemanagement", "role_management"}
+
+
+def _role_management_commands() -> list[dict]:
+    role_command_names = {"role", "addrole", "removerole", "setrole", "perms", "myroles", "rolescommands"}
+    admin_category = _find_category("administrator")
+    if not admin_category:
+        return []
+    return [command for command in admin_category["commands"] if command["name"] in role_command_names]
+
+
 def _format_usage(command: dict) -> str:
     usage = command["usage"].strip()
     prefix = get_prefix()
@@ -788,6 +800,29 @@ class HelpView:
         embed.set_footer(text=f"Dùng {prefix}help để quay lại bảng lệnh")
         return embed
 
+    @staticmethod
+    def build_role_management_embed(guild: discord.Guild | None = None) -> discord.Embed:
+        prefix = get_prefix()
+        commands = _role_management_commands()
+        embed = discord.Embed(
+            title="🧩 Role Management",
+            description="Quản lý role và quyền command. Tất cả dùng chung quyền `role` trong database.",
+            color=ACCENT_COLOR,
+        )
+        for command in commands:
+            alias_text = ""
+            if command.get("aliases"):
+                alias_list = ", ".join(f"`{prefix}{alias}`" for alias in command["aliases"])
+                alias_text = f"\nAliases: {alias_list}"
+            embed.add_field(
+                name=_format_usage(command),
+                value=f"{command['description']}{alias_text}",
+                inline=False,
+            )
+        embed.set_author(name=guild.name if guild else APP_NAME)
+        embed.set_footer(text=f"Tổng cộng {len(commands)} lệnh • {prefix}help <command>")
+        return embed
+
 
 class HelpCog(commands.Cog):
     def __init__(self, bot):
@@ -796,7 +831,12 @@ class HelpCog(commands.Cog):
     @commands.command(name='help', aliases=['commands'])
     async def help_command(self, ctx, command_name: str = None):
         if command_name:
-            category = _find_category(command_name.strip().lower())
+            normalized_name = command_name.strip().lower()
+            if _is_role_management_key(normalized_name):
+                await ctx.send(embed=HelpView.build_role_management_embed(ctx.guild), view=CategoryView("administrator"))
+                return
+
+            category = _find_category(normalized_name)
             if category:
                 await ctx.send(embed=HelpView.build_category_embed(category, ctx.guild), view=CategoryView(category["key"]))
                 return
