@@ -10,15 +10,15 @@ Trạng thái: đang phát triển, đã refactor catalog cogs và thêm các nh
 
 - Recursive cog loader cho `cogs/` và subfolder catalog.
 - Help menu theo category.
-- User commands: `profile`, `cash`, `give`, `topusers`.
+- User commands: `profile`, `cash`, `points`, `time`, `give`, `topusers`.
 - Booking commands: `luong`, `star`, `tinhluong`, `topbook`, `topnap`, `topgift`.
 - Role commands: `addrole`, `removerole`, `setrole`, `perms`, `myroles`, `rolescommands`.
 - Administrator commands theo nhóm:
   - Admin DB: `addadmin`, `rmadmin`.
-  - Economy: `addcash`, `subcash`, `addluong`, `subluong`, `tongluong`, `addstar`, `substar`, `topstar`, `addtime`, `subtime`, `addpoints`.
+  - Economy: `cash a|r|e`, `luong a|r|e`, `star a|r|e`, `points a|r|e`, `time a|r|e`, `tongluong`, `topstar`, `addtime a|r|e`, `subtime`, `addpoints a|r|e`.
   - Booking config: `bookconfig`, `setgiobook`, `setphantram`, `setan`.
   - Responsive: `ar`, `form`, `res`, `up`.
-  - Moderation: `ban`, `unban`, `mute`, `unmute`.
+  - Moderation: `ban`, `unban`, `kick`, `role`, `mute`, `unmute`.
   - Operator: `gitpull`, `gitstatus`, `reload`, `load`, `unload`, `cogs`, `prefix`.
   - Slash: `/antiraid`.
 - Database tự tạo cho users, booking, role permission, admin, settings, guild settings và responsive.
@@ -41,7 +41,8 @@ Nên test thêm:
 
 - Bot khởi động không lỗi cog.
 - `{prefix}help` mở menu.
-- `{prefix}cash` hiện số dư.
+- `{prefix}cash`, `{prefix}points`, `{prefix}time` hiện dữ liệu của bạn.
+- `{prefix}luong` hiện bảng lương ở kênh hiện tại.
 - `{prefix}give @user 10k` chuyển được nếu đủ cash.
 - `{prefix}setrole @Booking booking` nhận role booking.
 - `{prefix}tinhluong` gửi DM.

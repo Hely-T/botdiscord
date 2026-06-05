@@ -42,6 +42,7 @@ cogs/
 └── administrator/
     ├── ban_cog.py
     ├── booking_settings_cog.py
+    ├── caprole_cog.py
     ├── cash_cog.py
     ├── customize_cog.py
     ├── luong_cog.py
@@ -63,8 +64,8 @@ cogs/
 
 Ví dụ:
 
-- Lương admin: `addluong`, `subluong`, `tongluong` nằm trong `administrator/luong_cog.py`.
-- Ban: `ban`, `unban` nằm trong `administrator/ban_cog.py`.
+- Lương: `luong`, `luong @user`, `luong all`, `luong a|r|e`, `tinhluong` nằm trong nhóm booking; `tongluong` nằm trong `administrator/luong_cog.py`.
+- Ban/Kick: `ban`, `unban`, `kick` nằm trong `administrator/ban_cog.py`.
 - Role permission: `addrole`, `removerole`, `setrole`, `perms`, `myroles`, `rolescommands` nằm trong `role/role_cog.py`.
 - Booking lương: `luong`, `tinhluong` nằm trong `booking/luong_cog.py`.
 
@@ -113,7 +114,9 @@ Với lệnh cần quản trị, điều kiện thường là:
 - Mọi giá trị tiền dùng đơn vị VNĐ.
 - Hỗ trợ nhập `100000`, `100k`, `1m`, `1b`, `100.000`, `100,000`, `0,5m`.
 - Hiển thị tiền dạng `100,000 VNĐ`.
-- `cash`, `give`, `addcash`, `subcash` dùng chung nguồn tiền trong `users.db`.
+- `cash`, `give` dùng chung nguồn tiền trong `users.db`.
+- `cash/luong/star/points/time` đều theo mẫu: xem mình, xem user khác, xem `all`, và quản trị bằng `a|r|e`.
+- Action xóa/trừ hỗ trợ `r`, `rm`, `remove`, `d`, `delete`.
 
 ## Responsive profile
 

@@ -5,10 +5,10 @@ Bot Discord viết bằng `discord.py`, được tổ chức theo hướng catal
 ## Tính năng chính
 
 - Help menu theo category: User, Booking, Role Management, Administrator.
-- Quản lý user: profile, cash, give, top users.
-- Booking: gửi booking, ghi nhận giờ book, tiền nạp, tính lương qua DM, top book/top nạp/top quà.
+- Quản lý user: profile, cash, points, time, give, top users.
+- Booking: xem/tính lương, ghi nhận giờ book, tiền nạp, top book/top nạp/top quà.
 - Economy: mọi giá trị tiền dùng đơn vị VNĐ, hỗ trợ nhập nhanh `100k`, `1m`, `1b`, `100,000`.
-- Role permission: cấp quyền dùng command theo Discord role trong database.
+- Role permission: cấp quyền dùng command theo Discord role trong database, hỗ trợ nhiều role và nhiều command cùng lúc.
 - Admin bot: hard admin từ `.env`, admin mềm trong database.
 - Responsive profile và auto response: `ar`, `form`, `res`, `up`.
 - Operator: pull/status/reload/load/unload/cogs/prefix.
@@ -63,10 +63,10 @@ BOT DISCORD/
 
 Ví dụ:
 
-- `cogs/booking/luong_cog.py`: `luong`, `tinhluong`.
+- `cogs/booking/luong_cog.py`: `luong`, `luong @user`, `luong all`, `luong a|r|e`, `tinhluong`.
 - `cogs/booking/star_cog.py`: `star`.
-- `cogs/administrator/luong_cog.py`: `addluong`, `subluong`, `tongluong`.
-- `cogs/administrator/ban_cog.py`: `ban`, `unban`.
+- `cogs/administrator/luong_cog.py`: `tongluong` và tương thích lệnh lương cũ.
+- `cogs/administrator/ban_cog.py`: `ban`, `unban`, `kick`.
 - `cogs/role/role_cog.py`: `addrole`, `removerole`, `setrole`, `perms`, `myroles`, `rolescommands`.
 
 ## Tài liệu chi tiết

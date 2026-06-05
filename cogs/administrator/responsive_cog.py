@@ -1,6 +1,7 @@
 import io
 import re
 import unicodedata
+from datetime import datetime
 
 import aiohttp
 import discord
@@ -464,7 +465,7 @@ class AdministratorResponsiveCog(AdminCommandBase):
             embed.set_image(url=profile["image_url"])
         if profile.get("thumbnail_url"):
             embed.set_thumbnail(url=profile["thumbnail_url"])
-        embed.set_footer(text="Responsive profile")
+        embed.set_footer(text=f"Hôm nay lúc {datetime.now().strftime('%H:%M')}")
         return embed
 
     async def _profile_payload(self, profile: dict, member: discord.Member | None = None) -> tuple[discord.Embed, list[discord.File]]:
@@ -557,7 +558,7 @@ class AdministratorResponsiveCog(AdminCommandBase):
                         "`ar a <key> <số>` hoặc `ar a <key><số>` thêm profile/form\n"
                         "`ar e <key> <text>` sửa auto res\n"
                         "`ar e <key> <số> <text>` sửa nội dung profile\n"
-                        "`ar d <key> [số]` xóa auto res hoặc profile\n"
+                        "`ar r <key> [số]` xóa auto res hoặc profile\n"
                         "`ar set <key> <số> @user` gắn profile\n"
                         "`ar up <key><số> #channel` up profile sang channel\n"
                         "`ar des <key>` lấy nội dung auto res từ reply\n"
@@ -573,7 +574,7 @@ class AdministratorResponsiveCog(AdminCommandBase):
         if action in {"a", "add"}:
             await self._handle_add(ctx, key, maybe_number, content)
             return
-        if action in {"d", "delete", "del", "rm"}:
+        if action in {"r", "remove", "rm", "d", "delete", "del"}:
             await self._handle_delete(ctx, key, maybe_number)
             return
         if action in {"e", "edit"}:
@@ -691,7 +692,7 @@ class AdministratorResponsiveCog(AdminCommandBase):
             key = split_key
             maybe_number = split_number
         if not key:
-            await ctx.send("❌ Dùng: `ar d <key>` hoặc `ar d <key> <số>`")
+            await ctx.send("❌ Dùng: `ar r/rm/remove/d/delete <key>` hoặc `ar r/rm/remove/d/delete <key> <số>`")
             return
         if maybe_number and maybe_number.isdigit():
             self.service.delete_profile(ctx.guild.id, key, int(maybe_number))

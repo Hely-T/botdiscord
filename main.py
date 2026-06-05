@@ -24,6 +24,23 @@ async def load_cogs(bot):
             print(f'❌ Lỗi khi tải {module_name}: {e}')
 
 
+async def sync_slash_commands(bot):
+    try:
+        synced = await bot.tree.sync()
+        print(f"✅ Đã sync global slash commands: {len(synced)}")
+    except Exception as e:
+        print(f"❌ Lỗi sync global slash commands: {e}")
+
+    for guild in bot.guilds:
+        try:
+            bot.tree.clear_commands(guild=guild)
+            bot.tree.copy_global_to(guild=guild)
+            synced = await bot.tree.sync(guild=guild)
+            print(f"✅ Đã sync guild slash commands mới cho {guild.name} ({guild.id}): {len(synced)}")
+        except Exception as e:
+            print(f"❌ Lỗi sync guild slash commands cho {guild.name} ({guild.id}): {e}")
+
+
 def prefix_callable(bot, message):
     prefix = get_prefix()
     return commands.when_mentioned_or(prefix)(bot, message)
@@ -43,12 +60,8 @@ async def main():
     @bot.event
     async def on_ready():
         if not getattr(bot, "_tree_synced", False):
-            try:
-                await bot.tree.sync()
-                bot._tree_synced = True
-                print("✅ Đã sync slash commands")
-            except Exception as e:
-                print(f"❌ Lỗi sync slash commands: {e}")
+            await sync_slash_commands(bot)
+            bot._tree_synced = True
 
         current_prefix = get_prefix()
         print(f'{bot.user} đã trực tuyến!')

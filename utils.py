@@ -246,6 +246,7 @@ class RolePermissionManager:
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             guild_id INTEGER NOT NULL,
             role_id INTEGER,
+            role_name TEXT,
             command_name TEXT NOT NULL,
             is_allowed BOOLEAN DEFAULT 1,
             created_by INTEGER,
@@ -272,9 +273,26 @@ class RolePermissionManager:
             created_at TEXT NOT NULL,
             UNIQUE(guild_id, role_id)
         ''')
+        self._ensure_schema_columns()
+
+    def _ensure_schema_columns(self):
+        columns = {row['name'] for row in self.db.fetch('PRAGMA table_info(command_permissions)')}
+        if 'role_name' not in columns:
+            self.db.execute('ALTER TABLE command_permissions ADD COLUMN role_name TEXT')
+        self.db.execute('''
+            UPDATE command_permissions
+            SET role_name = (
+                SELECT rh.role_name
+                FROM role_hierarchy rh
+                WHERE rh.guild_id = command_permissions.guild_id
+                  AND rh.role_id = command_permissions.role_id
+                LIMIT 1
+            )
+            WHERE role_name IS NULL OR role_name = ''
+        ''')
     
     def add_permission(self, guild_id: int, role_id: int, command_name: str, 
-                       created_by: int = None) -> bool:
+                       created_by: int = None, role_name: str | None = None) -> bool:
         """
         Thêm quyền cho role sử dụng command
         
@@ -295,14 +313,15 @@ class RolePermissionManager:
             timestamp = get_timestamp()
             success = self.db.execute('''
                 INSERT INTO command_permissions
-                (guild_id, role_id, command_name, is_allowed, created_by, created_at)
-                VALUES (?, ?, ?, 1, ?, ?)
+                (guild_id, role_id, role_name, command_name, is_allowed, created_by, created_at)
+                VALUES (?, ?, ?, ?, 1, ?, ?)
                 ON CONFLICT(guild_id, role_id, command_name)
                 DO UPDATE SET
                     is_allowed = 1,
+                    role_name = COALESCE(excluded.role_name, command_permissions.role_name),
                     created_by = excluded.created_by,
                     created_at = excluded.created_at
-            ''', (guild_id, role_id, command_name, created_by, timestamp))
+            ''', (guild_id, role_id, role_name, command_name, created_by, timestamp))
             if not success:
                 return False
             print(f'✅ Thêm quyền: Role {role_id} → Command "{command_name}" (Server {guild_id})')
@@ -390,7 +409,7 @@ class RolePermissionManager:
             → [{'role_id': 456, 'role_name': 'Moderator'}, ...]
         """
         return self.db.fetch('''
-            SELECT cp.role_id, COALESCE(rh.role_name, 'Role ' || cp.role_id) AS role_name
+            SELECT cp.role_id, COALESCE(cp.role_name, rh.role_name, 'Role ' || cp.role_id) AS role_name
             FROM command_permissions cp
             LEFT JOIN role_hierarchy rh ON cp.guild_id = rh.guild_id AND cp.role_id = rh.role_id
             WHERE cp.guild_id = ? AND cp.command_name = ? AND cp.is_allowed = 1

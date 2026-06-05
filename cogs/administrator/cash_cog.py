@@ -5,7 +5,7 @@ from cogs.admin_command_utils import AdminCommandBase, create_error_splash, pars
 
 
 class AdministratorCashCog(AdminCommandBase):
-    @commands.command(name="addcash")
+    @commands.command(name="addcash", aliases=["ac"])
     async def addcash(self, ctx, member: discord.Member, amount: str):
         try:
             parsed_amount = parse_vnd_amount(amount)
@@ -14,7 +14,7 @@ class AdministratorCashCog(AdminCommandBase):
             return
         await self.send_stat_update(ctx, member, parsed_amount, "cash", "Cộng cash")
 
-    @commands.command(name="subcash")
+    @commands.command(name="subcash", aliases=["sc"])
     async def subcash(self, ctx, member: discord.Member, amount: str):
         try:
             parsed_amount = parse_vnd_amount(amount)

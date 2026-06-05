@@ -114,7 +114,7 @@ class AdministratorOperatorCog(AdminCommandBase):
     @commands.command(name="addadmin", aliases=["themadmin"])
     async def add_admin(self, ctx, member: discord.Member):
         if not self.is_hard_admin(ctx.author.id):
-            await ctx.send(embed=create_error_splash("❌ Quyền Bị Từ Chối", "Chỉ hard admin trong `.env` mới được thêm admin mới."))
+            await ctx.send(embed=create_error_splash("❌ Quyền Bị Từ Chối", "Bạn không có quyền dùng lệnh này."))
             return
         try:
             self.admins.add_admin(member.id, ctx.author.id)
@@ -125,7 +125,7 @@ class AdministratorOperatorCog(AdminCommandBase):
     @commands.command(name="rmadmin", aliases=["xoaadmin"])
     async def remove_admin(self, ctx, member: discord.Member):
         if not self.is_hard_admin(ctx.author.id):
-            await ctx.send(embed=create_error_splash("❌ Quyền Bị Từ Chối", "Chỉ hard admin trong `.env` mới được xoá admin."))
+            await ctx.send(embed=create_error_splash("❌ Quyền Bị Từ Chối", "Bạn không có quyền dùng lệnh này."))
             return
         try:
             self.admins.remove_admin(member.id)

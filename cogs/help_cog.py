@@ -37,10 +37,28 @@ HELP_CATEGORIES = [
         "title": "User",
         "description": "Lệnh cho mọi người dùng",
         "commands": [
-            {"name": "cash", "description": "Xem số dư cash của bạn", "usage": "[@user]", "aliases": []},
+            {"name": "cash", "description": "Xem số dư hoặc quản trị cash", "usage": "[@user|all] | a|r|e @user amount", "aliases": []},
+            {"name": "avatar", "description": "Xem avatar user bằng mention, ID hoặc chính bạn", "usage": "[@user|id]", "aliases": ["av", "ava", "avata"]},
+            {"name": "banner", "description": "Xem banner/bìa user hoặc bìa server", "usage": "[@user|id]", "aliases": ["bn", "bia", "bìa"]},
             {"name": "give", "description": "Chuyển cash cho user khác", "usage": "@user amount hoặc amount @user", "aliases": []},
+            {"name": "points", "description": "Xem hoặc quản trị points", "usage": "[@user|all] | a|r|e @user amount", "aliases": []},
             {"name": "profile", "description": "Xem profile của bạn hoặc người khác", "usage": "[@user]", "aliases": []},
+            {"name": "snipe", "description": "Xem lịch sử tin nhắn vừa bị xoá trong kênh", "usage": "[số|all]", "aliases": ["sn"]},
+            {"name": "level", "description": "Thống kê level, tin nhắn, voice và role reward", "usage": "[@user] [total|month|week|day]", "aliases": ["lv"]},
+            {"name": "time", "description": "Xem hoặc quản trị tổng giờ", "usage": "[@user|all] | a|r|e @user hours", "aliases": []},
             {"name": "topusers", "description": "Xem top users", "usage": "[limit]", "aliases": []},
+        ],
+    },
+    {
+        "key": "bot",
+        "emoji": "🎧",
+        "title": "Bot",
+        "description": "Voice, đọc giọng Google và phát nhạc",
+        "commands": [
+            {"name": "join", "description": "Cho bot vào voice channel của bạn", "usage": "", "aliases": ["j"]},
+            {"name": "say", "description": "Bot đọc nội dung bằng giọng Google", "usage": "<nội dung>", "aliases": ["s"]},
+            {"name": "leave", "description": "Cho bot rời voice nếu bạn là người mời bot vào", "usage": "", "aliases": ["l", "disconnect", "dc"]},
+            {"name": "play", "description": "Phát nhạc, playlist và điều khiển queue", "usage": "<url|từ khóa|playlist> | q|sh|a|s|p|r|st|l|n|lo|v|rm|c", "aliases": ["a", "p"]},
         ],
     },
     {
@@ -49,26 +67,14 @@ HELP_CATEGORIES = [
         "title": "Booking",
         "description": "Lệnh booking, thống kê giờ, nạp tiền và quà",
         "commands": [
-            {"name": "luong", "description": "Nhắn booking lên server", "usage": "<nội dung>", "aliases": []},
-            {"name": "star", "description": "Xem booking, ghi nhận giờ book hoặc tiền nạp", "usage": "time|money|top|@user", "aliases": []},
+            {"name": "book", "description": "Ghi nhận book theo giờ, hỗ trợ cash hoặc banking", "usage": "@booking 1,2,5 [@user] [cash|banking]", "aliases": []},
+            {"name": "luong", "description": "Xem hoặc quản trị lương booking", "usage": "[@user|all] | a|r|e @user amount", "aliases": []},
+            {"name": "star", "description": "Xem booking, ghi nhận nạp tiền hoặc quản trị star", "usage": "money|top|@user|all | a|r|e @user amount", "aliases": []},
             {"name": "tinhluong", "description": "Gửi bảng tính lương booking qua DM", "usage": "[@user|all]", "aliases": []},
+            {"name": "traluong", "description": "Trả phần lương còn lại và reset về 0", "usage": "@user|all", "aliases": ["payluong"]},
             {"name": "topbook", "description": "Xem top giờ được book nhất (admin/role DB)", "usage": "[limit]", "aliases": []},
             {"name": "topnap", "description": "Xem top người nạp tiền nhiều nhất (admin/role DB)", "usage": "[limit]", "aliases": []},
             {"name": "topgift", "description": "Xem tổng quà đang có", "usage": "", "aliases": []},
-        ],
-    },
-    {
-        "key": "role",
-        "emoji": "🧩",
-        "title": "Role Management",
-        "description": "Xem quyền theo role trong server",
-        "commands": [
-            {"name": "addrole", "description": "Cấp quyền dùng command cho role", "usage": "@role|role_id command", "aliases": ["themrole"]},
-            {"name": "removerole", "description": "Xóa quyền dùng command khỏi role", "usage": "@role|role_id command", "aliases": ["rmrole", "xoarole"]},
-            {"name": "setrole", "description": "Gán Discord role làm role hệ thống", "usage": "@role|role_id <key>", "aliases": []},
-            {"name": "perms", "description": "Xem role nào đang có quyền", "usage": "command", "aliases": []},
-            {"name": "myroles", "description": "Xem role của bạn hoặc user khác", "usage": "[@user]", "aliases": []},
-            {"name": "rolescommands", "description": "Xem role đang dùng được lệnh nào", "usage": "@role|role_id", "aliases": []},
         ],
     },
     {
@@ -78,42 +84,56 @@ HELP_CATEGORIES = [
         "description": "Danh sách lệnh trong danh mục Administrator",
         "commands": [
             {"name": "addadmin", "description": "Thêm admin bot", "usage": "@user", "aliases": ["themadmin"]},
-            {"name": "addcash", "description": "Thêm tiền cho user", "usage": "@user amount", "aliases": []},
-            {"name": "addluong", "description": "Thêm lương cho user", "usage": "@user amount", "aliases": []},
-            {"name": "addpoints", "description": "Thêm points cho user", "usage": "@user amount", "aliases": []},
-            {"name": "addstar", "description": "Thêm star cho user", "usage": "@user amount", "aliases": []},
-            {"name": "addtime", "description": "Thêm giờ cho user", "usage": "@user hours", "aliases": []},
-            {"name": "ar", "description": "Quản lý auto res và responsive profile", "usage": "a|d|e|set|description|iurl|turl ...", "aliases": []},
-            {"name": "ban", "description": "Ban một thành viên", "usage": "@user [reason]", "aliases": []},
+            {"name": "addcash", "description": "Cộng cash cho user", "usage": "@user amount", "aliases": ["ac"]},
+            {"name": "addluong", "description": "Cộng lương cho booking", "usage": "@user amount", "aliases": ["al"]},
+            {"name": "addpoints", "description": "Thêm/sửa/trừ points cho user", "usage": "[@user amount] | a|r|e @user amount", "aliases": []},
+            {"name": "addtime", "description": "Thêm/sửa/trừ giờ cho user", "usage": "[@user hours] | a|r|e @user hours", "aliases": []},
+            {"name": "ar", "description": "Quản lý auto res và responsive profile", "usage": "a|r|e|set|description|iurl|turl ...", "aliases": []},
+            {"name": "ban", "description": "Ban hoặc ban tạm thời một user", "usage": "@user|username|id [time] [reason]", "aliases": []},
             {"name": "bookconfig", "description": "Xem cấu hình giá booking", "usage": "", "aliases": ["bookingconfig", "giabook"]},
             {"name": "cogs", "description": "Liệt kê các cog đang load", "usage": "", "aliases": []},
             {"name": "color", "description": "Đổi màu role", "usage": "@role <hex|name>", "aliases": []},
-            {"name": "emoji", "description": "Quản lý emoji", "usage": "add/remove/list ...", "aliases": []},
+            {"name": "emoji", "description": "Quản lý emoji", "usage": "a|r|list ...", "aliases": []},
             {"name": "form", "description": "Gửi mẫu form booking để booking tự điền", "usage": "[key]", "aliases": ["form<key>"]},
+            {"name": "giveaway", "description": "Tạo giveaway và cấu hình emoji tham gia", "usage": "<time> <winners> <reward> [quantity] | config emoji <emoji>", "aliases": ["ga"]},
+            {"name": "group", "description": "Quản lý bot join/leave server bằng splash", "usage": "join [invite] | leave", "aliases": ["g"]},
             {"name": "gitpull", "description": "Pull code mới nhất từ GitHub", "usage": "", "aliases": ["pull", "update"]},
             {"name": "gitstatus", "description": "Xem trạng thái git hiện tại", "usage": "", "aliases": ["status"]},
+            {"name": "end", "description": "End giveaway theo ID", "usage": "<giveaway_id>", "aliases": []},
+            {"name": "gastop", "description": "Dừng giveaway theo ID", "usage": "<giveaway_id>", "aliases": []},
             {"name": "load", "description": "Load một cog hoặc cả catalog", "usage": "<catalog|module>", "aliases": []},
-            {"name": "mute", "description": "Mute một thành viên", "usage": "@user [duration] [reason]", "aliases": []},
+            {"name": "kick", "description": "Kick một member khỏi server", "usage": "@user|username|id [reason]", "aliases": []},
+            {"name": "mute", "description": "Mute một thành viên", "usage": "@user|username|id [duration] [reason]", "aliases": []},
             {"name": "prefix", "description": "Đổi prefix của bot", "usage": "<value>", "aliases": []},
             {"name": "reload", "description": "Reload một cog, một catalog hoặc tất cả", "usage": "[catalog|module]", "aliases": []},
+            {"name": "reroll", "description": "Quay lại winner giveaway theo ID", "usage": "<giveaway_id>", "aliases": []},
+            {"name": "gareroll", "description": "Quay lại winner giveaway theo ID", "usage": "<giveaway_id>", "aliases": []},
             {"name": "res", "description": "Gọi auto res theo key tùy chỉnh", "usage": "<key>", "aliases": []},
+            {"name": "role", "description": "Cấp hoặc gỡ Discord role cho user", "usage": "a|r @user @role", "aliases": []},
+            {"name": "addrole", "description": "Cấp quyền dùng command cho 1 hoặc nhiều role", "usage": "@role1, @role2 command1, command2", "aliases": ["themrole"]},
+            {"name": "removerole", "description": "Xóa quyền dùng command khỏi 1 hoặc nhiều role", "usage": "@role1, @role2 command1, command2", "aliases": ["rmrole", "xoarole"]},
+            {"name": "setrole", "description": "Gán Discord role làm role hệ thống qua menu chọn", "usage": "@role|role_id [admin|booking|user|staff]", "aliases": []},
+            {"name": "perms", "description": "Xem role nào đang có quyền", "usage": "command1, command2", "aliases": []},
+            {"name": "myroles", "description": "Xem role của bạn hoặc user khác", "usage": "[@user]", "aliases": []},
+            {"name": "rolescommands", "description": "Xem role đang dùng được lệnh nào", "usage": "@role|role_id", "aliases": []},
             {"name": "rmadmin", "description": "Xóa admin bot", "usage": "@user", "aliases": ["xoaadmin"]},
             {"name": "setan", "description": "Đặt phần trăm bot/server ăn từ booking", "usage": "<percent>", "aliases": ["setfee", "sethoahong"]},
             {"name": "setgiobook", "description": "Đặt giá tiền cho 1h booking", "usage": "<amount>", "aliases": ["setgia", "giabooking"]},
             {"name": "setphantram", "description": "Đặt phần trăm tiền trả cho booking", "usage": "<percent>", "aliases": ["setpayout", "settraluong"]},
-            {"name": "subcash", "description": "Trừ tiền của user", "usage": "@user amount", "aliases": []},
-            {"name": "subluong", "description": "Trừ lương của user", "usage": "@user amount", "aliases": []},
-            {"name": "substar", "description": "Trừ star của user", "usage": "@user amount", "aliases": []},
+            {"name": "subcash", "description": "Trừ cash của user", "usage": "@user amount", "aliases": ["sc"]},
+            {"name": "subluong", "description": "Trừ lương của booking", "usage": "@user amount", "aliases": ["sl"]},
             {"name": "subtime", "description": "Trừ giờ của user", "usage": "@user hours", "aliases": []},
-            {"name": "tongluong", "description": "Xem tổng lương", "usage": "", "aliases": []},
+            {"name": "tongluong", "description": "Xem tổng lương", "usage": "", "aliases": ["tl"]},
             {"name": "topstar", "description": "Xem top star", "usage": "[limit]", "aliases": []},
             {"name": "unban", "description": "Gỡ ban một thành viên", "usage": "user_id [reason]", "aliases": []},
             {"name": "unload", "description": "Unload một cog hoặc cả catalog", "usage": "<catalog|module>", "aliases": []},
-            {"name": "unmute", "description": "Gỡ mute một thành viên", "usage": "@user [reason]", "aliases": []},
+            {"name": "unmute", "description": "Gỡ mute một thành viên", "usage": "@user|username|id [reason]", "aliases": []},
             {"name": "up", "description": "Up responsive profile lên channel chỉ định", "usage": "<key><số> #channel", "aliases": []},
         ],
         "slash_commands": [
             {"name": "antiraid", "description": "Bật chế độ chống raid", "usage": "", "aliases": []},
+            {"name": "giveaway", "description": "Một slash tổng, chọn create/set/end/reroll/config bên trong", "usage": "action: create|set|end|reroll|config", "aliases": []},
+            {"name": "group", "description": "Một slash tổng, chọn join/leave bên trong", "usage": "action: join|leave", "aliases": []},
         ],
     },
 ]
@@ -329,6 +349,13 @@ class HelpView:
                     value=f"{command['description']}{alias_text}",
                     inline=False,
                 )
+            if category.get("slash_commands"):
+                slash_commands = ", ".join(f"`/{command['name']}`" for command in category["slash_commands"])
+                embed.add_field(
+                    name="**Slash:**",
+                    value=slash_commands,
+                    inline=False,
+                )
 
         embed.set_author(name=guild.name if guild else APP_NAME)
         embed.set_footer(text=f"Tổng cộng {_category_total_commands(category)} lệnh • {prefix}help <command>")
@@ -350,16 +377,132 @@ class HelpView:
                 value=", ".join(f"`{prefix}{alias}`" for alias in command["aliases"]),
                 inline=True,
             )
+        if command["name"] == "book":
+            embed.add_field(
+                name="Cách dùng",
+                value=(
+                    "`book @booking 1` - ghi nhận book 1h, mặc định phương thức banking\n"
+                    "`book @booking 1,2,5 @user cash` - ghi nhận nhiều mốc giờ và trừ cash của user thanh toán\n"
+                    "`book @booking 10 @user banking` - ghi nhận booking nhưng không trừ ví cash\n"
+                    "Nếu chọn `cash` mà người thanh toán không đủ tiền trong ví, bot sẽ báo lỗi và không ghi book."
+                ),
+                inline=False,
+            )
         if command["name"] == "star":
             embed.add_field(
                 name="Cách dùng",
                 value=(
                     "`star` - xem giờ book và số tiền đã tiêu của bạn\n"
-                    "`star time <hours> [@user]` - ghi nhận giờ book, tự tính tiền theo config\n"
+                    "`star @user` - xem booking người khác nếu có quyền\n"
+                    "`star all` - xem tất cả star trong users DB\n"
+                    "`star a/add @user <amount>` - cộng star cho user\n"
+                    "`star r/rm/remove/d/delete @user <amount>` - trừ star của user\n"
+                    "`star e/edit @user <amount>` - set star của user về số mới\n"
                     "`star money <amount> [@user]` - ghi nhận tiền nạp, hỗ trợ `100k`, `1m`, `1b`\n"
-                    "`star top` - top giờ được book và top nạp tiền\n"
-                    "`star @user` - admin xem booking người khác"
+                    "`star top` - top giờ được book và top nạp tiền"
                 ),
+                inline=False,
+            )
+        if command["name"] == "cash":
+            embed.add_field(
+                name="Cách dùng",
+                value=(
+                    "`cash` - xem số dư của bạn\n"
+                    "`cash @user` - xem số dư người khác nếu có quyền\n"
+                    "`cash all` - xem tất cả cash nếu có quyền\n"
+                    "`cash a/add @user <money>` - cộng cash\n"
+                    "`cash r/rm/remove/d/delete @user <money>` - trừ cash\n"
+                    "`cash e/edit @user <money>` - set cash về số mới"
+                ),
+                inline=False,
+            )
+        if command["name"] == "points":
+            embed.add_field(
+                name="Cách dùng",
+                value=(
+                    "`points` - xem points của bạn\n"
+                    "`points @user` - xem points người khác nếu có quyền\n"
+                    "`points all` - xem tất cả points nếu có quyền\n"
+                    "`points a/add @user <amount>` - cộng points\n"
+                    "`points r/rm/remove/d/delete @user <amount>` - trừ points\n"
+                    "`points e/edit @user <amount>` - set points về số mới"
+                ),
+                inline=False,
+            )
+        if command["name"] == "time":
+            embed.add_field(
+                name="Cách dùng",
+                value=(
+                    "`time` - xem tổng giờ của bạn\n"
+                    "`time @user` - xem tổng giờ người khác nếu có quyền\n"
+                    "`time all` - xem tất cả tổng giờ nếu có quyền\n"
+                    "`time a/add @user <hours>` - cộng giờ\n"
+                    "`time r/rm/remove/d/delete @user <hours>` - trừ giờ\n"
+                    "`time e/edit @user <hours>` - set giờ về số mới"
+                ),
+                inline=False,
+            )
+        if command["name"] == "luong":
+            embed.add_field(
+                name="Cách dùng",
+                value=(
+                    "`luong` - xem bảng lương của bạn ở kênh hiện tại\n"
+                    "`luong @user` - xem bảng lương người khác nếu có quyền\n"
+                    "`luong all` - xem tất cả bảng lương nếu có quyền\n"
+                    "`luong a/add @user <money>` - cộng lương cho booking\n"
+                    "`luong r/rm/remove/d/delete @user <money>` - trừ lương booking\n"
+                    "`luong e/edit @user <money>` - set lương booking về số mới\n"
+                    "User phải có role hệ thống `booking`."
+                ),
+                inline=False,
+            )
+        if command["name"] == "traluong":
+            embed.add_field(
+                name="Cách dùng",
+                value=(
+                    "`traluong @user` - trả toàn bộ số lương còn lại của user đó, gửi DM chi tiết cho admin và DM thông báo cho user\n"
+                    "`traluong all` - trả lương tất cả user/booking còn tiền, gửi DM tổng hợp cho admin kèm menu chọn người để xem chi tiết\n"
+                    "`luong traluong @user|all` - dùng được nếu muốn gọi trong cụm lương"
+                ),
+                inline=False,
+            )
+            embed.add_field(
+                name="Quyền",
+                value="Chỉ bot admin hoặc role có quyền `traluong`/`luong` trong database mới dùng được.",
+                inline=False,
+            )
+        if command["name"] == "level":
+            embed.add_field(
+                name=f"`{prefix}level [@user] [total|month|week|day]`",
+                value=(
+                    "Xem level/stat của bạn hoặc user khác\n"
+                    f"Aliases: `{prefix}lv`"
+                ),
+                inline=False,
+            )
+            embed.add_field(
+                name=f"`{prefix}level all [total|month|week|day] [xp|level|messages|voice] [limit]`",
+                value="Bảng xếp hạng level/stat",
+                inline=False,
+            )
+            embed.add_field(
+                name=f"`{prefix}level count [total|month|week|day]`",
+                value="Xem tổng count user, XP, tin nhắn và voice",
+                inline=False,
+            )
+            embed.add_field(
+                name=f"`{prefix}level setup #channel|on|off|messagexp|voicexp|xp easy|normal|hard|manual|levelxp`",
+                value="Set kênh thông báo, XP mỗi hoạt động và kiểu XP lên level",
+                inline=False,
+            )
+            embed.add_field(
+                name=f"`{prefix}level role add|remove|list <level> [@role]`",
+                value="Gán/xóa/list role reward theo mốc level",
+                inline=False,
+            )
+            embed.add_field(
+                name="Slash",
+                value="`/level`",
                 inline=False,
             )
         if command["name"] in {"topstar", "topbook", "topnap"}:
@@ -374,6 +517,111 @@ class HelpView:
                 value="`give @user 100k` hoặc `give 100k @user`\nChỉ dùng trong server. Hỗ trợ tiền VND: `100000`, `100k`, `1m`, `1b`, `100.000`, `100,000`, `0,01vnđ`.",
                 inline=False,
             )
+        if command["name"] == "giveaway":
+            embed.add_field(
+                name="Cách dùng prefix",
+                value=(
+                    "`ga 1d 1 100k 10` - tạo 10 giveaway, mỗi giveaway 1 ngày, 1 winner, phần thưởng 100k.\n"
+                    "`giveaway create 1h 2 Nitro 5` - tạo 5 giveaway Nitro, mỗi giveaway 2 winner.\n"
+                    "`ga config emoji 🎁` hoặc `ga emoji 🎁` - đổi emoji tham gia cho giveaway mới.\n"
+                    "Thứ tự `time`, `winners`, `reward` không bắt buộc; riêng số lượng giveaway nếu có thì để cuối."
+                ),
+                inline=False,
+            )
+            embed.add_field(
+                name="Slash",
+                value=(
+                    "`/giveaway action:create reward:<nội dung> duration:<10m|1h|1d> winners:<số> quantity:<số lượng ga>`\n"
+                    "`/giveaway action:set giveaway_id:<ID>` để chọn winner thủ công.\n"
+                    "`/giveaway action:end giveaway_id:<ID>` hoặc `action:reroll` để end/reroll.\n"
+                    "`/giveaway action:config emoji:<emoji>` để đổi emoji tham gia."
+                ),
+                inline=False,
+            )
+            embed.add_field(
+                name="Quyền",
+                value="Tạo/end/reroll: bot admin hoặc role có quyền `giveaway` trong database.",
+                inline=False,
+            )
+            embed.add_field(
+                name="Tham gia",
+                value="Người dùng react emoji giveaway vào tin nhắn để tham gia, không dùng nút bấm nữa.",
+                inline=False,
+            )
+        if command["name"] == "group":
+            embed.add_field(
+                name="Cách dùng",
+                value=(
+                    "`group join <invite>` hoặc `g j <invite>` - tạo splash/link OAuth để mời bot vào server.\n"
+                    "`group join` - hiện nút nhập link server.\n"
+                    "`group leave` hoặc `g l` - hiện list server bot đang join để chọn rời."
+                ),
+                inline=False,
+            )
+            embed.add_field(
+                name="Lưu ý",
+                value="Discord không cho bot tự join server bằng invite như user. Lệnh join sẽ tạo link OAuth để admin server bấm thêm bot.",
+                inline=False,
+            )
+            embed.add_field(
+                name="Slash",
+                value=(
+                    "`/group action:join server:<invite>` - tạo splash/link OAuth mời bot.\n"
+                    "`/group action:join` - hiện modal nhập link server.\n"
+                    "`/group action:leave` - hiện list server bot đang join để chọn rời."
+                ),
+                inline=False,
+            )
+            embed.add_field(
+                name="Quyền",
+                value="Chỉ bot admin dùng được trong server hoặc DMs.",
+                inline=False,
+            )
+        if command["name"] in {"end", "gastop"}:
+            embed.add_field(
+                name="Cách dùng",
+                value="`end <id giveaway>` hoặc `gastop <id giveaway>`. ID là ID tin nhắn giveaway, chuột phải tin nhắn rồi chọn **Sao chép ID Tin Nhắn**.",
+                inline=False,
+            )
+        if command["name"] in {"reroll", "gareroll"}:
+            embed.add_field(
+                name="Cách dùng",
+                value="`reroll <id giveaway>` hoặc `gareroll <id giveaway>` để quay winner mới sau khi giveaway đã kết thúc. Số lần reroll được tính riêng theo từng ID giveaway.",
+                inline=False,
+            )
+        if command["name"] == "say":
+            embed.add_field(
+                name="Cách dùng",
+                value=(
+                    "`say xin chào mọi người` hoặc `s xin chào mọi người` - bot vào voice của bạn và đọc bằng giọng Google.\n"
+                    "Nếu bot chưa ở voice, người gọi `say` sẽ là người giữ quyền `play l/leave`.\n"
+                    "Nếu không dùng gì thêm trong 5 phút sau khi đọc/phát xong, bot sẽ tự rời voice."
+                ),
+                inline=False,
+            )
+        if command["name"] == "play":
+            embed.add_field(
+                name="Nguồn nhạc",
+                value="Hỗ trợ YouTube, YouTube Music, SoundCloud, MixCloud và playlist qua `yt-dlp`. Spotify sẽ cố xử lý qua extractor; nếu link không chạy hãy gửi tên bài hoặc link YouTube/YT Music.",
+                inline=False,
+            )
+            embed.add_field(
+                name="Điều khiển",
+                value=(
+                    "`play <url|từ khóa>`, `p <url|từ khóa>` hoặc `a <url|từ khóa>` - thêm/phát nhạc\n"
+                    "`play q/queue` - xem queue\n"
+                    "`play sh/shuffle` - trộn queue\n"
+                    "`play a/autoplay` - bật/tắt autoplay\n"
+                    "`play s/skip`, `play p/pause`, `play r/resume`, `play st/stop`, `play l/leave`\n"
+                    "`play n/now`, `play lo/loop`, `play v/vol <0-200>`, `play rm <số>`, `play c/clear`"
+                ),
+                inline=False,
+            )
+            embed.add_field(
+                name="Quyền leave",
+                value="Người làm bot auto join bằng `join`, `say` hoặc `play` sẽ giữ quyền `play l/leave`. Người khác vẫn có thể thêm nhạc trong cùng voice nhưng không được leave bot.",
+                inline=False,
+            )
         if command["name"] == "ar":
             embed.add_field(
                 name="Cách dùng",
@@ -385,7 +633,7 @@ class HelpView:
                     "`ar a <key> <số>` hoặc `ar a <key><số>` thêm profile/form, số `0` dùng được\n"
                     "`ar e <key> <text>` sửa auto res\n"
                     "`ar e <key> <số> <text>` sửa nội dung profile\n"
-                    "`ar d <key> [số]` xóa auto res hoặc profile\n"
+                    "`ar r/rm/remove/d/delete <key> [số]` xóa auto res hoặc profile\n"
                     "`ar set <key> <số> @user` gắn profile\n"
                     "`ar up <key><số> #channel` up profile sang channel chỉ định\n"
                     "`ar description <key> <số>` hoặc `ar description <key><số>` lấy nội dung từ tin nhắn reply\n"
@@ -419,10 +667,109 @@ class HelpView:
                 value="`res yang` sẽ gọi nội dung auto res của key `yang`. Có thể dùng `{user}`, `{target}`, `{key}` trong nội dung.",
                 inline=False,
             )
+        if command["name"] == "role":
+            embed.add_field(
+                name="Cách dùng",
+                value=(
+                    "`role a @user @role` để cấp Discord role cho user.\n"
+                    "`role r @user @role` để gỡ Discord role khỏi user.\n"
+                    "Có thể dùng chữ đầy đủ: `role add @user @role`, `role remove @user @role`, `role rm @user @role`, `role d @user @role`, `role delete @user @role`.\n"
+                    "Bot cần quyền `Manage Roles` và role cần cấp/gỡ phải thấp hơn role cao nhất của bot."
+                ),
+                inline=False,
+            )
+        if command["name"] == "addpoints":
+            embed.add_field(
+                name="Cách dùng",
+                value=(
+                    "`addpoints @user <amount>` - cộng points kiểu cũ\n"
+                    "`addpoints a/add @user <amount>` - cộng points\n"
+                    "`addpoints r/rm/remove/d/delete @user <amount>` - trừ points\n"
+                    "`addpoints e/edit @user <amount>` - set points về số mới"
+                ),
+                inline=False,
+            )
+        if command["name"] == "addtime":
+            embed.add_field(
+                name="Cách dùng",
+                value=(
+                    "`addtime @user <hours>` - cộng giờ kiểu cũ\n"
+                    "`addtime a/add @user <hours>` - cộng giờ\n"
+                    "`addtime r/rm/remove/d/delete @user <hours>` - trừ giờ\n"
+                    "`addtime e/edit @user <hours>` - set giờ về số mới"
+                ),
+                inline=False,
+            )
+        if command["name"] == "ban":
+            embed.add_field(
+                name="Cách dùng",
+                value=(
+                    "`ban @user [reason]` ban vĩnh viễn.\n"
+                    "`ban @user 1d [reason]` ban tạm thời rồi tự unban sau thời gian đó.\n"
+                    "Target có thể là mention, username hoặc user ID. Thời gian hỗ trợ `s`, `m`, `h`, `d`."
+                ),
+                inline=False,
+            )
+        if command["name"] == "kick":
+            embed.add_field(
+                name="Cách dùng",
+                value="`kick @user [reason]`. Target có thể là mention, username hoặc user ID của member đang ở server.",
+                inline=False,
+            )
+        if command["name"] == "mute":
+            embed.add_field(
+                name="Cách dùng",
+                value="`mute @user [duration] [reason]`. Target có thể là mention, username hoặc user ID. Không nhập duration thì mặc định 1h.",
+                inline=False,
+            )
+        if command["name"] == "emoji":
+            embed.add_field(
+                name="Cách dùng",
+                value=(
+                    "`emoji a/add <name> <url>` để thêm emoji.\n"
+                    "`emoji r/rm/remove/d/delete <name|id>` để xóa emoji.\n"
+                    "`emoji list [limit]` để xem emoji custom."
+                ),
+                inline=False,
+            )
         if command["name"] == "setrole":
             embed.add_field(
                 name="Cách dùng",
-                value="`setrole @Booking booking` hoặc `setrole <role_id> booking`. Ai có Discord role đó sẽ được bot nhận là booking.",
+                value=(
+                    "`setrole @Booking` hoặc `setrole <role_id>` để mở menu chọn `admin/booking/user/staff`.\n"
+                    "Có thể set nhanh: `setrole @Booking booking`.\n"
+                    "Ai có Discord role được set `booking` sẽ được bot tự nhận là booking."
+                ),
+                inline=False,
+            )
+        if command["name"] == "addrole":
+            embed.add_field(
+                name="Cách dùng",
+                value=(
+                    "`addrole @role command` cấp 1 role cho 1 lệnh.\n"
+                    "`addrole @role1, @role2 command1, command2` cấp nhiều role cho nhiều lệnh.\n"
+                    "Command không tồn tại sẽ được báo riêng và không được lưu quyền."
+                ),
+                inline=False,
+            )
+        if command["name"] == "removerole":
+            embed.add_field(
+                name="Cách dùng",
+                value=(
+                    "`removerole @role command` xóa quyền 1 role khỏi 1 lệnh.\n"
+                    "`removerole @role1, @role2 command1, command2` xóa nhiều role khỏi nhiều lệnh.\n"
+                    "Command không tồn tại sẽ được báo riêng và không được xử lý."
+                ),
+                inline=False,
+            )
+        if command["name"] == "perms":
+            embed.add_field(
+                name="Cách dùng",
+                value=(
+                    "`perms command` xem role đang có quyền dùng 1 lệnh.\n"
+                    "`perms command1, command2` xem quyền của nhiều lệnh cùng lúc.\n"
+                    "Command không tồn tại sẽ hiện trong mục riêng."
+                ),
                 inline=False,
             )
         if command["name"] == "up":
@@ -431,7 +778,7 @@ class HelpView:
                 value="`up ad1 #booking` hoặc `ar up ad1 #booking` để gửi profile `ad1` lên channel chỉ định.",
                 inline=False,
             )
-        if command["name"] in {"setgiobook", "addcash", "subcash", "addluong", "subluong"}:
+        if command["name"] in {"setgiobook", "cash", "luong"}:
             embed.add_field(
                 name="Định dạng tiền",
                 value="Hỗ trợ `100000`, `100k`, `1m`, `1b`, `100.000`, `100,000`, `0,5m`. Đơn vị mặc định là VNĐ.",
@@ -449,6 +796,11 @@ class HelpCog(commands.Cog):
     @commands.command(name='help', aliases=['commands'])
     async def help_command(self, ctx, command_name: str = None):
         if command_name:
+            category = _find_category(command_name.strip().lower())
+            if category:
+                await ctx.send(embed=HelpView.build_category_embed(category, ctx.guild), view=CategoryView(category["key"]))
+                return
+
             category, command = _find_command(command_name)
             if not command or not category:
                 await ctx.send(f"❌ Không tìm thấy lệnh `{command_name}`.")

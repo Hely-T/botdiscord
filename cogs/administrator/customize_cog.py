@@ -32,13 +32,13 @@ class AdministratorCustomizeCog(AdminCommandBase):
         if not await self.require_role_or_admin_ctx(ctx):
             return
         if not action:
-            await ctx.send(embed=create_info_splash("😊 Emoji", "Dùng:\n`emoji add <name> <url>`\n`emoji remove <name|id>`\n`emoji list [limit]`"))
+            await ctx.send(embed=create_info_splash("😊 Emoji", "Dùng:\n`emoji a/add <name> <url>`\n`emoji r/rm/remove/d/delete <name|id>`\n`emoji list [limit]`"))
             return
 
         action = action.lower().strip()
-        if action == "add":
+        if action in {"a", "add"}:
             if not arg1:
-                await ctx.send(embed=create_error_splash("❌ Thiếu Tên Emoji", "Dùng: `emoji add <name> <url>`"))
+                await ctx.send(embed=create_error_splash("❌ Thiếu Tên Emoji", "Dùng: `emoji a/add <name> <url>`"))
                 return
             source = rest.strip() or (ctx.message.attachments[0].url if ctx.message.attachments else "")
             if not source:
@@ -55,10 +55,10 @@ class AdministratorCustomizeCog(AdminCommandBase):
                 await ctx.send(embed=create_error_splash("❌ Thêm Emoji Thất Bại", str(exc)))
             return
 
-        if action == "remove":
+        if action in {"r", "remove", "rm", "d", "delete", "del"}:
             target = arg1 or rest.strip()
             if not target:
-                await ctx.send(embed=create_error_splash("❌ Thiếu Emoji", "Dùng: `emoji remove <name|id>`"))
+                await ctx.send(embed=create_error_splash("❌ Thiếu Emoji", "Dùng: `emoji r/rm/remove/d/delete <name|id>`"))
                 return
             found = discord.utils.get(ctx.guild.emojis, name=target)
             if found is None and target.isdigit():
@@ -86,7 +86,7 @@ class AdministratorCustomizeCog(AdminCommandBase):
             await ctx.send(embed=create_info_splash(f"😊 Emoji ({len(emojis)})", text))
             return
 
-        await ctx.send(embed=create_error_splash("❌ Lệnh Không Hợp Lệ", "Dùng: `emoji add/remove/list`"))
+        await ctx.send(embed=create_error_splash("❌ Lệnh Không Hợp Lệ", "Dùng: `emoji a/add`, `emoji r/rm/remove/d/delete` hoặc `emoji list`"))
 
 
 async def setup(bot):

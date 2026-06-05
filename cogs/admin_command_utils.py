@@ -96,6 +96,14 @@ def parse_vnd_amount(raw_amount: str | int | float) -> int:
     return rounded
 
 
+def parse_vnd_amount_or_zero(raw_amount: str | int | float) -> int:
+    cleaned = str(raw_amount).strip().lower()
+    zero_values = {"0", "0vnd", "0vnđ", "0đ", "0d"}
+    if cleaned.replace(" ", "") in zero_values:
+        return 0
+    return parse_vnd_amount(raw_amount)
+
+
 def parse_percent(raw_percent: str | int | float) -> Decimal:
     cleaned = str(raw_percent).strip().lower().replace("%", "").replace(",", ".")
     try:
@@ -144,6 +152,23 @@ def parse_duration(value: str) -> Optional[int]:
         "d": 86400,
     }[unit]
     return max(1, int(amount * multiplier))
+
+
+def format_duration_seconds(seconds: int) -> str:
+    seconds = int(seconds)
+    days, remainder = divmod(seconds, 86400)
+    hours, remainder = divmod(remainder, 3600)
+    minutes, seconds = divmod(remainder, 60)
+    parts = []
+    if days:
+        parts.append(f"{days}d")
+    if hours:
+        parts.append(f"{hours}h")
+    if minutes:
+        parts.append(f"{minutes}m")
+    if seconds or not parts:
+        parts.append(f"{seconds}s")
+    return " ".join(parts)
 
 
 def parse_color(color_text: str) -> Optional[discord.Color]:
@@ -278,6 +303,69 @@ class AdminCommandBase(commands.Cog):
         user_roles = [role.id for role in ctx.author.roles if role.name != "@everyone"]
         return self.role_permissions.user_can_use(ctx.guild.id, user_roles, command_name)
 
+    @staticmethod
+    def extract_user_id(raw_target: str | None) -> int | None:
+        if not raw_target:
+            return None
+        cleaned = raw_target.strip()
+        mention_match = re.fullmatch(r"<@!?(\d+)>", cleaned)
+        if mention_match:
+            return int(mention_match.group(1))
+        return int(cleaned) if cleaned.isdigit() else None
+
+    async def resolve_member_target(self, ctx, raw_target: str | None) -> discord.Member | None:
+        if ctx.guild is None:
+            await ctx.send(embed=create_error_splash("❌ Chỉ Dùng Trong Server", "Lệnh này chỉ hoạt động trong server."))
+            return None
+        if not raw_target:
+            await ctx.send(embed=create_error_splash("❌ Thiếu User", "Hãy nhập @user, username hoặc user ID."))
+            return None
+
+        try:
+            return await commands.MemberConverter().convert(ctx, raw_target)
+        except Exception:
+            pass
+
+        user_id = self.extract_user_id(raw_target)
+        if user_id is not None:
+            member = ctx.guild.get_member(user_id)
+            if member:
+                return member
+            try:
+                return await ctx.guild.fetch_member(user_id)
+            except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+                return None
+
+        lowered_target = raw_target.strip().casefold()
+        try:
+            queried_members = await ctx.guild.query_members(query=raw_target.strip(), limit=10)
+            exact_matches = [
+                member
+                for member in queried_members
+                if lowered_target
+                in {
+                    member.name.casefold(),
+                    member.display_name.casefold(),
+                    str(member).casefold(),
+                }
+            ]
+            if exact_matches:
+                return exact_matches[0]
+            if len(queried_members) == 1:
+                return queried_members[0]
+        except (discord.Forbidden, discord.HTTPException):
+            pass
+
+        for member in ctx.guild.members:
+            names = {
+                member.name.casefold(),
+                member.display_name.casefold(),
+                str(member).casefold(),
+            }
+            if lowered_target in names:
+                return member
+        return None
+
     async def send_dm_notice(self, member: discord.Member, title: str, description: str) -> bool:
         embed = create_info_splash(title, description)
         try:
@@ -338,7 +426,7 @@ class AdminCommandBase(commands.Cog):
             value_text = format_hours(new_value)
         elif field in {"cash", "luong"}:
             amount_text = f"{format_vnd(int(amount))} VNĐ"
-            value_text = f"{format_vnd(int(new_value))} VNĐ"
+            value_text = None
         elif field == "star":
             amount_text = f"{int(amount):,} star"
             value_text = f"{int(new_value):,} star"
@@ -346,9 +434,13 @@ class AdminCommandBase(commands.Cog):
             amount_text = str(amount)
             value_text = str(new_value)
 
+        description = f"{member.mention} đã được {action_label.lower()} `{amount_text}`."
+        if value_text is not None:
+            description += f"\nGiá trị hiện tại: `{value_text}`"
+
         embed = create_success_splash(
             f"✅ {action_label} Thành Công",
-            f"{member.mention} đã được {action_label.lower()} `{amount_text}`.\nGiá trị hiện tại: `{value_text}`",
+            description,
         )
 
         if dm_title and dm_description:

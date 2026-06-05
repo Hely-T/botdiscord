@@ -128,6 +128,12 @@ class UserService:
             (user_id,)
         )
 
+    def remove_points(self, user_id: int, amount: int):
+        self._update_numeric_field(user_id, 'points', -amount)
+
+    def set_points(self, user_id: int, amount: int):
+        self._set_numeric_field(user_id, 'points', amount)
+
     def _update_numeric_field(self, user_id: int, field_name: str, amount: float):
         user = self.get_user(user_id)
         if not user:
@@ -153,18 +159,41 @@ class UserService:
             (user_id,)
         )
 
+    def _set_numeric_field(self, user_id: int, field_name: str, value: float):
+        user = self.get_user(user_id)
+        if not user:
+            raise ValueError(f"User {user_id} không tồn tại")
+        if value < 0:
+            raise ValueError(f"{field_name} không thể âm")
+
+        self.db.update('users',
+            {
+                field_name: value,
+                'updated_at': get_timestamp()
+            },
+            'user_id = ?',
+            (user_id,)
+        )
+
     def add_cash(self, user_id: int, amount: int):
         self._update_numeric_field(user_id, 'cash', amount)
 
     def remove_cash(self, user_id: int, amount: int):
         self._update_numeric_field(user_id, 'cash', -amount)
 
+    def set_cash(self, user_id: int, amount: int):
+        self._set_numeric_field(user_id, 'cash', amount)
+
     def transfer_cash(self, from_user_id: int, from_username: str, to_user_id: int, to_username: str, amount: int):
         if amount <= 0:
             raise ValueError("Số tiền phải lớn hơn 0")
 
-        sender = self.get_or_create_user(from_user_id, from_username)
-        receiver = self.get_or_create_user(to_user_id, to_username)
+        sender = self.get_user(from_user_id)
+        if not sender:
+            raise ValueError(f"User {from_user_id} không tồn tại")
+        receiver = self.get_user(to_user_id)
+        if not receiver:
+            raise ValueError(f"User {to_user_id} không tồn tại")
 
         if sender.cash < amount:
             raise ValueError("Không đủ cash để chuyển")
@@ -183,17 +212,68 @@ class UserService:
     def remove_luong(self, user_id: int, amount: int):
         self._update_numeric_field(user_id, 'luong', -amount)
 
+    def set_luong(self, user_id: int, amount: int):
+        self._set_numeric_field(user_id, 'luong', amount)
+
+    def get_users_with_luong(self) -> list:
+        return self.db.fetch(
+            'SELECT * FROM users WHERE luong > 0 ORDER BY luong DESC, username ASC'
+        )
+
+    def pay_user_luong(self, user_id: int) -> dict:
+        user = self.get_user(user_id)
+        if not user:
+            raise ValueError(f"User {user_id} không tồn tại")
+
+        paid_amount = int(user.luong)
+        if paid_amount <= 0:
+            raise ValueError("Người này không còn lương cần trả")
+
+        before = {
+            "user_id": user.user_id,
+            "username": user.username,
+            "luong": paid_amount,
+        }
+        self.set_luong(user_id, 0)
+        after_user = self.get_user(user_id)
+        return {
+            "source": "users",
+            "before": before,
+            "after": {
+                "user_id": after_user.user_id,
+                "username": after_user.username,
+                "luong": int(after_user.luong),
+            },
+            "paid_amount": paid_amount,
+        }
+
     def add_star(self, user_id: int, amount: int):
         self._update_numeric_field(user_id, 'star', amount)
 
     def remove_star(self, user_id: int, amount: int):
         self._update_numeric_field(user_id, 'star', -amount)
 
+    def set_star(self, user_id: int, amount: int):
+        self._set_numeric_field(user_id, 'star', amount)
+
     def add_hours(self, user_id: int, hours: float):
         self._update_numeric_field(user_id, 'total_hours', hours)
 
     def remove_hours(self, user_id: int, hours: float):
         self._update_numeric_field(user_id, 'total_hours', -hours)
+
+    def set_hours(self, user_id: int, hours: float):
+        self._set_numeric_field(user_id, 'total_hours', hours)
+
+    def get_users_by_stat(self, field_name: str, limit: int = 25) -> list:
+        allowed_fields = {"cash", "luong", "star", "points", "total_hours"}
+        if field_name not in allowed_fields:
+            raise ValueError("Trường thống kê không hợp lệ")
+        safe_limit = max(1, min(int(limit), 100))
+        return self.db.fetch(
+            f'SELECT * FROM users ORDER BY {field_name} DESC, username ASC LIMIT ?',
+            (safe_limit,)
+        )
 
     def get_top_users(self, limit: int = 10) -> list:
         """Lấy top users theo points"""

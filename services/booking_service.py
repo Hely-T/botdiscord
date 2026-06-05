@@ -76,9 +76,26 @@ class BookingService:
             UNIQUE(user_id, hour_value)
             """,
         )
+        self.db.create_table(
+            "booking_admin_salary_details",
+            """
+            user_id INTEGER PRIMARY KEY,
+            admin_amount INTEGER DEFAULT 0,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+            """,
+        )
+        self.db.create_table(
+            "booking_migrations",
+            """
+            migration_key TEXT PRIMARY KEY,
+            migrated_at TEXT NOT NULL
+            """,
+        )
         self._ensure_schema_columns()
         self._seed_default_settings()
         self._seed_default_gifts()
+        self._migrate_legacy_user_luong()
 
     def _ensure_schema_columns(self):
         columns = {row["name"] for row in self.db.fetch("PRAGMA table_info(booking_stats)")}
@@ -284,6 +301,84 @@ class BookingService:
             (user_id,),
         )
 
+    def get_admin_salary_amount(self, user_id: int) -> int:
+        row = self.db.select_one("booking_admin_salary_details", "user_id = ?", (user_id,))
+        return int(row["admin_amount"]) if row else 0
+
+    def add_admin_salary_detail(self, user_id: int, amount: int):
+        timestamp = get_timestamp()
+        existing = self.db.select_one("booking_admin_salary_details", "user_id = ?", (user_id,))
+        if existing:
+            self.db.update(
+                "booking_admin_salary_details",
+                {
+                    "admin_amount": int(existing["admin_amount"]) + int(amount),
+                    "updated_at": timestamp,
+                },
+                "user_id = ?",
+                (user_id,),
+            )
+            return
+
+        self.db.insert(
+            "booking_admin_salary_details",
+            {
+                "user_id": user_id,
+                "admin_amount": int(amount),
+                "created_at": timestamp,
+                "updated_at": timestamp,
+            },
+        )
+
+    def reduce_admin_salary_detail(self, user_id: int, amount: int):
+        existing_amount = self.get_admin_salary_amount(user_id)
+        new_amount = max(0, existing_amount - int(amount))
+        timestamp = get_timestamp()
+        if self.db.select_one("booking_admin_salary_details", "user_id = ?", (user_id,)):
+            self.db.update(
+                "booking_admin_salary_details",
+                {
+                    "admin_amount": new_amount,
+                    "updated_at": timestamp,
+                },
+                "user_id = ?",
+                (user_id,),
+            )
+            return
+        if new_amount > 0:
+            self.db.insert(
+                "booking_admin_salary_details",
+                {
+                    "user_id": user_id,
+                    "admin_amount": new_amount,
+                    "created_at": timestamp,
+                    "updated_at": timestamp,
+                },
+            )
+
+    def set_admin_salary_detail(self, user_id: int, amount: int):
+        timestamp = get_timestamp()
+        if self.db.select_one("booking_admin_salary_details", "user_id = ?", (user_id,)):
+            self.db.update(
+                "booking_admin_salary_details",
+                {
+                    "admin_amount": int(amount),
+                    "updated_at": timestamp,
+                },
+                "user_id = ?",
+                (user_id,),
+            )
+            return
+        self.db.insert(
+            "booking_admin_salary_details",
+            {
+                "user_id": user_id,
+                "admin_amount": int(amount),
+                "created_at": timestamp,
+                "updated_at": timestamp,
+            },
+        )
+
     def add_booking_session(self, user_id: int, username: str, hours: float) -> dict:
         money = self.calculate_session_money(hours)
         self.add_booking_hours(user_id, username, hours)
@@ -293,6 +388,22 @@ class BookingService:
         if money["received_money"] > 0:
             self.add_booking_received_money(user_id, username, money["received_money"])
         return money
+
+    def add_admin_salary(self, user_id: int, username: str, amount: int):
+        if amount <= 0:
+            raise ValueError("Amount phải > 0")
+        self.add_booking_received_money(user_id, username, amount)
+        self.add_admin_salary_detail(user_id, amount)
+
+    def deduct_admin_salary(self, user_id: int, username: str, amount: int):
+        if amount <= 0:
+            raise ValueError("Amount phải > 0")
+        self.deduct_booking_salary(user_id, username, amount)
+        self.reduce_admin_salary_detail(user_id, amount)
+
+    def set_admin_salary_current(self, user_id: int, username: str, amount: int):
+        self.set_booking_current_money(user_id, username, amount)
+        self.set_admin_salary_detail(user_id, amount)
 
     def add_booking_spent_money(self, user_id: int, username: str, amount: int):
         if amount <= 0:
@@ -319,6 +430,65 @@ class BookingService:
             (user_id,),
         )
         self._recalc_current_money(user_id)
+
+    def deduct_booking_salary(self, user_id: int, username: str, amount: int):
+        if amount <= 0:
+            raise ValueError("Amount phải > 0")
+        booking = self.get_or_create_booking(user_id, username)
+        if int(booking["booking_current_money"]) < int(amount):
+            raise ValueError("Lương hiện tại không đủ để trừ")
+        self.add_booking_deducted_money(user_id, username, amount)
+
+    def set_booking_current_money(self, user_id: int, username: str, amount: int):
+        if amount < 0:
+            raise ValueError("Lương hiện tại không thể âm")
+        booking = self.get_or_create_booking(user_id, username)
+        received_money = int(booking["booking_deducted_money"]) + int(amount)
+        self.db.update(
+            "booking_stats",
+            {
+                "booking_received_money": received_money,
+                "booking_current_money": int(amount),
+                "updated_at": get_timestamp(),
+            },
+            "user_id = ?",
+            (user_id,),
+        )
+
+    def pay_booking_salary(self, user_id: int) -> dict:
+        booking = self.get_booking(user_id)
+        if not booking:
+            raise ValueError(f"User {user_id} chưa có dữ liệu booking")
+
+        paid_amount = int(booking["booking_current_money"])
+        if paid_amount <= 0:
+            raise ValueError("Người này không còn lương cần trả")
+
+        self.db.update(
+            "booking_stats",
+            {
+                "booking_deducted_money": int(booking["booking_received_money"]),
+                "booking_current_money": 0,
+                "updated_at": get_timestamp(),
+            },
+            "user_id = ?",
+            (user_id,),
+        )
+        return {
+            "before": booking,
+            "after": self.get_booking(user_id),
+            "paid_amount": paid_amount,
+        }
+
+    def get_payable_bookings(self) -> list:
+        return self.db.fetch(
+            """
+            SELECT *
+            FROM booking_stats
+            WHERE booking_current_money > 0
+            ORDER BY booking_current_money DESC, booking_received_money DESC, username ASC
+            """
+        )
 
     def add_booking_received_money(self, user_id: int, username: str, amount: int):
         if amount <= 0:
@@ -384,6 +554,39 @@ class BookingService:
             ORDER BY booking_received_money DESC, booking_hours DESC, username ASC
             """
         )
+
+    def get_total_current_salary(self) -> int:
+        result = self.db.fetch_one("SELECT COALESCE(SUM(booking_current_money), 0) AS total_salary FROM booking_stats")
+        return int(result["total_salary"]) if result else 0
+
+    def get_current_salary_users_count(self) -> int:
+        result = self.db.fetch_one("SELECT COUNT(*) AS users_count FROM booking_stats WHERE booking_current_money > 0")
+        return int(result["users_count"]) if result else 0
+
+    def _migrate_legacy_user_luong(self):
+        migration_key = "users_luong_to_booking_v1"
+        if self.db.select_one("booking_migrations", "migration_key = ?", (migration_key,)):
+            return
+
+        try:
+            users_db = CogDatabase("users")
+            rows = users_db.fetch("SELECT user_id, username, luong FROM users WHERE luong > 0")
+            for row in rows:
+                amount = int(row["luong"])
+                if amount <= 0:
+                    continue
+                self.add_admin_salary(int(row["user_id"]), row["username"], amount)
+                users_db.update("users", {"luong": 0, "updated_at": get_timestamp()}, "user_id = ?", (int(row["user_id"]),))
+            users_db.close()
+            self.db.insert(
+                "booking_migrations",
+                {
+                    "migration_key": migration_key,
+                    "migrated_at": get_timestamp(),
+                },
+            )
+        except Exception as exc:
+            print(f"❌ Lỗi migrate users.luong sang booking.db: {exc}")
 
     def get_gifts(self) -> list:
         return self.db.fetch(

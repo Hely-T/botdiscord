@@ -13,6 +13,75 @@ from models.constants import ERROR_MESSAGE
 
 
 class BookingStarCog(BookingCommandBase):
+    STAT_ACTIONS = {
+        "a": "add",
+        "add": "add",
+        "d": "remove",
+        "del": "remove",
+        "delete": "remove",
+        "r": "remove",
+        "rm": "remove",
+        "remove": "remove",
+        "e": "edit",
+        "edit": "edit",
+    }
+
+    def _can_manage_star(self, ctx, action: str) -> bool:
+        if self.can_use_role_or_admin(ctx, "star"):
+            return True
+        legacy_command = {
+            "add": "addstar",
+            "remove": "substar",
+            "edit": "star",
+        }[action]
+        return self.can_use_role_or_admin(ctx, legacy_command)
+
+    @staticmethod
+    def _parse_star_amount(raw_amount: str, allow_zero: bool = False) -> int:
+        try:
+            amount = int(str(raw_amount).strip().replace(",", "").replace(".", ""))
+        except ValueError as exc:
+            raise ValueError(f"Số star `{raw_amount}` không hợp lệ") from exc
+        if allow_zero:
+            if amount < 0:
+                raise ValueError("Star không thể âm")
+        elif amount <= 0:
+            raise ValueError("Số star phải lớn hơn 0")
+        return amount
+
+    async def _apply_star_action(self, ctx, action: str, raw_member: str, raw_amount: str):
+        if not self._can_manage_star(ctx, action):
+            await ctx.send(embed=create_error_splash("❌ Quyền Bị Từ Chối", "Chỉ bot admin hoặc role có quyền `star` trong DB mới quản trị star."))
+            return
+
+        target = await self.resolve_member(ctx, raw_member)
+        if not target:
+            await ctx.send(embed=create_error_splash("❌ Không Tìm Thấy User", f"Không tìm thấy `{raw_member}` trong server."))
+            return
+
+        try:
+            amount = self._parse_star_amount(raw_amount, allow_zero=action == "edit")
+            if action in {"add", "edit"}:
+                self.users.get_or_create_user(target.id, target.display_name)
+            if action == "add":
+                self.users.add_star(target.id, amount)
+                title = "✅ Cộng Star Thành Công"
+                detail = f"Đã cộng `{amount:,}` star cho {target.mention}."
+            elif action == "remove":
+                self.users.remove_star(target.id, amount)
+                title = "✅ Trừ Star Thành Công"
+                detail = f"Đã trừ `{amount:,}` star của {target.mention}."
+            else:
+                self.users.set_star(target.id, amount)
+                title = "✅ Sửa Star Thành Công"
+                detail = f"Đã set star của {target.mention} thành `{amount:,}`."
+        except Exception as exc:
+            await ctx.send(embed=create_error_splash("❌ Cập Nhật Thất Bại", str(exc)))
+            return
+
+        current_star = self.users.get_user(target.id).star
+        await ctx.send(embed=create_success_splash(title, f"{detail}\nStar hiện tại: `{int(current_star):,}`"))
+
     @commands.command(name="star")
     async def star(self, ctx, *args):
         try:
@@ -22,7 +91,30 @@ class BookingStarCog(BookingCommandBase):
                 return
 
             action = args[0].lower()
-            if action in {"all", "top"}:
+            stat_action = self.STAT_ACTIONS.get(action)
+            if stat_action:
+                if len(args) != 3:
+                    await ctx.send(embed=create_error_splash("❌ Sai Cú Pháp", "Dùng: `star a/add @user <amount>`, `star r/rm/remove/d/delete @user <amount>` hoặc `star e/edit @user <amount>`."))
+                    return
+                await self._apply_star_action(ctx, stat_action, args[1], args[2])
+                return
+
+            if action == "all":
+                if not self._can_manage_star(ctx, "edit"):
+                    await ctx.send(embed=create_error_splash("❌ Quyền Bị Từ Chối", "Chỉ admin hoặc role có quyền `star` trong DB mới xem được tất cả star."))
+                    return
+                rows = self.users.get_users_by_stat("star", 25)
+                if not rows:
+                    await ctx.send(embed=create_warning_splash("⚠️ Star", "Chưa có dữ liệu star nào trong database."))
+                    return
+                description = [
+                    f"**#{index}** `{row['username']}` - `{int(row['star']):,}` star"
+                    for index, row in enumerate(rows, 1)
+                ]
+                await ctx.send(embed=create_success_splash(f"⭐ Tất Cả Star ({len(rows)})", "\n".join(description)))
+                return
+
+            if action == "top":
                 if not (self.can_use_role_or_admin(ctx, "topbook") or self.can_use_role_or_admin(ctx, "topnap")):
                     await ctx.send(embed=create_error_splash("❌ Quyền Bị Từ Chối", "Chỉ admin hoặc role trong DB mới dùng `star top`."))
                     return
@@ -45,9 +137,13 @@ class BookingStarCog(BookingCommandBase):
                 await ctx.send(embed=create_success_splash("⭐ Top", description))
                 return
 
-            if action in {"time", "money"}:
+            if action == "time":
+                await ctx.send(embed=create_error_splash("❌ Lệnh Đã Đổi", "Ghi nhận giờ book đã chuyển sang `book @booking 1,2,5 [@user] [cash|banking]`."))
+                return
+
+            if action == "money":
                 if len(args) < 2:
-                    await ctx.send("❌ Dùng: `star time <hours> [@user]` hoặc `star money <amount> [@user]`")
+                    await ctx.send("❌ Dùng: `star money <amount> [@user]`")
                     return
 
                 target = ctx.author
@@ -55,43 +151,26 @@ class BookingStarCog(BookingCommandBase):
                     maybe_member = await self.resolve_member(ctx, args[2])
                     if maybe_member:
                         target = maybe_member
-                if target.id != ctx.author.id and not self.is_admin(ctx.author.id):
-                    await ctx.send(embed=create_error_splash("❌ Quyền Bị Từ Chối", "Chỉ admin bot mới được thao tác trên người khác."))
-                    return
-
-                if action == "time":
-                    amount = float(args[1])
-                    money = self.service.add_booking_session(target.id, target.display_name, amount)
-                    booking = self.service.get_or_create_booking(target.id, target.display_name)
-                    await ctx.send(
-                        embed=create_success_splash(
-                            "✅ Ghi Nhận Giờ Book",
-                            (
-                                f"Đã cộng `{format_hours(amount)}` cho {target.mention}.\n"
-                                f"Giá khách trả: `{format_vnd(money['spent_money'])} VNĐ`\n"
-                                f"Booking nhận: `{format_vnd(money['received_money'])} VNĐ`\n"
-                                f"Tổng giờ hiện tại: `{format_hours(booking['booking_hours'])}`"
-                            ),
-                        )
-                    )
+                if target.id != ctx.author.id and not self.can_use_role_or_admin(ctx, "star"):
+                    await ctx.send(embed=create_error_splash("❌ Quyền Bị Từ Chối", "Chỉ admin bot hoặc role có quyền `star` trong DB mới thao tác trên người khác."))
                     return
 
                 amount = parse_vnd_amount(args[1])
                 self.service.add_booking_received_money(target.id, target.display_name, amount)
                 booking = self.service.get_or_create_booking(target.id, target.display_name)
-                await ctx.send(embed=create_success_splash("✅ Ghi Nhận Tiền Nạp", f"Đã cộng `{format_vnd(amount)} VNĐ` cho {target.mention}.\nTổng tiền hiện tại: `{format_vnd(booking['booking_received_money'])} VNĐ`"))
+                await ctx.send(embed=create_success_splash("✅ Ghi Nhận Tiền Nạp", f"Đã cộng `{format_vnd(amount)} VNĐ` cho {target.mention}."))
                 return
 
             target = await self.resolve_member(ctx, args[0])
             if target:
-                if target.id != ctx.author.id and not self.is_admin(ctx.author.id):
-                    await ctx.send(embed=create_error_splash("❌ Quyền Bị Từ Chối", "Chỉ admin bot mới được xem booking của người khác."))
+                if target.id != ctx.author.id and not self.can_use_role_or_admin(ctx, "star"):
+                    await ctx.send(embed=create_error_splash("❌ Quyền Bị Từ Chối", "Chỉ admin bot hoặc role có quyền `star` trong DB mới xem booking của người khác."))
                     return
                 booking = self.service.get_or_create_booking(target.id, target.display_name)
                 await ctx.send(embed=self.build_star_embed(target, booking))
                 return
 
-            await ctx.send("❌ Dùng: `star time <hours> [@user]`, `star money <amount> [@user]`, `star top`, hoặc `star @user`")
+            await ctx.send("❌ Dùng: `star`, `star @user`, `star all`, `star top`, `star a/r/e @user <amount>` hoặc `star money <amount> [@user]`")
         except Exception as e:
             await ctx.send(f"{ERROR_MESSAGE} {str(e)}")
 

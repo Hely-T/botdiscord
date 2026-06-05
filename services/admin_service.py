@@ -1,6 +1,6 @@
 """
 Bot Admin Service
-- Quản lý admin cứng từ env
+- Quản lý admin mặc định từ env
 - Quản lý admin mềm từ database
 """
 
@@ -35,7 +35,7 @@ class AdminService:
 
     def add_admin(self, user_id: int, added_by: int) -> bool:
         if self.is_hard_admin(user_id):
-            raise ValueError("User này là hard admin từ .env, không cần thêm vào DB")
+            raise ValueError("User này đã có quyền quản trị.")
 
         existing = self.db.select_one('admins', 'user_id = ?', (user_id,))
         if existing:
@@ -49,7 +49,7 @@ class AdminService:
 
     def remove_admin(self, user_id: int) -> bool:
         if self.is_hard_admin(user_id):
-            raise ValueError("Không thể xoá hard admin từ .env")
+            raise ValueError("Không thể xoá quyền quản trị mặc định.")
 
         return self.db.delete('admins', 'user_id = ?', (user_id,))
 
