@@ -41,6 +41,9 @@ HELP_CATEGORIES = [
             {"name": "avatar", "description": "Xem avatar user bằng mention, ID hoặc chính bạn", "usage": "[@user|id]", "aliases": ["av", "ava", "avata"]},
             {"name": "banner", "description": "Xem banner/bìa user hoặc bìa server", "usage": "[@user|id]", "aliases": ["bn", "bia", "bìa"]},
             {"name": "give", "description": "Chuyển cash cho user khác", "usage": "@user amount hoặc amount @user", "aliases": []},
+            {"name": "math", "description": "Tính toán nhanh với số có dấu phẩy hoặc dấu chấm", "usage": "<biểu thức>", "aliases": ["calc", "tinh", "tính"]},
+            {"name": "note", "description": "Ghi chú cá nhân text thường kèm số tiền tuỳ chọn", "usage": "[nội dung] [số tiền] | del 1,2 | 2 +100k", "aliases": []},
+            {"name": "notes", "description": "Xem danh sách note bằng embed", "usage": "", "aliases": []},
             {"name": "points", "description": "Xem hoặc quản trị points", "usage": "[@user|all] | a|r|e @user amount", "aliases": []},
             {"name": "profile", "description": "Xem profile của bạn hoặc người khác", "usage": "[@user]", "aliases": []},
             {"name": "snipe", "description": "Xem lịch sử tin nhắn vừa bị xoá trong kênh", "usage": "[số|all]", "aliases": ["sn"]},
@@ -677,6 +680,36 @@ class HelpView:
             embed.add_field(
                 name="Cách dùng",
                 value="`res yang` sẽ gọi nội dung auto res của key `yang`. Có thể dùng `{user}`, `{target}`, `{key}` trong nội dung.",
+                inline=False,
+            )
+        if command["name"] == "note":
+            embed.add_field(
+                name="Cách dùng",
+                value=(
+                    "`note` xem danh sách note của bạn bằng text thường.\n"
+                    "`note <nội dung> <số tiền>` thêm note kèm tiền, ví dụ `note mua đồ 100k`.\n"
+                    "`note <nội dung>` thêm note không có tiền.\n"
+                    "`note del 1,2` hoặc `note d 1,2` xoá note theo số thứ tự.\n"
+                    "`note 2 +100k` cộng tiền vào note số 2.\n"
+                    "`note 2 -100k` trừ tiền khỏi note số 2.\n"
+                    "`notes` xem danh sách note bằng embed."
+                ),
+                inline=False,
+            )
+        if command["name"] == "notes":
+            embed.add_field(
+                name="Cách dùng",
+                value="`notes` hiển thị danh sách note trong embed. Nếu muốn text thường thì dùng `note`.",
+                inline=False,
+            )
+        if command["name"] == "math":
+            embed.add_field(
+                name="Cách dùng",
+                value=(
+                    "`math 120+520` ra `640`.\n"
+                    "`math 100.000 + 50,000` tự hiểu dấu phân tách số lớn.\n"
+                    "Hỗ trợ `+`, `-`, `*`, `/`, `^`, ngoặc `()`."
+                ),
                 inline=False,
             )
         if command["name"] == "role":
