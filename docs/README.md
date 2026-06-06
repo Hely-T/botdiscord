@@ -8,6 +8,8 @@ Bộ docs này là phần tài liệu chính của dự án sau refactor catalog
 2. [COMMANDS_REFERENCE.md](COMMANDS_REFERENCE.md)
 3. [PROJECT_STATUS.md](PROJECT_STATUS.md)
 
+Team member hoặc AI phải đọc `ARCHITECTURE.md` trước khi tạo cog, service, database hoặc UI mới.
+
 ## Mục tiêu
 
 - Giữ tài liệu gọn trong 3-4 file chính.
@@ -15,6 +17,9 @@ Bộ docs này là phần tài liệu chính của dự án sau refactor catalog
 - Docs trong folder này dành cho setup, phát triển và kiểm tra command.
 - Khi thêm lệnh mới, cập nhật `COMMANDS_REFERENCE.md`.
 - Khi đổi cấu trúc hoặc database, cập nhật `ARCHITECTURE.md`.
+- Không tạo thêm docs rời nếu nội dung có thể cập nhật vào 3 file trên.
+- UI mới theo `ui/<feature>/components.py`, `ui.py`, `emoji.py`.
+- Quyền quản trị dùng helper chung và `command_role.db`, không tạo bảng staff-role riêng.
 
 ## Version ghi chú
 
@@ -22,3 +27,4 @@ Bộ docs này là phần tài liệu chính của dự án sau refactor catalog
 - `v0.2`: refactor cogs theo catalog.
 - `v0.3`: thêm booking, role permission, admin DB và economy.
 - `v0.4`: thêm responsive profile, auto response, cash/give và cập nhật help.
+- `v0.7`: chuẩn hóa cog/service/UI, Ticket dùng quyền role DB chung.

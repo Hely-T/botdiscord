@@ -310,6 +310,44 @@ Placeholder auto response:
 - `/antiraid`
   - Bật/tắt chống raid trong server.
 
+### Ticket
+
+- `{prefix}ticket`
+  - Xem hướng dẫn nhanh hệ thống Ticket.
+- `{prefix}ticket manager`
+  - Mở bảng cấu hình Ticket.
+  - Quyền: bot admin hoặc role có quyền `ticket` trong `command_role.db`.
+- `{prefix}ticket panel`
+  - Gửi mới hoặc refresh panel mở Ticket.
+  - Quyền: bot admin hoặc role có quyền `ticket`.
+- `{prefix}ticket add @user`
+  - Thêm user vào Ticket hiện tại.
+- `{prefix}ticket remove @user`
+  - Xóa user khỏi Ticket hiện tại.
+  - Alias subcommand: `rm`.
+- `{prefix}ticket rename <tên>`
+  - Đổi tên kênh Ticket.
+- `{prefix}ticket transfer @user`
+  - Chuyển người nhận Ticket.
+- `{prefix}ticket unclaim`
+  - Gỡ người đang nhận Ticket.
+- `{prefix}ticket info`
+  - Xem thông tin Ticket hiện tại.
+- `{prefix}ticket close [lý do]`
+  - Đóng Ticket, tạo transcript và archive/xóa theo cấu hình.
+- `/ticket manager`
+  - Mở giao diện quản lý Ticket.
+- `/ticket info`
+  - Xem Ticket hiện tại.
+- `/ticket close [reason]`
+  - Đóng Ticket hiện tại.
+
+Các thao tác manager, panel, claim, thêm/xóa user, rename, transfer và unclaim dùng chung key quyền `ticket`. Cấp quyền bằng:
+
+```text
+{prefix}addrole @role ticket
+```
+
 ### Operator
 
 - `{prefix}gitpull`

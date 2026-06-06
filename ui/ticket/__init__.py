@@ -1,1 +1,1 @@
-# UI Ticket package
+"""Ticket UI package."""

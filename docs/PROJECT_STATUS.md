@@ -2,9 +2,9 @@
 
 ## Phiên bản hiện tại
 
-`v0.4-dev`
+`v0.7-dev`
 
-Trạng thái: đang phát triển, đã refactor catalog cogs và thêm các nhóm lệnh chính cho booking/economy/responsive.
+Trạng thái: đang phát triển, đã chuẩn hóa catalog cog, service/database, role permission và UI theo feature.
 
 ## Đã có
 
@@ -23,6 +23,10 @@ Trạng thái: đang phát triển, đã refactor catalog cogs và thêm các nh
   - Slash: `/antiraid`.
 - Database tự tạo cho users, booking, role permission, admin, settings, guild settings và responsive.
 - Định dạng tiền VNĐ thống nhất.
+- Ticket dùng một cog tại `cogs/administrator/ticket_cog.py`.
+- Ticket dùng `TicketService` và `ticket_system.db`.
+- Ticket dùng chung quyền `ticket` trong `command_role.db`, không còn staff-role DB riêng.
+- UI feature được tách thành `components.py`, `ui.py`, `emoji.py`.
 
 ## Setup nhanh
 
@@ -52,10 +56,12 @@ Nên test thêm:
 
 1. Chọn catalog phù hợp trong `cogs/`.
 2. Gộp các lệnh liên quan vào cùng một cog.
-3. Tạo hoặc cập nhật service nếu có logic/database.
-4. Cập nhật `COMMANDS_REFERENCE.md` nếu thêm/sửa lệnh.
-5. Chạy compile/load test.
-6. Commit bằng tiếng Việt theo nhóm thay đổi.
+3. Kế thừa `AdminCommandBase` nếu cần hard admin/admin DB/role DB.
+4. Tạo hoặc cập nhật service nếu có logic/database; dùng `CogDatabase`.
+5. Tách UI thành `components.py`, `ui.py`, `emoji.py` nếu có giao diện.
+6. Cập nhật `COMMANDS_REFERENCE.md` nếu thêm/sửa lệnh.
+7. Chạy compile/load test.
+8. Commit bằng tiếng Việt theo nhóm thay đổi.
 
 ## Git workflow
 
@@ -71,3 +77,4 @@ Nên test thêm:
 - Hoàn thiện casino/marry/gift nếu tiếp tục phát triển.
 - Bổ sung test tự động cho service layer.
 - Rà soát permission chi tiết cho từng command admin khi thêm tính năng mới.
+- Tiếp tục chuyển UI đang hardcode trong cog cũ sang cấu trúc UI theo feature.

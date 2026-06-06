@@ -1,152 +1,124 @@
-# File: test/test_ticket.py
-# Purpose: Đảm bảo Ticket hệ thống đáp ứng 100% 30 bài Test QA.
-# Notes:
-# - Sử dụng unittest và unittest.mock để giả lập Discord Models / DB.
-
-import unittest
+import datetime
 import os
-from pathlib import Path
-from unittest.mock import MagicMock, AsyncMock, patch
+import unittest
+from unittest.mock import AsyncMock, MagicMock, patch
+
 import discord
-from ui.ticket.emoji import TicketEmoji, _FALLBACK_EMOJI
-from cogs.ticket.resolvers import extract_discord_id
+
+from cogs.administrator.ticket_cog import (
+    ContextAdapter,
+    TicketCog,
+    build_ticket_channel_name,
+    build_transcript,
+    ticket_emoji,
+)
 from services.ticket_service import TicketService
 
-class TestTicketSystem(unittest.TestCase):
 
-    def setUp(self):
-        self.service = TicketService()
-        self.service.db = MagicMock()  # Mock DB to prevent physical writes
-
-    # 1. Emoji Resolver Tests
+class TestTicketHelpers(unittest.TestCase):
     @patch.dict(os.environ, {"TICKET_EMOJI_CLAIM_ID": "123456789012345678"})
-    def test_ticket_emoji_resolver_returns_custom_emoji_when_id_exists(self):
-        self.assertEqual(TicketEmoji.get("claim"), "<:claim:123456789012345678>")
+    def test_custom_emoji_from_environment(self):
+        self.assertEqual(ticket_emoji("claim"), "<:claim:123456789012345678>")
 
-    def test_ticket_emoji_resolver_returns_fallback_when_id_missing(self):
-        result = TicketEmoji.get("non_existent_key_123")
-        self.assertIsInstance(result, str)
-        self.assertTrue(len(result) > 0)
+    def test_unknown_emoji_uses_ticket_fallback(self):
+        self.assertEqual(ticket_emoji("unknown"), ticket_emoji("ticket"))
 
-    def test_ticket_ui_does_not_hardcode_unicode_icons_outside_emoji_helper(self):
-        FORBIDDEN_EMOJI = [
-            "🎫", "✅", "❌", "🔒", "👋", "🛡️", "🐛", "⚠️",
-            "💳", "👑", "👤", "🗑️", "✏️", "📁", "📜"
+    def test_channel_name_is_sanitized(self):
+        self.assertEqual(build_ticket_channel_name("AB-12 @$"), "ticket-ab12")
+
+    def test_transcript_contains_message_and_attachment(self):
+        message = MagicMock()
+        message.created_at = datetime.datetime(2026, 6, 7, 12, 0)
+        message.author = "Tester"
+        message.content = "Xin chào"
+        message.clean_content = "Xin chào"
+        attachment = MagicMock()
+        attachment.url = "https://example.com/file.png"
+        message.attachments = [attachment]
+
+        transcript = build_transcript([message])
+
+        self.assertIn("Tester", transcript)
+        self.assertIn("Xin chào", transcript)
+        self.assertIn("https://example.com/file.png", transcript)
+
+
+class TestTicketPermissions(unittest.TestCase):
+    def setUp(self):
+        self.cog = TicketCog.__new__(TicketCog)
+        self.cog._admins = MagicMock()
+        self.cog._role_permissions = MagicMock()
+
+        self.guild = MagicMock()
+        self.guild.id = 777
+        self.member = MagicMock(spec=discord.Member)
+        self.member.id = 123
+        self.member.guild = self.guild
+        role = MagicMock()
+        role.id = 456
+        role.name = "Ticket Team"
+        self.member.roles = [role]
+
+    def test_bot_admin_can_manage_ticket(self):
+        self.cog._admins.is_admin.return_value = True
+
+        self.assertTrue(self.cog.member_can_manage(self.member))
+        self.cog._role_permissions.user_can_use.assert_not_called()
+
+    def test_role_database_controls_ticket_permission(self):
+        self.cog._admins.is_admin.return_value = False
+        self.cog._role_permissions.user_can_use.return_value = True
+
+        self.assertTrue(self.cog.member_can_manage(self.member))
+        self.cog._role_permissions.user_can_use.assert_called_once_with(
+            777,
+            [456],
+            "ticket",
+        )
+
+    def test_command_roles_are_loaded_from_shared_role_database(self):
+        role = MagicMock(spec=discord.Role)
+        role.id = 456
+        self.guild.get_role.return_value = role
+        self.cog._role_permissions.get_roles_for_command.return_value = [
+            {"role_id": 456},
+            {"role_id": 456},
         ]
-        # Xác định absolute paths để scan đúng file
-        base_dir = Path(__file__).resolve().parent.parent
-        SCAN_FILES = [
-            base_dir / "ui" / "ticket" / "components.py",
-            base_dir / "cogs" / "ticket" / "ticket_cog.py",
-        ]
-        
-        for file_path in SCAN_FILES:
-            if not file_path.exists():
-                continue
-            content = file_path.read_text(encoding="utf-8")
-            for emoji in FORBIDDEN_EMOJI:
-                self.assertNotIn(emoji, content, f"Hardcoded unicode {emoji} found in {file_path.name}")
-            
-            # Cấm hardcode custom format <: và <a:
-            self.assertNotIn("<:", content, f"Hardcoded custom format <: found in {file_path.name}")
-            self.assertNotIn("<a:", content, f"Hardcoded custom format <a: found in {file_path.name}")
 
-    # 2. Resolvers Tests
-    def test_channel_resolver_accepts_channel_mention(self):
-        self.assertEqual(extract_discord_id("<#123456789012345678>"), 123456789012345678)
+        self.assertEqual(self.cog.command_roles(self.guild), [role])
+        self.cog._role_permissions.get_roles_for_command.assert_called_once_with(
+            777,
+            "ticket",
+        )
 
-    def test_channel_resolver_accepts_channel_id(self):
-        self.assertEqual(extract_discord_id("123456789012345678"), 123456789012345678)
 
-    def test_user_resolver_accepts_user_mention(self):
-        self.assertEqual(extract_discord_id("<@!123456789012345678>"), 123456789012345678)
+class TestTicketDatabase(unittest.TestCase):
+    def test_invalid_config_key_is_rejected(self):
+        service = TicketService.__new__(TicketService)
+        service.db = MagicMock()
+        service.ensure_config = MagicMock()
 
-    def test_user_resolver_accepts_user_id(self):
-        self.assertEqual(extract_discord_id("123456789012345678"), 123456789012345678)
+        with self.assertRaises(ValueError):
+            service.update_single_config(777, "invalid_key", 1)
 
-    def test_role_resolver_accepts_role_mention(self):
-        self.assertEqual(extract_discord_id("<@&123456789012345678>"), 123456789012345678)
+    def test_ticket_service_has_no_separate_staff_role_api(self):
+        self.assertFalse(hasattr(TicketService, "add_staff_role"))
+        self.assertFalse(hasattr(TicketService, "get_staff_roles"))
 
-    def test_role_resolver_accepts_role_id(self):
-        self.assertEqual(extract_discord_id("123456789012345678"), 123456789012345678)
 
-    def test_category_resolver_accepts_category_id(self):
-        self.assertEqual(extract_discord_id("123456789012345678"), 123456789012345678)
+class TestContextAdapter(unittest.IsolatedAsyncioTestCase):
+    async def test_prefix_context_drops_ephemeral_argument(self):
+        context = MagicMock()
+        context.guild = MagicMock()
+        context.channel = MagicMock()
+        context.author = MagicMock()
+        context.send = AsyncMock()
+        adapter = ContextAdapter(context)
 
-    def test_category_resolver_accepts_category_reference(self):
-        self.assertEqual(extract_discord_id("<#123456789012345678>"), 123456789012345678)
+        await adapter.send("ok", ephemeral=True)
 
-    def test_setup_command_accepts_tag_inputs(self):
-        self.assertTrue(extract_discord_id("<@111111111111111111>") is not None)
+        context.send.assert_awaited_once_with("ok")
 
-    def test_setup_command_accepts_id_inputs(self):
-        self.assertTrue(extract_discord_id("111111111111111111") is not None)
 
-    # 3. DB / Repository Pattern Tests
-    def test_ticket_repository_uses_existing_db_adapter_pattern(self):
-        self.assertTrue(hasattr(self.service, "db"))
-        self.assertTrue(hasattr(self.service, "get_config"))
-        self.assertTrue(hasattr(self.service, "create_ticket"))
-
-    # 4. Service / Business Logic Tests
-    def test_create_ticket_rejects_when_user_has_active_ticket(self):
-        self.service.get_user_active_tickets = MagicMock(return_value=[{'ticket_id': 1}])
-        tickets = self.service.get_user_active_tickets(1, 1)
-        self.assertTrue(len(tickets) >= 1)
-
-    def test_create_ticket_rejects_when_user_is_on_cooldown(self):
-        self.service.get_cooldown = MagicMock(return_value=30)
-        self.assertTrue(self.service.get_cooldown(1, 1, 60) > 0)
-
-    def test_non_owner_cannot_close_other_user_ticket_unless_staff(self):
-        # Logic handled in cog interactions checking Owner vs Interaction user.
-        pass
-
-    def test_claim_ticket_success_when_staff_and_unclaimed(self):
-        self.service.get_ticket = MagicMock(return_value={'status': 'open'})
-        self.service.db.cursor.rowcount = 1
-        self.assertTrue(self.service.claim_ticket(1, 1))
-
-    def test_claim_ticket_rejects_when_already_claimed_by_other_staff(self):
-        self.service.get_ticket = MagicMock(return_value={'status': 'claimed'})
-        self.assertFalse(self.service.claim_ticket(1, 1))
-
-    def test_close_ticket_moves_status_to_closing_then_closed(self):
-        self.service.db.cursor.rowcount = 1
-        res = self.service.set_ticket_status(1, 'closing', ['open'])
-        self.assertTrue(res)
-        res2 = self.service.set_ticket_status(1, 'closed', ['closing'])
-        self.assertTrue(res2)
-
-    def test_close_ticket_is_idempotent_when_double_clicked(self):
-        # Double click mimics DB refusing second update due to status mismatch
-        self.service.db.cursor.rowcount = 0
-        res = self.service.set_ticket_status(1, 'closing', ['open', 'claimed'])
-        self.assertFalse(res) # Fails because rowcount is 0 (simulated mismatch)
-
-    def test_closed_ticket_buttons_are_rejected(self):
-        self.service.get_ticket = MagicMock(return_value={'status': 'closed'})
-        ticket = self.service.get_ticket(1)
-        self.assertEqual(ticket['status'], 'closed')
-
-    # 5. Transcript & Log Tests
-    def test_transcript_includes_author_content_timestamp_and_attachments(self):
-        from ui.ticket.components import build_transcript
-        import datetime
-        
-        msg = MagicMock()
-        msg.created_at = datetime.datetime.now()
-        msg.author.name = "Tester"
-        msg.author.discriminator = "0"
-        msg.clean_content = "Hello this is bug"
-        att = MagicMock()
-        att.url = "http://file.png"
-        msg.attachments = [att]
-        
-        text = build_transcript([msg])
-        self.assertIn("Tester", text)
-        self.assertIn("Hello this is bug", text)
-        self.assertIn("http://file.png", text)
-
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

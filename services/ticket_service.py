@@ -61,14 +61,6 @@ class TicketService:
             message TEXT,
             created_at TEXT NOT NULL
         ''')
-        self.db.create_table('ticket_staff_roles', '''
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            guild_id INTEGER NOT NULL,
-            role_id INTEGER NOT NULL,
-            ticket_type TEXT DEFAULT 'all',
-            created_at TEXT NOT NULL,
-            UNIQUE(guild_id, role_id, ticket_type)
-        ''')
         self._ensure_schema()
 
     def _ensure_column(self, table: str, column: str, ddl: str) -> None:
@@ -103,16 +95,6 @@ class TicketService:
         except Exception as e:
             logger.exception(f"Ticket Index creation failed: {e}")
             
-        # Migration backward compatibility
-        try:
-            configs = self.db.fetch("SELECT guild_id, staff_role_id FROM ticket_config WHERE staff_role_id IS NOT NULL")
-            for c in configs:
-                if c['staff_role_id']:
-                    self.add_staff_role(c['guild_id'], int(c['staff_role_id']), 'all')
-                    self.db.execute("UPDATE ticket_config SET staff_role_id = NULL WHERE guild_id = ?", (c['guild_id'],))
-        except Exception as e:
-            logger.error(f"Migration staff roles failed: {e}")
-
     def get_config(self, guild_id: int) -> Optional[Dict]:
         return self.db.select_one('ticket_config', 'guild_id = ?', (guild_id,))
 
@@ -248,25 +230,6 @@ class TicketService:
         if not last_tickets: return 0
         elapsed = time.time() - float(last_tickets[0]['last_activity_at'])
         return max(0, int(cooldown_seconds - elapsed))
-
-    def add_staff_role(self, guild_id: int, role_id: int, ticket_type: str = 'all') -> bool:
-        try:
-            return self.db.insert('ticket_staff_roles', {
-                'guild_id': guild_id, 'role_id': role_id, 'ticket_type': ticket_type.lower(), 'created_at': get_timestamp()
-            })
-        except: return False
-
-    def remove_staff_role(self, guild_id: int, role_id: int, ticket_type: str = 'all') -> bool:
-        return self.db.delete('ticket_staff_roles', 'guild_id = ? AND role_id = ? AND ticket_type = ?', (guild_id, role_id, ticket_type.lower()))
-
-    def get_staff_roles(self, guild_id: int) -> List[Dict]:
-        return self.db.fetch('SELECT * FROM ticket_staff_roles WHERE guild_id = ?', (guild_id,))
-        
-    def get_staff_roles_for_type(self, guild_id: int, ticket_type: str) -> List[Dict]:
-        normalized = str(ticket_type).strip().lower()
-        if normalized == "contact_admin":
-            normalized = "admin"
-        return self.db.fetch('SELECT role_id FROM ticket_staff_roles WHERE guild_id = ? AND (ticket_type = ? OR ticket_type = ?)', (guild_id, normalized, 'all'))
 
     def get_all_active_tickets(self, guild_id: int) -> List[Dict]:
         return self.db.fetch("SELECT * FROM tickets WHERE guild_id = ? AND status IN ('open', 'claimed', 'closing')", (guild_id,))

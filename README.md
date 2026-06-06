@@ -11,8 +11,9 @@ Bot Discord viết bằng `discord.py`, được tổ chức theo hướng catal
 - Role permission: cấp quyền dùng command theo Discord role trong database, hỗ trợ nhiều role và nhiều command cùng lúc.
 - Admin bot: hard admin từ `.env`, admin mềm trong database.
 - Responsive profile và auto response: `ar`, `form`, `res`, `up`.
+- Ticket: panel, manager, claim, transcript, archive và quyền staff qua role DB.
 - Operator: pull/status/reload/load/unload/cogs/prefix.
-- Slash command hiện có: `/antiraid`.
+- Slash command theo nhóm: `/antiraid`, `/giveaway`, `/group`, `/level`, `/ticket`.
 
 ## Cách chạy
 
@@ -49,6 +50,11 @@ BOT DISCORD/
 │   ├── role/
 │   └── administrator/
 ├── services/
+├── ui/
+│   └── <feature>/
+│       ├── components.py
+│       ├── ui.py
+│       └── emoji.py
 ├── models/
 ├── docs/
 └── README.md
@@ -60,6 +66,12 @@ BOT DISCORD/
 - Những lệnh liên quan thì gộp chung một cog.
 - Không tách mỗi lệnh thành một file riêng.
 - Không gom toàn bộ catalog vào một file quá lớn.
+- Cog chỉ chứa command, quyền và nghiệp vụ điều phối.
+- Database đặt trong `services/` và phải dùng `utils.CogDatabase`.
+- Lệnh quản trị dùng `AdminCommandBase` để check hard admin/admin DB/role DB.
+- Button, select và modal đặt trong `ui/<feature>/components.py`.
+- Embed và giao diện đặt trong `ui/<feature>/ui.py`.
+- Discord emoji ID và fallback đặt trong `ui/<feature>/emoji.py`.
 
 Ví dụ:
 
@@ -68,6 +80,23 @@ Ví dụ:
 - `cogs/administrator/luong_cog.py`: `tongluong` và tương thích lệnh lương cũ.
 - `cogs/administrator/ban_cog.py`: `ban`, `unban`, `kick`.
 - `cogs/role/role_cog.py`: `addrole`, `removerole`, `setrole`, `perms`, `myroles`, `rolescommands`.
+- `cogs/administrator/ticket_cog.py`: toàn bộ command Ticket; UI nằm trong `ui/ticket/`, DB nằm trong `services/ticket_service.py`.
+
+## Quy chuẩn cho team và AI
+
+Trước khi thêm tính năng, đọc [Architecture](docs/ARCHITECTURE.md). Không tạo database hoặc hệ thống quyền mới nếu đã có nguồn dùng chung.
+
+Mẫu bắt buộc cho lệnh quản trị:
+
+```python
+class ExampleCog(AdminCommandBase):
+    @commands.command(name="example")
+    async def example(self, ctx):
+        if not await self.require_role_or_admin_ctx(ctx, "example"):
+            return
+```
+
+Role dùng lệnh được cấu hình bằng `baddrole @role example` và lưu trong `command_role.db`.
 
 ## Tài liệu chi tiết
 
@@ -81,4 +110,3 @@ Ví dụ:
 - Không commit `.env`, database `.db`, logs hoặc `__pycache__`.
 - Database sẽ tự tạo trong thư mục `database/` khi bot chạy.
 - Sau khi pull code mới trên server, có thể dùng lệnh reload/load theo catalog hoặc theo cog.
-Initializing repository

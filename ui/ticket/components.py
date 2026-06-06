@@ -1,30 +1,46 @@
-# File: ui/ticket/components.py
-# Purpose: Chứa các giao diện tương tác (Button, Select) cho Ticket.
-# Notes:
-# - Sử dụng ui/ticket/emoji.py để không hardcode icon.
-# - Tách bạch UI Layer với Database Layer (gọi service gián tiếp hoặc qua callback).
+from __future__ import annotations
+
+import re
 
 import discord
-from discord.ui import View, Select, Button, Modal, TextInput
-from ui.ticket.emoji import TicketEmoji
-from utils import create_error_splash, create_info_splash
-from cogs.ticket.interaction_utils import safe_send, defer_if_needed
-import logging
+from discord.ui import Button, ChannelSelect, Modal, Select, TextInput, UserSelect, View
+
+from ui.ticket.emoji import ticket_emoji
+from ui.ticket.ui import (
+    TICKET_TYPES,
+    build_ticket_close_cancelled_embed,
+    build_ticket_close_progress_embed,
+    build_ticket_create_cancelled_embed,
+    build_ticket_create_progress_embed,
+    build_ticket_guide_embed,
+    safe_interaction_send,
+)
+
 
 class TicketTypeSelect(Select):
-    def __init__(self, create_callback):
+    def __init__(self, cog):
         options = [
-            discord.SelectOption(label="Hỗ trợ chung/event", value="support", emoji=TicketEmoji.get("support")),
-            discord.SelectOption(label="Báo lỗi", value="bug", emoji=TicketEmoji.get("bug")),
-            discord.SelectOption(label="Tố cáo", value="report", emoji=TicketEmoji.get("report")),
-            discord.SelectOption(label="Thanh toán", value="payment", emoji=TicketEmoji.get("payment")),
-            discord.SelectOption(label="Liên hệ Admin", value="contact_admin", emoji=TicketEmoji.get("contact_admin"))
+            discord.SelectOption(label=label, value=value, emoji=ticket_emoji(value))
+            for value, label in TICKET_TYPES.items()
         ]
-        super().__init__(placeholder="Chọn loại yêu cầu hỗ trợ...", min_values=1, max_values=1, options=options, custom_id="ticket_panel_select")
-        self.create_callback = create_callback
+        super().__init__(
+            placeholder="Chọn loại yêu cầu hỗ trợ...",
+            min_values=1,
+            max_values=1,
+            options=options,
+            custom_id="ticket:type",
+        )
+        self.cog = cog
 
     async def callback(self, interaction: discord.Interaction):
-        await self.create_callback(interaction, self.values[0])
+        await self.cog.handle_ticket_type_selected(interaction, self.values[0])
+
+
+class TicketTypeView(View):
+    def __init__(self, cog):
+        super().__init__(timeout=120)
+        self.add_item(TicketTypeSelect(cog))
+
 
 class TicketCreateConfirmView(View):
     def __init__(self, cog, ticket_type: str, owner_id: int):
@@ -34,162 +50,305 @@ class TicketCreateConfirmView(View):
         self.owner_id = owner_id
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
-        if interaction.user.id != self.owner_id:
-            await safe_send(interaction, embed=create_error_splash(TicketEmoji.text("error", "Từ chối"), "Chỉ người mở vé mới có thể xác nhận."), ephemeral=True)
-            return False
-        return True
+        if interaction.user.id == self.owner_id:
+            return True
+        await safe_interaction_send(
+            interaction,
+            content=f"{ticket_emoji('error')} Chỉ người mở ticket mới được xác nhận.",
+            ephemeral=True,
+        )
+        return False
 
-    @discord.ui.button(label="Xác nhận tạo ticket", style=discord.ButtonStyle.success, emoji=TicketEmoji.get("confirm"))
+    @discord.ui.button(label="Xác nhận", style=discord.ButtonStyle.success, emoji=ticket_emoji("confirm"))
     async def confirm(self, interaction: discord.Interaction, button: Button):
-        try:
-            await interaction.response.edit_message(
-                embed=create_info_splash(TicketEmoji.text("ticket", "Đang xử lý..."), "Hệ thống đang thiết lập vé cho bạn, vui lòng đợi trong giây lát..."), 
-                view=None
-            )
-        except Exception:
-            logging.getLogger(__name__).exception("[TICKET_CREATE] failed to disable confirm buttons")
-            
-        await self.cog.handle_create_ticket_confirmed(interaction, self.ticket_type)
+        await interaction.response.edit_message(
+            embed=build_ticket_create_progress_embed(),
+            view=None,
+        )
+        await self.cog.handle_create_ticket(interaction, self.ticket_type)
 
-    @discord.ui.button(label="Hủy", style=discord.ButtonStyle.secondary, emoji=TicketEmoji.get("cancel"))
+    @discord.ui.button(label="Hủy", style=discord.ButtonStyle.secondary, emoji=ticket_emoji("cancel"))
     async def cancel(self, interaction: discord.Interaction, button: Button):
-        await interaction.response.edit_message(embed=create_info_splash(TicketEmoji.text("cancel", "Đã Hủy"), "Thao tác mở vé đã bị hủy bỏ."), view=None)
+        await interaction.response.edit_message(
+            embed=build_ticket_create_cancelled_embed(),
+            view=None,
+        )
 
-class TicketCreateSelectView(View):
-    def __init__(self, create_callback):
-        super().__init__(timeout=120)
-        self.add_item(TicketTypeSelect(create_callback))
-        
-class TicketPanelButtonsView(View):
+
+class TicketPanelView(View):
     def __init__(self, cog):
         super().__init__(timeout=None)
         self.cog = cog
 
-    @discord.ui.button(label="Mở Ticket Mới", style=discord.ButtonStyle.primary, custom_id="panel_open_ticket", emoji=TicketEmoji.get("ticket"))
-    async def btn_open(self, interaction: discord.Interaction, button: Button):
-        await self.cog.handle_panel_open_click(interaction)
+    @discord.ui.button(
+        label="Mở Ticket",
+        style=discord.ButtonStyle.primary,
+        emoji=ticket_emoji("ticket"),
+        custom_id="ticket:open",
+    )
+    async def open_ticket(self, interaction: discord.Interaction, button: Button):
+        await self.cog.handle_panel_open(interaction)
 
-    @discord.ui.button(label="Hướng Dẫn", style=discord.ButtonStyle.secondary, custom_id="panel_instructions", emoji=TicketEmoji.get("log"))
-    async def btn_instructions(self, interaction: discord.Interaction, button: Button):
-        await self.cog.handle_panel_instructions_click(interaction)
+    @discord.ui.button(
+        label="Hướng dẫn",
+        style=discord.ButtonStyle.secondary,
+        emoji=ticket_emoji("log"),
+        custom_id="ticket:guide",
+    )
+    async def guide(self, interaction: discord.Interaction, button: Button):
+        await safe_interaction_send(interaction, embed=build_ticket_guide_embed(), ephemeral=True)
 
-class TicketControlView(View):
-    def __init__(self, claim_cb, close_cb, manage_cb):
-        super().__init__(timeout=None)
-        self.claim_cb = claim_cb
-        self.close_cb = close_cb
-        self.manage_cb = manage_cb
-        
-        self.btn_claim = Button(label="Claim", style=discord.ButtonStyle.success, custom_id="ticket_claim", emoji=TicketEmoji.get("claim"))
-        self.btn_claim.callback = self.on_claim
-        
-        self.btn_manage = Button(label="Quản lý", style=discord.ButtonStyle.secondary, custom_id="ticket_manage", emoji=TicketEmoji.get("manage"))
-        self.btn_manage.callback = self.on_manage
-
-        self.btn_close = Button(label="Close", style=discord.ButtonStyle.danger, custom_id="ticket_close", emoji=TicketEmoji.get("close"))
-        self.btn_close.callback = self.on_close
-        
-        self.add_item(self.btn_claim)
-        self.add_item(self.btn_manage)
-        self.add_item(self.btn_close)
-
-    async def on_claim(self, interaction: discord.Interaction):
-        await self.claim_cb(interaction)
-
-    async def on_manage(self, interaction: discord.Interaction):
-        await self.manage_cb(interaction)
-
-    async def on_close(self, interaction: discord.Interaction):
-        await self.close_cb(interaction)
 
 class TicketCloseConfirmView(View):
-    def __init__(self, confirm_cb, reason: str = ""):
+    def __init__(self, cog, reason: str):
         super().__init__(timeout=120)
-        self.confirm_cb = confirm_cb
+        self.cog = cog
         self.reason = reason
-        
-        btn_confirm = Button(label="Xác nhận đóng", style=discord.ButtonStyle.danger, custom_id="ticket_confirm_close", emoji=TicketEmoji.get("confirm"))
-        btn_confirm.callback = self.on_confirm
-        
-        btn_cancel = Button(label="Hủy", style=discord.ButtonStyle.secondary, custom_id="ticket_cancel_close", emoji=TicketEmoji.get("cancel"))
-        btn_cancel.callback = self.on_cancel
-        
-        self.add_item(btn_confirm)
-        self.add_item(btn_cancel)
 
-    async def on_confirm(self, interaction: discord.Interaction):
-        try:
-            await interaction.response.edit_message(embed=create_info_splash(TicketEmoji.text("lock", "Đang xử lý..."), "Hệ thống đang lưu trữ và đóng vé..."), view=None)
-        except discord.HTTPException:
-            pass
-        await self.confirm_cb(interaction, self.reason)
+    @discord.ui.button(label="Xác nhận đóng", style=discord.ButtonStyle.danger, emoji=ticket_emoji("close"))
+    async def confirm(self, interaction: discord.Interaction, button: Button):
+        await interaction.response.edit_message(
+            embed=build_ticket_close_progress_embed(),
+            view=None,
+        )
+        await self.cog.handle_confirm_close(interaction, self.reason)
 
-    async def on_cancel(self, interaction: discord.Interaction):
-        try:
-            await interaction.response.edit_message(embed=create_info_splash(TicketEmoji.text("cancel", "Đã Hủy"), "Thao tác đóng vé đã bị hủy bỏ."), view=None)
-        except discord.HTTPException:
-            pass
-            
-class EditReasonModal(Modal, title="Cập nhật lý do đóng Ticket"):
-    reason_input = TextInput(
-        label="Lý do mới",
-        style=discord.TextStyle.paragraph,
-        required=True,
-        max_length=1000
-    )
+    @discord.ui.button(label="Hủy", style=discord.ButtonStyle.secondary, emoji=ticket_emoji("cancel"))
+    async def cancel(self, interaction: discord.Interaction, button: Button):
+        await interaction.response.edit_message(
+            embed=build_ticket_close_cancelled_embed(),
+            view=None,
+        )
+
+
+class TicketRenameModal(Modal, title="Đổi tên Ticket"):
+    def __init__(self, cog):
+        super().__init__()
+        self.cog = cog
+        self.name_input = TextInput(label="Tên mới", required=True, max_length=50)
+        self.add_item(self.name_input)
 
     async def on_submit(self, interaction: discord.Interaction):
-        new_reason = self.reason_input.value.strip()
+        await self.cog.core_rename(self.cog.context_adapter(interaction), self.name_input.value)
+
+
+class TicketManageView(View):
+    def __init__(self, cog):
+        super().__init__(timeout=120)
+        self.cog = cog
+
+    @discord.ui.select(cls=UserSelect, placeholder="Thêm thành viên...")
+    async def add_user(self, interaction: discord.Interaction, select: UserSelect):
+        await self.cog.core_add_user(self.cog.context_adapter(interaction), select.values[0])
+
+    @discord.ui.select(cls=UserSelect, placeholder="Xóa thành viên...")
+    async def remove_user(self, interaction: discord.Interaction, select: UserSelect):
+        await self.cog.core_remove_user(self.cog.context_adapter(interaction), select.values[0])
+
+    @discord.ui.select(cls=UserSelect, placeholder="Chuyển ticket cho người quản trị...")
+    async def transfer(self, interaction: discord.Interaction, select: UserSelect):
+        await self.cog.core_transfer(self.cog.context_adapter(interaction), select.values[0])
+
+    @discord.ui.button(label="Đổi tên", style=discord.ButtonStyle.secondary, emoji=ticket_emoji("rename"))
+    async def rename(self, interaction: discord.Interaction, button: Button):
+        await interaction.response.send_modal(TicketRenameModal(self.cog))
+
+    @discord.ui.button(label="Unclaim", style=discord.ButtonStyle.secondary)
+    async def unclaim(self, interaction: discord.Interaction, button: Button):
+        await self.cog.core_unclaim(self.cog.context_adapter(interaction))
+
+    @discord.ui.button(label="Thông tin", style=discord.ButtonStyle.primary)
+    async def info(self, interaction: discord.Interaction, button: Button):
+        await self.cog.core_info(self.cog.context_adapter(interaction))
+
+
+class TicketControlView(View):
+    def __init__(self, cog):
+        super().__init__(timeout=None)
+        self.cog = cog
+
+    @discord.ui.button(
+        label="Claim",
+        style=discord.ButtonStyle.success,
+        emoji=ticket_emoji("claim"),
+        custom_id="ticket:claim",
+    )
+    async def claim(self, interaction: discord.Interaction, button: Button):
+        await self.cog.handle_claim(interaction)
+
+    @discord.ui.button(
+        label="Quản lý",
+        style=discord.ButtonStyle.secondary,
+        emoji=ticket_emoji("manage"),
+        custom_id="ticket:manage",
+    )
+    async def manage(self, interaction: discord.Interaction, button: Button):
+        await self.cog.handle_manage(interaction)
+
+    @discord.ui.button(
+        label="Đóng",
+        style=discord.ButtonStyle.danger,
+        emoji=ticket_emoji("close"),
+        custom_id="ticket:close",
+    )
+    async def close(self, interaction: discord.Interaction, button: Button):
+        await self.cog.core_close_request(self.cog.context_adapter(interaction), "")
+
+
+class TicketConfigView(View):
+    def __init__(self, cog):
+        super().__init__(timeout=300)
+        self.cog = cog
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        return await self.cog.require_role_or_admin_interaction(interaction, "ticket")
+
+    @discord.ui.select(cls=ChannelSelect, channel_types=[discord.ChannelType.text], placeholder="Chọn kênh Panel...")
+    async def panel_channel(self, interaction: discord.Interaction, select: ChannelSelect):
+        await self.cog.save_config_value(interaction, "panel_channel_id", select.values[0].id, "Kênh panel")
+
+    @discord.ui.select(cls=ChannelSelect, channel_types=[discord.ChannelType.category], placeholder="Chọn danh mục Ticket...")
+    async def ticket_category(self, interaction: discord.Interaction, select: ChannelSelect):
+        await self.cog.save_config_value(interaction, "ticket_category_id", select.values[0].id, "Danh mục ticket")
+
+    @discord.ui.select(cls=ChannelSelect, channel_types=[discord.ChannelType.category], placeholder="Chọn danh mục lưu trữ...")
+    async def archive_category(self, interaction: discord.Interaction, select: ChannelSelect):
+        self.cog.service.update_single_config(interaction.guild.id, "close_mode", "archive")
+        await self.cog.save_config_value(interaction, "archive_category_id", select.values[0].id, "Danh mục lưu trữ")
+
+    @discord.ui.select(cls=ChannelSelect, channel_types=[discord.ChannelType.text], placeholder="Chọn kênh Log...")
+    async def log_channel(self, interaction: discord.Interaction, select: ChannelSelect):
+        await self.cog.save_config_value(interaction, "log_channel_id", select.values[0].id, "Kênh log")
+
+    @discord.ui.button(label="Tắt lưu trữ", style=discord.ButtonStyle.danger, row=4)
+    async def disable_archive(self, interaction: discord.Interaction, button: Button):
+        self.cog.service.update_single_config(interaction.guild.id, "archive_category_id", None)
+        self.cog.service.update_single_config(interaction.guild.id, "close_mode", "delete")
+        await safe_interaction_send(interaction, content="✅ Đã chuyển chế độ đóng ticket sang xóa kênh.", ephemeral=True)
+
+
+class TicketLimitModal(Modal, title="Cấu hình Ticket"):
+    def __init__(self, cog, config: dict):
+        super().__init__()
+        self.cog = cog
+        self.max_open = TextInput(
+            label="Số ticket tối đa mỗi người",
+            default=str(config.get("max_open_tickets", 1)),
+            required=True,
+        )
+        self.cooldown = TextInput(
+            label="Cooldown tạo ticket (giây)",
+            default=str(config.get("cooldown_seconds", 60)),
+            required=True,
+        )
+        self.add_item(self.max_open)
+        self.add_item(self.cooldown)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        if not await self.cog.require_role_or_admin_interaction(interaction, "ticket"):
+            return
+        try:
+            max_open = int(self.max_open.value)
+            cooldown = int(self.cooldown.value)
+            if not 1 <= max_open <= 10 or cooldown < 0:
+                raise ValueError
+        except ValueError:
+            await safe_interaction_send(
+                interaction,
+                content=f"{ticket_emoji('error')} Max ticket phải từ 1-10 và cooldown không được âm.",
+                ephemeral=True,
+            )
+            return
+        self.cog.service.update_single_config(interaction.guild.id, "max_open_tickets", max_open)
+        self.cog.service.update_single_config(interaction.guild.id, "cooldown_seconds", cooldown)
+        await safe_interaction_send(interaction, content="✅ Đã lưu giới hạn Ticket.", ephemeral=True)
+
+
+class TicketManagerView(View):
+    def __init__(self, cog):
+        super().__init__(timeout=300)
+        self.cog = cog
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        return await self.cog.require_role_or_admin_interaction(interaction, "ticket")
+
+    @discord.ui.button(label="Cấu hình kênh", style=discord.ButtonStyle.primary, emoji=ticket_emoji("channel"))
+    async def channels(self, interaction: discord.Interaction, button: Button):
+        await safe_interaction_send(
+            interaction,
+            content="Chọn kênh hoặc danh mục cần cấu hình:",
+            view=TicketConfigView(self.cog),
+            ephemeral=True,
+        )
+
+    @discord.ui.button(label="Giới hạn", style=discord.ButtonStyle.secondary, emoji=ticket_emoji("settings"))
+    async def limits(self, interaction: discord.Interaction, button: Button):
+        config = self.cog.service.ensure_config(interaction.guild.id)
+        await interaction.response.send_modal(TicketLimitModal(self.cog, config))
+
+    @discord.ui.button(label="Gửi / Refresh Panel", style=discord.ButtonStyle.success, emoji=ticket_emoji("refresh"))
+    async def panel(self, interaction: discord.Interaction, button: Button):
+        await self.cog.handle_send_panel(interaction)
+
+
+class TicketLogReasonModal(Modal, title="Sửa lý do đóng Ticket"):
+    def __init__(self, cog, ticket_id: int, current_reason: str):
+        super().__init__()
+        self.cog = cog
+        self.ticket_id = ticket_id
+        self.reason = TextInput(
+            label="Lý do",
+            style=discord.TextStyle.paragraph,
+            default=current_reason,
+            required=True,
+            max_length=1000,
+        )
+        self.add_item(self.reason)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        self.cog.service.db.execute(
+            "UPDATE tickets SET close_reason = ? WHERE ticket_id = ?",
+            (self.reason.value.strip(), self.ticket_id),
+        )
         embed = interaction.message.embeds[0]
-        
-        ticket_id = None
-        for i, field in enumerate(embed.fields):
-            if "Reason" in field.name:
-                embed.set_field_at(i, name=field.name, value=new_reason, inline=field.inline)
-            elif "Ticket ID" in field.name:
-                ticket_id = int(field.value)
-        
+        for index, field in enumerate(embed.fields):
+            if "Lý do" in field.name:
+                embed.set_field_at(index, name=field.name, value=self.reason.value.strip(), inline=field.inline)
+                break
         await interaction.response.edit_message(embed=embed)
-        
-        if ticket_id:
-            from services.ticket_service import TicketService
-            TicketService().db.execute("UPDATE tickets SET close_reason = ? WHERE ticket_id = ?", (new_reason, ticket_id))
+
 
 class TicketLogView(View):
-    def __init__(self):
+    def __init__(self, cog):
         super().__init__(timeout=None)
-        
-    @discord.ui.button(label="Sửa Lý Do", style=discord.ButtonStyle.secondary, custom_id="ticket_log_edit_reason", emoji=TicketEmoji.get("rename"))
-    async def btn_edit_reason(self, interaction: discord.Interaction, button: Button):
-        modal = EditReasonModal()
-        for field in interaction.message.embeds[0].fields:
-            if "Reason" in field.name and field.value != "No reason specified":
-                modal.reason_input.default = field.value
-                break
-        await interaction.response.send_modal(modal)
-        
-def build_transcript(messages: list[discord.Message]) -> str:
-    """Tạo văn bản lưu lại nội dung hội thoại gọn gàng, tinh gọn."""
-    lines = [
-        "==================================================",
-        "              TICKET TRANSCRIPT LOG               ",
-        "==================================================",
-        f"Time: {discord.utils.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC",
-        f"Messages: {len(messages)}",
-        "=============================\n"
-    ]
-    for msg in reversed(messages):
-        # Bỏ qua tin nhắn (ví dụ của bot) mà không có nội dung text hay đính kèm file
-        if not msg.content and not msg.attachments:
-            continue
-            
-        time_str = msg.created_at.strftime("%Y-%m-%d %H:%M")
-        author = msg.author.name
-        content = msg.clean_content.replace('\n', '\n    ')
-        atts = " | ".join([a.url for a in msg.attachments])
-        
-        line = f"[{time_str}] {author}: {content}" if content else f"[{time_str}] {author}:"
-        lines.append(line)
-        if atts: lines.append(f"    [Files: {atts}]")
-        
-    return "\n".join(lines)
+        self.cog = cog
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        return await self.cog.require_role_or_admin_interaction(interaction, "ticket")
+
+    @discord.ui.button(
+        label="Sửa lý do",
+        style=discord.ButtonStyle.secondary,
+        emoji=ticket_emoji("rename"),
+        custom_id="ticket:log_reason",
+    )
+    async def edit_reason(self, interaction: discord.Interaction, button: Button):
+        if not interaction.message.embeds:
+            return
+        embed = interaction.message.embeds[0]
+        ticket_id = None
+        current_reason = ""
+        for field in embed.fields:
+            if "Ticket ID" in field.name:
+                match = re.search(r"\d+", field.value)
+                ticket_id = int(match.group()) if match else None
+            if "Lý do" in field.name:
+                current_reason = field.value
+        if ticket_id is None:
+            await safe_interaction_send(
+                interaction,
+                content=f"{ticket_emoji('error')} Không tìm thấy Ticket ID.",
+                ephemeral=True,
+            )
+            return
+        await interaction.response.send_modal(TicketLogReasonModal(self.cog, ticket_id, current_reason))

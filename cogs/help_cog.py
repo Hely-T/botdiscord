@@ -126,6 +126,7 @@ HELP_CATEGORIES = [
             {"name": "subcash", "description": "Trừ cash của user", "usage": "@user amount", "aliases": ["sc"]},
             {"name": "subluong", "description": "Trừ lương của booking", "usage": "@user amount", "aliases": ["sl"]},
             {"name": "subtime", "description": "Trừ giờ của user", "usage": "@user hours", "aliases": []},
+            {"name": "ticket", "description": "Quản lý và sử dụng hệ thống ticket", "usage": "manager|panel|add|remove|rename|transfer|unclaim|info|close", "aliases": []},
             {"name": "tongluong", "description": "Xem tổng lương", "usage": "", "aliases": ["tl"]},
             {"name": "topstar", "description": "Xem top star", "usage": "[limit]", "aliases": []},
             {"name": "unban", "description": "Gỡ ban một thành viên", "usage": "user_id [reason]", "aliases": []},
@@ -137,6 +138,7 @@ HELP_CATEGORIES = [
             {"name": "antiraid", "description": "Bật chế độ chống raid", "usage": "", "aliases": []},
             {"name": "giveaway", "description": "Một slash tổng, chọn create/set/end/reroll/config bên trong", "usage": "action: create|set|end|reroll|config", "aliases": []},
             {"name": "group", "description": "Một slash tổng, chọn join/leave bên trong", "usage": "action: join|leave", "aliases": []},
+            {"name": "ticket", "description": "Quản lý, xem thông tin hoặc đóng ticket", "usage": "manager|info|close", "aliases": []},
         ],
     },
 ]

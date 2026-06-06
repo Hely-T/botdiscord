@@ -1,130 +1,308 @@
 # Architecture
 
-Bot được chia theo catalog cogs, service layer và database riêng theo nghiệp vụ.
+Tài liệu này là quy chuẩn bắt buộc khi team hoặc AI thêm tính năng mới. Mục tiêu là giữ code dễ tìm, không đăng ký trùng command, không tạo nhiều nguồn database và không tự viết thêm một hệ thống quyền riêng.
 
-## Luồng chạy chính
+## Luồng chuẩn
 
-`main.py -> load cogs -> Discord command -> Cog -> Service -> Database -> Response`
+```text
+Discord command/interaction
+        ↓
+cogs/<catalog>/<feature>_cog.py
+        ↓
+services/<feature>_service.py
+        ↓
+utils.CogDatabase
+        ↓
+database/<name>.db
+```
 
-## Entry point
+Nếu tính năng có giao diện:
 
-`main.py` chịu trách nhiệm:
+```text
+cog nghiệp vụ
+  ├── gọi ui/<feature>/components.py
+  ├── gọi ui/<feature>/ui.py
+  └── giao diện lấy icon từ ui/<feature>/emoji.py
+```
 
-- Tạo bot instance.
-- Bật `message_content`.
-- Cấu hình SSL context cho Discord API.
-- Load toàn bộ `_cog.py` trong `cogs/` và subfolder.
-- Sync slash commands.
-- Xử lý lỗi command cơ bản.
+## Trách nhiệm từng layer
 
-## Cog loader
+### Cog
 
-`cogs/cog_loader_utils.py` load recursive theo folder:
+Cog chỉ chứa:
 
-- File hợp lệ phải kết thúc bằng `_cog.py`.
-- Có thể load/reload/unload một cog riêng.
-- Có thể load/reload/unload cả catalog folder.
-- Alias catalog quản trị như `admin`, `mod`, `operator` được map về `administrator`.
+- Prefix command và slash command.
+- Kiểm tra quyền qua helper dùng chung.
+- Điều phối luồng nghiệp vụ.
+- Gọi service để đọc/ghi dữ liệu.
+- Gọi UI để gửi embed, button, select hoặc modal.
 
-## Catalog cogs
+Cog không được:
+
+- Kết nối SQLite trực tiếp.
+- Tự tạo một database quyền riêng.
+- Chứa hàng loạt class `View`, `Select`, `Modal` hoặc mẫu embed.
+- Tách mỗi command liên quan thành một file riêng.
+- Để service hoặc UI import trực tiếp class cog, gây vòng phụ thuộc.
+
+### Service
+
+Service chịu trách nhiệm:
+
+- Tạo và migrate bảng.
+- Đọc/ghi database.
+- Business logic dùng chung.
+- Validate dữ liệu ở mức nghiệp vụ.
+- Cung cấp API ổn định cho cog.
+
+Mỗi service tạo database bằng:
+
+```python
+from utils import CogDatabase
+
+
+class ExampleService:
+    def __init__(self):
+        self.db = CogDatabase("example")
+        self._init_database()
+
+    def _init_database(self):
+        self.db.create_table(
+            "items",
+            """
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            guild_id INTEGER NOT NULL,
+            name TEXT NOT NULL
+            """,
+        )
+```
+
+`CogDatabase("example")` tự dùng đường dẫn `database/example.db`. Không nối chuỗi đường dẫn database thủ công và không đặt DB trong `cogs/`.
+
+### UI
+
+Tính năng có giao diện tạo folder:
+
+```text
+ui/<feature>/
+├── __init__.py
+├── emoji.py
+├── components.py
+└── ui.py
+```
+
+Quy ước:
+
+- `emoji.py`: fallback emoji, Discord emoji ID và hàm resolve emoji.
+- `components.py`: `View`, `Button`, `Select`, `Modal`, `TextInput`.
+- `ui.py`: embed, splash, nội dung trình bày và helper gửi interaction.
+- Không đặt business logic hoặc truy vấn database trong UI.
+- UI nhận đối tượng cog qua constructor và chỉ gọi public callback mà cog cung cấp.
+- Service không được truyền thẳng vào UI nếu UI có thể gọi callback của cog.
+- Cog không tự dựng embed nếu tính năng đã có folder UI.
+
+Ví dụ emoji:
+
+```python
+FALLBACK_EMOJIS = {"ticket": "🎫"}
+DISCORD_EMOJI_IDS = {"ticket": ""}
+
+
+def ticket_emoji(key: str) -> str:
+    ...
+```
+
+Khi thêm emoji Discord, chỉ cập nhật `DISCORD_EMOJI_IDS` hoặc biến môi trường tương ứng. Không hardcode ID emoji ở button/embed.
+
+## Quy tắc catalog và cog
+
+Loader tự tìm đệ quy mọi file kết thúc bằng `_cog.py`.
 
 ```text
 cogs/
 ├── help_cog.py
 ├── user/
-│   └── user_cog.py
 ├── booking/
-│   ├── luong_cog.py
-│   ├── star_cog.py
-│   └── top_cog.py
+├── bot/
+├── level/
 ├── role/
-│   └── role_cog.py
 └── administrator/
-    ├── ban_cog.py
-    ├── booking_settings_cog.py
-    ├── caprole_cog.py
-    ├── cash_cog.py
-    ├── customize_cog.py
-    ├── luong_cog.py
-    ├── mute_cog.py
-    ├── operator_cog.py
-    ├── responsive_cog.py
-    ├── security_cog.py
-    ├── star_cog.py
-    ├── time_cog.py
-    └── user_admin_cog.py
 ```
 
-## Quy tắc tạo cog mới
+Quy tắc nhóm file:
 
-- Mỗi catalog là một folder.
-- Những lệnh liên quan thì gộp chung trong cùng một cog.
-- Không tách mỗi command thành một file riêng.
-- Không gom toàn bộ catalog vào một file quá lớn.
+- Một catalog là một folder.
+- Một nhóm nghiệp vụ liên quan là một cog.
+- Không tách mỗi command thành một cog.
+- Không gom toàn bộ catalog vào một cog khổng lồ.
+- Các quyền quản trị như admin, mod, operator và staff nằm trong `administrator`.
 
-Ví dụ:
+Ví dụ đúng:
 
-- Lương: `luong`, `luong @user`, `luong all`, `luong a|r|e`, `tinhluong` nằm trong nhóm booking; `tongluong` nằm trong `administrator/luong_cog.py`.
-- Ban/Kick: `ban`, `unban`, `kick` nằm trong `administrator/ban_cog.py`.
-- Role permission: `addrole`, `removerole`, `setrole`, `perms`, `myroles`, `rolescommands` nằm trong `role/role_cog.py`.
-- Booking lương: `luong`, `tinhluong` nằm trong `booking/luong_cog.py`.
+- `administrator/ban_cog.py`: `ban`, `unban`, `kick`.
+- `booking/luong_cog.py`: `luong`, `tinhluong`, `traluong`.
+- `role/role_cog.py`: `role`, `addrole`, `removerole`, `setrole`, `perms`, `myroles`, `rolescommands`.
+- `administrator/ticket_cog.py`: toàn bộ command và nghiệp vụ Ticket.
 
-## Services
+Ví dụ sai:
 
 ```text
-services/
-├── admin_service.py
-├── booking_service.py
-├── git_service.py
-├── guild_settings_service.py
-├── responsive_service.py
-├── role_permission_service.py
-├── settings_service.py
-└── user_service.py
+cogs/ticket/add_user_cog.py
+cogs/ticket/remove_user_cog.py
+cogs/ticket/claim_cog.py
+cogs/ticket/close_cog.py
 ```
 
-Service xử lý business logic và làm việc với database qua `utils.CogDatabase`.
+Các command trên cùng thuộc Ticket nên phải nằm trong một `ticket_cog.py`. Button/embed của chúng đặt trong `ui/ticket/`.
 
-## Databases
+## Quyền admin và role DB
 
-Database tự tạo trong `database/` khi bot chạy.
+Nguồn quyền dùng chung:
 
-- `users.db`: user profile, cash, luong, star, giờ, donate, tổng tiền.
-- `booking.db`: booking stats, chi tiết mốc giờ, cấu hình giá, quà.
-- `command_role.db`: quyền dùng command theo Discord role.
-- `bot_admins.db`: admin mềm của bot.
-- `bot_settings.db`: prefix và setting global.
-- `guild_settings.db`: antiraid và role hệ thống như `booking`.
-- `responsive.db`: responsive profile, auto response, submitted form.
+- Hard admin: `DISCORD_OWNER_IDS` trong `.env`.
+- Admin mềm: `database/bot_admins.db`.
+- Quyền command theo Discord role: `database/command_role.db`.
+- Role hệ thống như `booking`: `database/guild_settings.db`.
 
-## Quyền sử dụng
+Cog quản trị phải kế thừa:
 
-- Hard admin lấy từ `DISCORD_OWNER_IDS` trong `.env`.
-- Admin mềm lưu trong `bot_admins.db`.
-- Role permission lưu trong `command_role.db`.
-- Role hệ thống như `booking` lưu trong `guild_settings.db`.
+```python
+from cogs.admin_command_utils import AdminCommandBase
 
-Với lệnh cần quản trị, điều kiện thường là:
 
-- Là hard admin hoặc admin DB.
-- Hoặc có Discord role đã được cấp quyền command trong DB.
+class ExampleCog(AdminCommandBase):
+    ...
+```
 
-## Economy
+Prefix command:
 
-- Mọi giá trị tiền dùng đơn vị VNĐ.
-- Hỗ trợ nhập `100000`, `100k`, `1m`, `1b`, `100.000`, `100,000`, `0,5m`.
-- Hiển thị tiền dạng `100,000 VNĐ`.
-- `cash`, `give` dùng chung nguồn tiền trong `users.db`.
-- `cash/luong/star/points/time` đều theo mẫu: xem mình, xem user khác, xem `all`, và quản trị bằng `a|r|e`.
-- Action xóa/trừ hỗ trợ `r`, `rm`, `remove`, `d`, `delete`.
+```python
+@commands.command(name="example")
+async def example(self, ctx):
+    if not await self.require_role_or_admin_ctx(ctx, "example"):
+        return
+```
 
-## Responsive profile
+Interaction, button hoặc slash command:
 
-`responsive_cog.py` xử lý:
+```python
+if not await self.require_role_or_admin_interaction(interaction, "example"):
+    return
+```
 
-- `ar`: thêm, sửa, xóa, gắn target, set ảnh, set description.
-- `form`: gửi form để user tự điền.
-- `res`: gọi auto response theo key.
-- `up`: gửi profile lên channel chỉ định.
+Kiểm tra không cần gửi lỗi ngay:
 
-Profile có thể dùng số `0`, tự crop thumbnail vuông khi set `turl`, và có thể lấy nội dung từ form user đã gửi.
+```python
+allowed = self.can_use_role_or_admin(ctx, "example")
+```
+
+Không được:
+
+- Chỉ dùng `member.guild_permissions.administrator`.
+- Tự tạo `example_staff_roles`.
+- Tạo một `AdminService`/`RolePermissionService` mới trong từng callback.
+- Kiểm tra role bằng tên cố định.
+- Ghi role permission vào database nghiệp vụ.
+
+Role được cấp quyền bằng:
+
+```text
+baddrole @role example
+bremoverole @role example
+```
+
+Một nhóm command dùng chung quyền phải thống nhất một key. Ví dụ toàn bộ Ticket dùng key `ticket`, kể cả manager, panel, claim, add/remove user và transfer.
+
+## Database và liên kết dữ liệu
+
+Trước khi tạo DB mới phải kiểm tra dữ liệu đã có nguồn chung chưa:
+
+- User, cash, lương cơ bản: `users.db` qua `UserService`.
+- Booking, mốc giờ, trả lương: `booking.db` qua `BookingService`.
+- Quyền command: `command_role.db` qua `RolePermissionService`.
+- Admin mềm: `bot_admins.db` qua `AdminService`.
+- Prefix: `bot_settings.db` qua `SettingsService`.
+- Role hệ thống: `guild_settings.db` qua `GuildSettingsService`.
+- Ticket: `ticket_system.db` qua `TicketService`.
+
+Không nhân đôi dữ liệu. Ví dụ Ticket không tạo bảng staff role riêng vì quyền staff đã có trong `command_role.db`.
+
+Khi dữ liệu phải liên kết:
+
+- Lưu Discord ID dưới dạng `INTEGER`.
+- Mọi query theo server phải có `guild_id`.
+- Mọi table cần tính theo user phải dùng `user_id`.
+- Tên hiển thị chỉ là dữ liệu phụ, không dùng thay ID.
+- Migration cột mới đặt trong service, dùng kiểm tra `PRAGMA table_info`.
+
+## Mẫu feature chuẩn
+
+```text
+cogs/administrator/example_cog.py
+services/example_service.py
+ui/example/__init__.py
+ui/example/emoji.py
+ui/example/components.py
+ui/example/ui.py
+test/test_example.py
+```
+
+Không bắt buộc tạo đủ mọi file:
+
+- Không có DB: không cần service.
+- Không có button/embed riêng: không cần folder UI.
+- Chỉ tạo file thực sự có trách nhiệm rõ ràng.
+- Không tạo `helpers.py`, `permissions.py`, `resolvers.py` riêng nếu helper nhỏ chỉ dùng cho một cog.
+
+## Ticket là mẫu tham chiếu
+
+Ticket hiện dùng cấu trúc:
+
+```text
+cogs/administrator/ticket_cog.py
+services/ticket_service.py
+ui/ticket/
+├── emoji.py
+├── components.py
+└── ui.py
+```
+
+- `ticket_cog.py`: command, callback nghiệp vụ, kiểm tra quyền và gọi service.
+- `ticket_service.py`: config, ticket, event, trạng thái và transcript metadata.
+- `components.py`: panel, control, manager, select và modal.
+- `ui.py`: toàn bộ embed/splash Ticket.
+- `emoji.py`: fallback và Discord emoji ID.
+- Tất cả thao tác quản trị dùng quyền `ticket` trong `command_role.db`.
+
+## Checklist trước khi code
+
+1. Tính năng thuộc catalog nào?
+2. Có cog liên quan để bổ sung chưa?
+3. Dữ liệu đã tồn tại trong service/DB nào?
+4. Command có cần admin hoặc role DB không?
+5. Nếu có quyền, key quyền dùng chung là gì?
+6. Có button/select/modal/embed không? Nếu có, tạo hoặc dùng `ui/<feature>/`.
+7. Có đang tạo file nhỏ chỉ để chứa một helper không cần thiết không?
+8. Help và command reference đã cập nhật chưa?
+
+## Checklist trước khi commit
+
+```bash
+python3 -m py_compile cogs/<catalog>/<feature>_cog.py
+python3 -m unittest discover -s test -p 'test_<feature>*.py'
+```
+
+Kiểm tra thêm:
+
+- Loader chỉ thấy một cog cho feature.
+- Không có command/slash trùng.
+- Không còn import đường dẫn cũ.
+- DB tự tạo trong `database/`.
+- Role DB thật sự điều khiển được command và button.
+- UI không truy vấn DB trực tiếp.
+
+## Chỉ dẫn ngắn cho AI
+
+Khi giao việc cho AI, yêu cầu AI đọc file này trước và tuân thủ:
+
+> Giữ command liên quan trong một cog theo catalog. Cog chỉ xử lý command/quyền/nghiệp vụ. Database đặt trong service và dùng `CogDatabase`. Lệnh quản trị kế thừa `AdminCommandBase`, dùng hard admin hoặc role permission trong `command_role.db`. Giao diện tách thành `ui/<feature>/components.py`, `ui.py`, `emoji.py`. Không tạo database quyền riêng và không tách mỗi command thành một file.
