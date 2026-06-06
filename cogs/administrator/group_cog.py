@@ -122,19 +122,36 @@ class ConfirmLeaveView(discord.ui.View):
 
         guild_name = guild.name
         guild_id = guild.id
+        for item in self.children:
+            item.disabled = True
+
+        await interaction.response.edit_message(
+            embed=create_info_splash(
+                "🚪 Đang Rời Server",
+                f"Bot đang rời `{guild_name}` (`{guild_id}`).\nNếu server được chọn là server hiện tại, bot sẽ không thể chỉnh thêm tin nhắn sau khi rời.",
+            ),
+            view=self,
+        )
+
         try:
             await guild.leave()
         except discord.HTTPException as exc:
-            await interaction.response.edit_message(
+            await interaction.edit_original_response(
                 embed=create_error_splash("❌ Leave Thất Bại", str(exc)),
                 view=None,
             )
             return
 
-        await interaction.response.edit_message(
-            embed=create_success_splash("✅ Đã Rời Server", f"Bot đã rời `{guild_name}` (`{guild_id}`)."),
-            view=None,
-        )
+        success_embed = create_success_splash("✅ Đã Rời Server", f"Bot đã rời `{guild_name}` (`{guild_id}`).")
+        try:
+            await interaction.edit_original_response(embed=success_embed, view=None)
+        except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+            pass
+
+        try:
+            await interaction.user.send(embed=success_embed)
+        except (discord.Forbidden, discord.HTTPException):
+            pass
 
     @discord.ui.button(label="Hủy", style=discord.ButtonStyle.secondary, emoji="↩️")
     async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button):

@@ -1,5 +1,6 @@
 import discord
 from discord.ext import commands
+from difflib import get_close_matches
 import os
 import ssl
 import aiohttp
@@ -46,6 +47,19 @@ def prefix_callable(bot, message):
     prefix = get_prefix()
     return commands.when_mentioned_or(prefix)(bot, message)
 
+
+def get_unknown_command_suggestion(bot, invoked: str | None) -> str | None:
+    invoked = (invoked or "").strip().lower()
+    if not invoked:
+        return None
+
+    if invoked.startswith("form") and len(invoked) > len("form"):
+        return None
+
+    command_names = sorted({name.lower() for name in bot.all_commands.keys()})
+    matches = get_close_matches(invoked, command_names, n=1, cutoff=0.78)
+    return matches[0] if matches else None
+
 async def main():
     intents = discord.Intents.default()
     intents.message_content = True
@@ -73,10 +87,10 @@ async def main():
     async def on_command_error(ctx, error):
         current_prefix = get_prefix()
         if isinstance(error, commands.CommandNotFound):
-            invoked = (ctx.invoked_with or "").lower()
-            if invoked.startswith("form") and len(invoked) > len("form"):
+            suggestion = get_unknown_command_suggestion(bot, ctx.invoked_with)
+            if not suggestion:
                 return
-            await ctx.send(f"❌ Lệnh không tồn tại! Gõ `{current_prefix}help` để xem danh sách lệnh.")
+            await ctx.send(f"❌ Lệnh `{current_prefix}{ctx.invoked_with}` không tồn tại. Có phải bạn muốn dùng `{current_prefix}{suggestion}`?")
         elif isinstance(error, commands.MissingRequiredArgument):
             await ctx.send(f"❌ Thiếu tham số! Gõ `{current_prefix}help {ctx.command}` để xem hướng dẫn.")
         else:
