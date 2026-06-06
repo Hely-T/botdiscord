@@ -3,6 +3,7 @@ from discord.ext import commands
 import os
 import ssl
 import aiohttp
+import certifi
 import sys
 from config import DISCORD_TOKEN, COGS_DIR, LOGS_DIR
 from cogs.cog_loader_utils import iter_cog_modules
@@ -48,7 +49,7 @@ def prefix_callable(bot, message):
 async def main():
     intents = discord.Intents.default()
     intents.message_content = True
-    ssl_context = ssl.create_default_context(cafile='/etc/ssl/cert.pem')
+    ssl_context = ssl.create_default_context(cafile=certifi.where())
     connector = aiohttp.TCPConnector(ssl=ssl_context)
     bot = commands.Bot(
         command_prefix=prefix_callable,

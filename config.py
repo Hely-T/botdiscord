@@ -6,8 +6,9 @@ load_dotenv()
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 # SSL certificates on macOS / Python.org builds
-os.environ.setdefault('SSL_CERT_FILE', '/etc/ssl/cert.pem')
-os.environ.setdefault('SSL_CERT_DIR', '/etc/ssl')
+if os.name != 'nt':  # Bỏ qua nếu chạy trên Windows (nt = Windows)
+    os.environ.setdefault('SSL_CERT_FILE', '/etc/ssl/cert.pem')
+    os.environ.setdefault('SSL_CERT_DIR', '/etc/ssl')
 
 # ============================================
 # Application Configuration
