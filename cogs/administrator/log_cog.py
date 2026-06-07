@@ -30,9 +30,16 @@ CATEGORY_ALIASES = {
     "msg": "chat",
     "voice": "voice",
     "vc": "voice",
+    "channel": "channel",
+    "channels": "channel",
+    "kenh": "channel",
+    "kênh": "channel",
     "server": "server",
     "guild": "server",
     "sv": "server",
+    "join": "member",
+    "joinleave": "member",
+    "join/leave": "member",
     "leave": "member",
     "out": "member",
     "member": "member",
@@ -44,8 +51,9 @@ CATEGORY_ALIASES = {
 CATEGORY_CHOICES = [
     app_commands.Choice(name="chat", value="chat"),
     app_commands.Choice(name="voice", value="voice"),
+    app_commands.Choice(name="channel", value="channel"),
     app_commands.Choice(name="server", value="server"),
-    app_commands.Choice(name="leave/out", value="member"),
+    app_commands.Choice(name="join/leave", value="member"),
     app_commands.Choice(name="all", value="all"),
 ]
 
@@ -55,7 +63,9 @@ ACTION_CHOICES = [
     app_commands.Choice(name="off", value="off"),
     app_commands.Choice(name="test", value="test"),
     app_commands.Choice(name="voice-announce", value="voice-announce"),
-    app_commands.Choice(name="voice-message", value="voice-message"),
+    app_commands.Choice(name="voice-room", value="voice-room"),
+    app_commands.Choice(name="voice-join-message", value="voice-join-message"),
+    app_commands.Choice(name="voice-leave-message", value="voice-leave-message"),
     app_commands.Choice(name="voice-embed", value="voice-embed"),
 ]
 
@@ -108,6 +118,10 @@ class LogCog(AdminCommandBase):
         return member.mention if member else fallback
 
     @staticmethod
+    def _asset_link(asset: discord.Asset | None) -> str:
+        return f"[Mở ảnh]({asset.url})" if asset else "`Không có`"
+
+    @staticmethod
     def _age_text(created_at: datetime) -> str:
         delta = datetime.now(timezone.utc) - created_at
         days = max(0, delta.days)
@@ -150,7 +164,11 @@ class LogCog(AdminCommandBase):
         if not isinstance(announce_channel, discord.TextChannel):
             return
         field = "voice_join_template" if template_key == "join" else "voice_leave_template"
-        template = config.get(field) or ("Dạ em chào đại ca {user} ạ" if template_key == "join" else "{user} vừa rời voice {channel}.")
+        template = config.get(field) or (
+            "{username} vừa vào kênh {channel_name}."
+            if template_key == "join"
+            else "{username} đã rời kênh {channel_name}."
+        )
         try:
             text = self._format_template(template, member, channel)
         except KeyError as exc:
@@ -161,6 +179,36 @@ class LogCog(AdminCommandBase):
                 await announce_channel.send(embed=build_basic_log_embed(title, text, "voice", member))
             else:
                 await announce_channel.send(text)
+        except (discord.Forbidden, discord.HTTPException):
+            pass
+
+    async def _send_voice_room_announce(
+        self,
+        member: discord.Member,
+        template_key: str,
+        channel: discord.VoiceChannel | discord.StageChannel | None,
+    ):
+        if channel is None or not hasattr(channel, "send"):
+            return
+        config = self.service.get_config(member.guild.id)
+        if not config or not int(config.get("voice_room_announce") or 0):
+            return
+        field = "voice_join_template" if template_key == "join" else "voice_leave_template"
+        template = config.get(field) or (
+            "{username} vừa vào kênh {channel_name}."
+            if template_key == "join"
+            else "{username} đã rời kênh {channel_name}."
+        )
+        try:
+            text = self._format_template(template, member, channel)
+        except KeyError as exc:
+            text = f"Template lỗi biến `{exc}`. Dùng: {{user}}, {{username}}, {{channel}}, {{channel_name}}, {{server}}."
+        try:
+            if int(config.get("voice_announce_embed") or 0):
+                title = "🎙️ Tham Gia Voice" if template_key == "join" else "🎙️ Rời Voice"
+                await channel.send(embed=build_basic_log_embed(title, text, "voice", member))
+            else:
+                await channel.send(text)
         except (discord.Forbidden, discord.HTTPException):
             pass
 
@@ -184,6 +232,21 @@ class LogCog(AdminCommandBase):
         if not tokens:
             return False
         sub = tokens[0].lower()
+        if sub in {"room", "rooms", "roomannounce", "room_announce"}:
+            enabled = len(tokens) < 2 or tokens[1].lower() in {"on", "enable", "bat", "bật", "true", "1"}
+            self.service.set_voice_room_announce(ctx.guild.id, enabled)
+            await ctx.send(
+                embed=create_success_splash(
+                    "✅ Đã Cập Nhật Voice Room",
+                    (
+                        "Bot sẽ thông báo vào chat của tất cả voice room khi có người vào/rời."
+                        if enabled
+                        else "Đã tắt thông báo vào/rời trong chat voice room."
+                    ),
+                )
+            )
+            return True
+
         if sub in {"announce", "ann", "notify", "greeting"}:
             if len(tokens) < 2:
                 await ctx.send(embed=create_error_splash("❌ Thiếu Kênh", "Dùng: `log voice announce #channel` hoặc `log voice announce off`."))
@@ -200,19 +263,29 @@ class LogCog(AdminCommandBase):
             await ctx.send(embed=create_success_splash("✅ Đã Set Voice Greeting", f"Thông báo voice greeting sẽ gửi ở {channel.mention}."))
             return True
 
-        if sub in {"message", "msg", "joinmsg", "template"}:
+        if sub in {"message", "msg", "joinmsg", "join_message", "template"}:
             template = raw_after_category.split(maxsplit=1)[1].strip() if len(raw_after_category.split(maxsplit=1)) > 1 else ""
             if not template:
-                await ctx.send(embed=create_error_splash("❌ Thiếu Nội Dung", "Dùng: `log voice message Dạ em chào {user} ạ`."))
+                await ctx.send(
+                    embed=create_error_splash(
+                        "❌ Thiếu Nội Dung",
+                        "Dùng: `log voice joinmsg {username} vừa vào {channel_name}`.",
+                    )
+                )
                 return True
             self.service.set_voice_template(ctx.guild.id, "join", template)
-            await ctx.send(embed=create_success_splash("✅ Đã Set Câu Chào Voice", template))
+            await ctx.send(embed=create_success_splash("✅ Đã Set Câu Vào Voice", template))
             return True
 
         if sub in {"leavemsg", "leave_message", "outmsg"}:
             template = raw_after_category.split(maxsplit=1)[1].strip() if len(raw_after_category.split(maxsplit=1)) > 1 else ""
             if not template:
-                await ctx.send(embed=create_error_splash("❌ Thiếu Nội Dung", "Dùng: `log voice leavemsg {user} vừa rời {channel}`."))
+                await ctx.send(
+                    embed=create_error_splash(
+                        "❌ Thiếu Nội Dung",
+                        "Dùng: `log voice leavemsg {username} đã rời {channel_name}`.",
+                    )
+                )
                 return True
             self.service.set_voice_template(ctx.guild.id, "leave", template)
             await ctx.send(embed=create_success_splash("✅ Đã Set Câu Rời Voice", template))
@@ -246,11 +319,11 @@ class LogCog(AdminCommandBase):
 
         if first in {"off", "disable", "tat", "tắt"}:
             if len(tokens) < 2:
-                await ctx.send(embed=create_error_splash("❌ Thiếu Loại Log", "Dùng: `log off chat|voice|server|leave|all`."))
+                await ctx.send(embed=create_error_splash("❌ Thiếu Loại Log", "Dùng: `log off chat|voice|channel|server|join|all`."))
                 return
             category = CATEGORY_ALIASES.get(tokens[1].lower())
             if not category:
-                await ctx.send(embed=create_error_splash("❌ Loại Log Không Hợp Lệ", "Chọn: chat, voice, server, leave/out hoặc all."))
+                await ctx.send(embed=create_error_splash("❌ Loại Log Không Hợp Lệ", "Chọn: chat, voice, channel, server, join/leave hoặc all."))
                 return
             await self._set_category_channel(ctx.guild, category, None)
             await ctx.send(embed=create_success_splash("✅ Đã Tắt Log", f"Đã tắt log `{category}`."))
@@ -264,7 +337,12 @@ class LogCog(AdminCommandBase):
 
         category = CATEGORY_ALIASES.get(first)
         if not category:
-            await ctx.send(embed=create_error_splash("❌ Sai Cú Pháp", "Dùng: `log chat|voice|server|leave #channel`, `log off <loại>`, `log voice announce #channel`."))
+            await ctx.send(
+                embed=create_error_splash(
+                    "❌ Sai Cú Pháp",
+                    "Dùng: `log chat|voice|channel|server|join #channel`, `log off <loại>`, `log voice room on`.",
+                )
+            )
             return
 
         after_category = raw.split(maxsplit=1)[1].strip() if len(tokens) >= 2 else ""
@@ -287,13 +365,13 @@ class LogCog(AdminCommandBase):
         label = "tất cả log" if category == "all" else f"log `{category}`"
         await ctx.send(embed=create_success_splash("✅ Đã Set Log", f"Đã set {label} về {channel.mention}."))
 
-    @app_commands.command(name="log", description="Setup log chat/voice/server/member")
+    @app_commands.command(name="log", description="Setup log toàn server")
     @app_commands.choices(action=ACTION_CHOICES, category=CATEGORY_CHOICES)
     @app_commands.describe(
         action="Thao tác log",
         category="Loại log",
-        channel="Kênh nhận log hoặc voice greeting",
-        message="Nội dung template voice, dùng {user}, {channel}, {server}",
+        channel="Kênh đích nhận log; bot vẫn theo dõi toàn bộ server",
+        message="Template voice: {user}, {username}, {channel}, {channel_name}, {server}",
         embed="Bật/tắt embed cho voice greeting",
     )
     async def slash_log(
@@ -336,12 +414,32 @@ class LogCog(AdminCommandBase):
             text = f"Voice greeting sẽ gửi ở {channel.mention}." if channel else "Đã tắt voice greeting."
             await interaction.response.send_message(embed=create_success_splash("✅ Đã Cập Nhật Voice Greeting", text), ephemeral=True)
             return
-        if action == "voice-message":
+        if action == "voice-room":
+            enabled = True if embed is None else bool(embed)
+            self.service.set_voice_room_announce(interaction.guild.id, enabled)
+            text = (
+                "Bot sẽ thông báo vào chat của tất cả voice room khi có người vào/rời."
+                if enabled
+                else "Đã tắt thông báo trong chat voice room."
+            )
+            await interaction.response.send_message(
+                embed=create_success_splash("✅ Đã Cập Nhật Voice Room", text),
+                ephemeral=True,
+            )
+            return
+        if action == "voice-join-message":
             if not message:
                 await interaction.response.send_message(embed=create_error_splash("❌ Thiếu Nội Dung", "Nhập template trong ô `message`."), ephemeral=True)
                 return
             self.service.set_voice_template(interaction.guild.id, "join", message)
-            await interaction.response.send_message(embed=create_success_splash("✅ Đã Set Câu Chào Voice", message), ephemeral=True)
+            await interaction.response.send_message(embed=create_success_splash("✅ Đã Set Câu Vào Voice", message), ephemeral=True)
+            return
+        if action == "voice-leave-message":
+            if not message:
+                await interaction.response.send_message(embed=create_error_splash("❌ Thiếu Nội Dung", "Nhập template trong ô `message`."), ephemeral=True)
+                return
+            self.service.set_voice_template(interaction.guild.id, "leave", message)
+            await interaction.response.send_message(embed=create_success_splash("✅ Đã Set Câu Rời Voice", message), ephemeral=True)
             return
         if action == "voice-embed":
             enabled = bool(embed)
@@ -413,16 +511,20 @@ class LogCog(AdminCommandBase):
             description = f"{member.mention} vừa vào {after.channel.mention}.\n**ID:** `{member.id}` • {local_time_text()}"
             await self._send_log(member.guild, "voice", embed=build_basic_log_embed("Voice joined", description, "voice", member))
             await self._send_voice_announce(member, "join", after.channel)
+            await self._send_voice_room_announce(member, "join", after.channel)
             return
         if before.channel is not None and after.channel is None:
             description = f"{member.mention} vừa rời {before.channel.mention}.\n**ID:** `{member.id}` • {local_time_text()}"
             await self._send_log(member.guild, "voice", embed=build_basic_log_embed("Voice left", description, "voice", member))
             await self._send_voice_announce(member, "leave", before.channel)
+            await self._send_voice_room_announce(member, "leave", before.channel)
             return
         if before.channel is not None and after.channel is not None:
             description = f"{member.mention} chuyển từ {before.channel.mention} sang {after.channel.mention}.\n**ID:** `{member.id}` • {local_time_text()}"
             await self._send_log(member.guild, "voice", embed=build_basic_log_embed("Voice moved", description, "voice", member))
+            await self._send_voice_room_announce(member, "leave", before.channel)
             await self._send_voice_announce(member, "join", after.channel)
+            await self._send_voice_room_announce(member, "join", after.channel)
 
     @commands.Cog.listener()
     async def on_member_join(self, member: discord.Member):
@@ -467,10 +569,42 @@ class LogCog(AdminCommandBase):
         if before.nick != after.nick:
             description = f"**Before:** `{before.nick or before.name}`\n**After:** `{after.nick or after.name}`\n**ID:** `{after.id}` • {local_time_text()}"
             await self._send_log(after.guild, "server", embed=build_basic_log_embed("Nickname update", description, "server", after))
-        if before.display_avatar.url != after.display_avatar.url:
-            embed = build_basic_log_embed("Avatar update", f"{after.mention}\n**ID:** `{after.id}` • {local_time_text()}", "server", after)
+        if before.guild_avatar != after.guild_avatar:
+            embed = build_basic_log_embed(
+                "Server avatar update",
+                (
+                    f"{after.mention}\n"
+                    f"**Avatar cũ:** {self._asset_link(before.guild_avatar)}\n"
+                    f"**Avatar mới:** {self._asset_link(after.guild_avatar)}\n"
+                    f"**ID:** `{after.id}` • {local_time_text()}"
+                ),
+                "server",
+                after,
+            )
             embed.set_thumbnail(url=after.display_avatar.url)
             await self._send_log(after.guild, "server", embed=embed)
+
+    @commands.Cog.listener()
+    async def on_user_update(self, before: discord.User, after: discord.User):
+        if before.avatar == after.avatar:
+            return
+        for guild in self.bot.guilds:
+            member = guild.get_member(after.id)
+            if member is None:
+                continue
+            embed = build_basic_log_embed(
+                "Avatar update",
+                (
+                    f"{member.mention}\n"
+                    f"**Avatar cũ:** {self._asset_link(before.avatar)}\n"
+                    f"**Avatar mới:** {self._asset_link(after.avatar)}\n"
+                    f"**ID:** `{after.id}` • {local_time_text()}"
+                ),
+                "server",
+                member,
+            )
+            embed.set_thumbnail(url=after.display_avatar.url)
+            await self._send_log(guild, "server", embed=embed)
 
     @commands.Cog.listener()
     async def on_guild_role_create(self, role: discord.Role):
@@ -521,7 +655,7 @@ class LogCog(AdminCommandBase):
             description += f"\n**Người tạo:** {actor.mention}"
         if reason:
             description += f"\n**Lý do:** {reason}"
-        await self._send_log(channel.guild, "server", embed=build_basic_log_embed("Channel created", description, "server", actor))
+        await self._send_log(channel.guild, "channel", embed=build_basic_log_embed("Channel created", description, "channel", actor))
 
     @commands.Cog.listener()
     async def on_guild_channel_delete(self, channel: discord.abc.GuildChannel):
@@ -531,7 +665,7 @@ class LogCog(AdminCommandBase):
             description += f"\n**Người xoá:** {actor.mention}"
         if reason:
             description += f"\n**Lý do:** {reason}"
-        await self._send_log(channel.guild, "server", embed=build_basic_log_embed("Channel deleted", description, "danger", actor))
+        await self._send_log(channel.guild, "channel", embed=build_basic_log_embed("Channel deleted", description, "danger", actor))
 
     @commands.Cog.listener()
     async def on_guild_channel_update(self, before: discord.abc.GuildChannel, after: discord.abc.GuildChannel):
@@ -548,7 +682,54 @@ class LogCog(AdminCommandBase):
         if reason:
             changes.append(f"**Lý do:** {reason}")
         changes.append(f"**ID:** `{after.id}` • {local_time_text()}")
-        await self._send_log(after.guild, "server", embed=build_basic_log_embed("Channel updated", "\n".join(changes), "server", actor))
+        await self._send_log(after.guild, "channel", embed=build_basic_log_embed("Channel updated", "\n".join(changes), "channel", actor))
+
+    @commands.Cog.listener()
+    async def on_thread_create(self, thread: discord.Thread):
+        description = (
+            f"**Thread:** {thread.mention}\n"
+            f"**Kênh:** {thread.parent.mention if thread.parent else '`Không rõ`'}\n"
+            f"**Chủ thread:** {self._member_tag(thread.owner)}\n"
+            f"**ID:** `{thread.id}` • {local_time_text()}"
+        )
+        await self._send_log(
+            thread.guild,
+            "channel",
+            embed=build_basic_log_embed("Thread created", description, "channel", thread.owner),
+        )
+
+    @commands.Cog.listener()
+    async def on_thread_delete(self, thread: discord.Thread):
+        description = (
+            f"**Name:** `{thread.name}`\n"
+            f"**Kênh:** {thread.parent.mention if thread.parent else '`Không rõ`'}\n"
+            f"**ID:** `{thread.id}` • {local_time_text()}"
+        )
+        await self._send_log(
+            thread.guild,
+            "channel",
+            embed=build_basic_log_embed("Thread deleted", description, "danger", thread.owner),
+        )
+
+    @commands.Cog.listener()
+    async def on_thread_update(self, before: discord.Thread, after: discord.Thread):
+        changes = []
+        if before.name != after.name:
+            changes.append(f"**Name:** `{before.name}` → `{after.name}`")
+        if before.archived != after.archived:
+            changes.append(f"**Archived:** `{before.archived}` → `{after.archived}`")
+        if before.locked != after.locked:
+            changes.append(f"**Locked:** `{before.locked}` → `{after.locked}`")
+        if before.slowmode_delay != after.slowmode_delay:
+            changes.append(f"**Slowmode:** `{before.slowmode_delay}s` → `{after.slowmode_delay}s`")
+        if not changes:
+            return
+        changes.append(f"**ID:** `{after.id}` • {local_time_text()}")
+        await self._send_log(
+            after.guild,
+            "channel",
+            embed=build_basic_log_embed("Thread updated", "\n".join(changes), "channel", after.owner),
+        )
 
     @commands.Cog.listener()
     async def on_guild_update(self, before: discord.Guild, after: discord.Guild):
