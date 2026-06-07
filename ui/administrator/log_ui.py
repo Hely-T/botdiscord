@@ -8,13 +8,15 @@ import discord
 LOG_CATEGORY_LABELS = {
     "chat": "Chat",
     "voice": "Voice",
+    "channel": "Channel",
     "server": "Server",
-    "member": "Member Leave/Out",
+    "member": "Member Join/Leave",
 }
 
 LOG_CATEGORY_EMOJIS = {
     "chat": "💬",
     "voice": "🎙️",
+    "channel": "🗂️",
     "server": "🧩",
     "member": "👥",
 }
@@ -22,6 +24,7 @@ LOG_CATEGORY_EMOJIS = {
 LOG_COLORS = {
     "chat": discord.Color.from_rgb(96, 165, 250),
     "voice": discord.Color.from_rgb(34, 197, 94),
+    "channel": discord.Color.from_rgb(14, 165, 233),
     "server": discord.Color.from_rgb(168, 85, 247),
     "member": discord.Color.from_rgb(251, 191, 36),
     "danger": discord.Color.from_rgb(239, 68, 68),
@@ -57,7 +60,7 @@ def truncate_text(value: str | None, limit: int = 950) -> str:
 def build_log_settings_embed(guild: discord.Guild, config: dict | None) -> discord.Embed:
     embed = discord.Embed(
         title="🧾 Log System",
-        description="Quản lý log chat, voice, server và member leave/out.",
+        description="Theo dõi toàn bộ chat, voice, channel, server và member join/leave.",
         color=discord.Color.from_rgb(59, 130, 246),
     )
     embed.set_author(name=guild.name, icon_url=guild.icon.url if guild.icon else None)
@@ -66,6 +69,7 @@ def build_log_settings_embed(guild: discord.Guild, config: dict | None) -> disco
         field_name = {
             "chat": "chat_channel_id",
             "voice": "voice_channel_id",
+            "channel": "channel_channel_id",
             "server": "server_channel_id",
             "member": "member_channel_id",
         }[category]
@@ -75,10 +79,20 @@ def build_log_settings_embed(guild: discord.Guild, config: dict | None) -> disco
 
     announce_id = config.get("voice_announce_channel_id")
     announce_text = f"<#{int(announce_id)}>" if announce_id else "`Tắt`"
-    embed.add_field(name="📣 Voice greeting", value=announce_text, inline=True)
+    embed.add_field(name="📣 Kênh voice announce chung", value=announce_text, inline=True)
     embed.add_field(
-        name="📝 Voice join template",
-        value=truncate_text(config.get("voice_join_template") or "Dạ em chào đại ca {user} ạ", 250),
+        name="🔊 Thông báo trong mọi voice room",
+        value="`Bật`" if int(config.get("voice_room_announce") or 0) else "`Tắt`",
+        inline=True,
+    )
+    embed.add_field(
+        name="📝 Câu thông báo vào voice",
+        value=truncate_text(config.get("voice_join_template") or "{username} vừa vào kênh {channel_name}.", 250),
+        inline=False,
+    )
+    embed.add_field(
+        name="📝 Câu thông báo rời voice",
+        value=truncate_text(config.get("voice_leave_template") or "{username} đã rời kênh {channel_name}.", 250),
         inline=False,
     )
     embed.add_field(
