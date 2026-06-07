@@ -7,6 +7,7 @@ import os
 import random
 import re
 import shutil
+import subprocess
 import sys
 import tempfile
 import time
@@ -148,6 +149,9 @@ class BotVoiceCog(commands.Cog):
         "setting": "settings",
         "config": "settings",
         "ui": "settings",
+        "debug": "debug",
+        "diag": "debug",
+        "test": "debug",
     }
 
     def __init__(self, bot: commands.Bot):
@@ -393,6 +397,113 @@ class BotVoiceCog(commands.Cog):
             return False
         return True
 
+    async def _run_ffmpeg_probe(self) -> tuple[bool, str]:
+        ffmpeg_path = self._find_ffmpeg()
+        if not ffmpeg_path:
+            return False, "Không tìm thấy ffmpeg."
+
+        def run_probe():
+            return subprocess.run(
+                [
+                    ffmpeg_path,
+                    "-hide_banner",
+                    "-loglevel",
+                    "error",
+                    "-f",
+                    "lavfi",
+                    "-i",
+                    "sine=frequency=1000:duration=0.2",
+                    "-f",
+                    "null",
+                    "-",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=8,
+            )
+
+        try:
+            result = await self.bot.loop.run_in_executor(None, run_probe)
+        except Exception as exc:
+            return False, str(exc)
+
+        output = (result.stderr or result.stdout or "").strip()
+        if result.returncode == 0:
+            return True, "FFmpeg tạo audio test OK."
+        return False, output or f"FFmpeg exit code {result.returncode}."
+
+    async def _normalize_voice_state(self, guild: discord.Guild, voice_client: discord.VoiceClient):
+        try:
+            await guild.change_voice_state(
+                channel=voice_client.channel,
+                self_mute=False,
+                self_deaf=False,
+            )
+        except (discord.Forbidden, discord.HTTPException, RuntimeError):
+            pass
+
+    async def _show_voice_debug(self, ctx):
+        if ctx.guild is None:
+            await ctx.send(embed=create_error_splash("❌ Chỉ Dùng Trong Server", "Debug voice chỉ hoạt động trong server."))
+            return
+
+        state = self._get_state(ctx.guild.id)
+        voice_client = self._find_guild_voice_client(ctx.guild) or ctx.voice_client or state.voice_client
+        if voice_client and voice_client.is_connected():
+            state.voice_client = voice_client
+
+        voice_ready, missing_package = self._refresh_voice_dependency_flags()
+        ffmpeg_ok, ffmpeg_detail = await self._run_ffmpeg_probe()
+        bot_member = ctx.guild.me or ctx.guild.get_member(self.bot.user.id)
+        target_channel = getattr(getattr(ctx.author, "voice", None), "channel", None)
+        bot_voice = getattr(bot_member, "voice", None) if bot_member else None
+
+        def ok_text(value: bool) -> str:
+            return "OK" if value else "LỖI"
+
+        lines = [
+            "**Voice runtime**",
+            f"Opus/PyNaCl/DAVE: `{ok_text(voice_ready)}`" + (f" (`{missing_package}`)" if missing_package else ""),
+            f"FFmpeg: `{ok_text(ffmpeg_ok)}`",
+            f"FFmpeg path: `{self._find_ffmpeg() or 'không tìm thấy'}`",
+            f"FFmpeg test: `{self._short_text(ffmpeg_detail, 180)}`",
+            "",
+            "**Discord voice**",
+            f"Bot connected: `{bool(voice_client and voice_client.is_connected())}`",
+            f"Bot channel: `{getattr(getattr(voice_client, 'channel', None), 'name', 'không có')}`",
+            f"User channel: `{getattr(target_channel, 'name', 'không có')}`",
+            f"is_playing/is_paused: `{bool(voice_client and voice_client.is_playing())}` / `{bool(voice_client and voice_client.is_paused())}`",
+            f"Volume: `{int(state.volume * 100)}%`",
+            f"Current: `{self._short_text(state.current.title, 80) if state.current else 'không có'}`",
+            f"Queue: `{len(state.queue)}`",
+        ]
+
+        if bot_voice:
+            lines.extend(
+                [
+                    "",
+                    "**Bot voice state**",
+                    f"self_mute/self_deaf: `{bot_voice.self_mute}` / `{bot_voice.self_deaf}`",
+                    f"server mute/deaf: `{bot_voice.mute}` / `{bot_voice.deaf}`",
+                ]
+            )
+            if bot_voice.mute or bot_voice.deaf:
+                lines.append("`CẢNH BÁO:` Bot đang bị server mute/deaf nên không thể phát tiếng.")
+            if bot_voice.self_mute or bot_voice.self_deaf:
+                lines.append("`CẢNH BÁO:` Bot đang self mute/deaf. Hãy dùng `leave` rồi `join` lại sau bản sửa này.")
+
+        if target_channel and bot_member:
+            permissions = target_channel.permissions_for(bot_member)
+            lines.extend(
+                [
+                    "",
+                    "**Quyền tại voice của bạn**",
+                    f"Connect/Speak: `{permissions.connect}` / `{permissions.speak}`",
+                ]
+            )
+
+        await ctx.send(embed=create_info_splash("🔎 Voice Debug", "\n".join(lines)))
+
     async def _require_package(self, ctx, package_name: str, install_name: str) -> bool:
         if not self._has_package(package_name):
             await ctx.send(
@@ -462,12 +573,13 @@ class BotVoiceCog(commands.Cog):
             else:
                 voice_client = await target_channel.connect(
                     timeout=VOICE_CONNECT_TIMEOUT,
-                    self_deaf=True,
+                    self_deaf=False,
                 )
                 self._set_voice_owner(state, ctx.author)
             state.voice_client = voice_client
             state.text_channel_id = ctx.channel.id
             self._cancel_idle(state)
+            await self._normalize_voice_state(ctx.guild, voice_client)
             return voice_client
         except asyncio.TimeoutError:
             await ctx.send(
@@ -499,12 +611,13 @@ class BotVoiceCog(commands.Cog):
                     await asyncio.sleep(1)
                     voice_client = await target_channel.connect(
                         timeout=VOICE_CONNECT_TIMEOUT,
-                        self_deaf=True,
+                        self_deaf=False,
                     )
                     self._set_voice_owner(state, ctx.author)
                     state.voice_client = voice_client
                     state.text_channel_id = ctx.channel.id
                     self._cancel_idle(state)
+                    await self._normalize_voice_state(ctx.guild, voice_client)
                     return voice_client
                 except asyncio.TimeoutError:
                     await ctx.send(
@@ -1515,6 +1628,9 @@ class BotVoiceCog(commands.Cog):
         if voice_client and voice_client.is_connected():
             state.voice_client = voice_client
 
+        if action == "debug":
+            await self._show_voice_debug(ctx)
+            return
         if action == "settings":
             await self._show_player_settings(ctx, rest)
             return
