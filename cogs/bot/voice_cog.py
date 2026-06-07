@@ -48,6 +48,8 @@ DEFAULT_VOLUME = 0.65
 FFMPEG_BEFORE_OPTIONS = "-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5"
 FFMPEG_OPTIONS = "-vn"
 VOICE_CONNECT_TIMEOUT = 20
+VOICE_RETRY_TIMEOUT = 35
+VOICE_RESET_DELAY = 1.5
 YTDLP_SEARCH_TIMEOUT = 35
 YTDLP_STREAM_TIMEOUT = 45
 TTS_CREATE_TIMEOUT = 25
@@ -544,6 +546,72 @@ class BotVoiceCog(commands.Cog):
                 return client
         return None
 
+    async def _finish_voice_connect(self, ctx, state: GuildAudioState, voice_client: discord.VoiceClient):
+        state.voice_client = voice_client
+        state.text_channel_id = ctx.channel.id
+        self._cancel_idle(state)
+        await self._normalize_voice_state(ctx.guild, voice_client)
+        return voice_client
+
+    async def _force_reset_voice_session(
+        self,
+        guild: discord.Guild,
+        voice_client: discord.VoiceClient | None = None,
+    ) -> str | None:
+        reset_error: str | None = None
+        if voice_client:
+            try:
+                await voice_client.disconnect(force=True)
+            except Exception as exc:
+                reset_error = str(exc)
+        try:
+            await guild.change_voice_state(channel=None, self_mute=False, self_deaf=False)
+        except Exception as exc:
+            reset_error = str(exc)
+        await asyncio.sleep(VOICE_RESET_DELAY)
+        return reset_error
+
+    async def _retry_voice_connect_after_timeout(
+        self,
+        ctx,
+        state: GuildAudioState,
+        target_channel: discord.VoiceChannel,
+        voice_client: discord.VoiceClient | None = None,
+    ) -> discord.VoiceClient | None:
+        reset_error = await self._force_reset_voice_session(ctx.guild, voice_client)
+        try:
+            new_client = await target_channel.connect(
+                timeout=VOICE_RETRY_TIMEOUT,
+                self_deaf=False,
+            )
+            self._set_voice_owner(state, ctx.author)
+            return await self._finish_voice_connect(ctx, state, new_client)
+        except asyncio.TimeoutError:
+            detail = (
+                "Bot đã reset voice session và thử join lại nhưng Discord vẫn timeout.\n"
+                "Nếu Opus/FFmpeg đều OK thì thường là VPS/firewall/nhà mạng đang chặn Discord voice UDP, "
+                "hoặc còn một process bot cũ đang giữ voice session.\n"
+                "Hãy tắt toàn bộ process bot cũ rồi chạy lại một process duy nhất; nếu vẫn lỗi, thử VPS/nhà mạng khác."
+            )
+            if reset_error:
+                detail += f"\nReset detail: `{self._short_text(reset_error, 160)}`"
+            await ctx.send(embed=create_error_splash("❌ Voice Timeout", detail))
+            return None
+        except discord.ClientException as exc:
+            await ctx.send(
+                embed=create_error_splash(
+                    "❌ Không Join Được Voice",
+                    f"Sau khi reset voice session vẫn không join được.\nChi tiết: `{exc}`",
+                )
+            )
+            return None
+        except discord.Forbidden:
+            await ctx.send(embed=create_error_splash("❌ Thiếu Quyền Discord", "Bot thiếu quyền vào/nói trong voice channel này."))
+            return None
+        except discord.HTTPException as exc:
+            await ctx.send(embed=create_error_splash("❌ Voice Lỗi", str(exc)))
+            return None
+
     async def _ensure_voice(self, ctx) -> discord.VoiceClient | None:
         if ctx.guild is None:
             await ctx.send(embed=create_error_splash("❌ Chỉ Dùng Trong Server", "Lệnh voice chỉ hoạt động trong server."))
@@ -587,29 +655,17 @@ class BotVoiceCog(commands.Cog):
                     self_deaf=False,
                 )
                 self._set_voice_owner(state, ctx.author)
-            state.voice_client = voice_client
-            state.text_channel_id = ctx.channel.id
-            self._cancel_idle(state)
-            await self._normalize_voice_state(ctx.guild, voice_client)
-            return voice_client
+            return await self._finish_voice_connect(ctx, state, voice_client)
         except asyncio.TimeoutError:
-            await ctx.send(
-                embed=create_error_splash(
-                    "❌ Voice Timeout",
-                    "Discord phản hồi voice quá lâu nên bot chưa vào được phòng. Thử lại sau vài giây hoặc đổi voice channel rồi gọi lại lệnh.",
-                )
-            )
+            return await self._retry_voice_connect_after_timeout(ctx, state, target_channel, voice_client)
         except discord.ClientException as exc:
             if "already connected" in str(exc).lower():
                 existing_client = self._find_guild_voice_client(ctx.guild)
                 if existing_client and existing_client.is_connected():
                     if existing_client.channel == target_channel:
-                        state.voice_client = existing_client
-                        state.text_channel_id = ctx.channel.id
                         if state.voice_owner_id is None:
                             self._set_voice_owner(state, ctx.author)
-                        self._cancel_idle(state)
-                        return existing_client
+                        return await self._finish_voice_connect(ctx, state, existing_client)
                     await ctx.send(
                         embed=create_error_splash(
                             "❌ Voice Đang Ở Phòng Khác",
@@ -617,35 +673,7 @@ class BotVoiceCog(commands.Cog):
                         )
                     )
                     return None
-                try:
-                    await ctx.guild.change_voice_state(channel=None)
-                    await asyncio.sleep(1)
-                    voice_client = await target_channel.connect(
-                        timeout=VOICE_CONNECT_TIMEOUT,
-                        self_deaf=False,
-                    )
-                    self._set_voice_owner(state, ctx.author)
-                    state.voice_client = voice_client
-                    state.text_channel_id = ctx.channel.id
-                    self._cancel_idle(state)
-                    await self._normalize_voice_state(ctx.guild, voice_client)
-                    return voice_client
-                except asyncio.TimeoutError:
-                    await ctx.send(
-                        embed=create_error_splash(
-                            "❌ Voice Timeout",
-                            "Bot vừa reset voice state nhưng Discord phản hồi quá lâu. Hãy thử lại sau vài giây.",
-                        )
-                    )
-                    return None
-                except (discord.ClientException, discord.Forbidden, discord.HTTPException) as reset_exc:
-                    await ctx.send(
-                        embed=create_error_splash(
-                            "❌ Không Reset Được Voice",
-                            f"Bot đang có voice session cũ nhưng process hiện tại không điều khiển được.\nChi tiết: `{reset_exc}`\nNếu vẫn lặp lại, hãy tắt process bot cũ trên VPS rồi chạy lại một process duy nhất.",
-                        )
-                    )
-                    return None
+                return await self._retry_voice_connect_after_timeout(ctx, state, target_channel, voice_client)
             await ctx.send(embed=create_error_splash("❌ Không Join Được Voice", str(exc)))
         except discord.Forbidden:
             await ctx.send(embed=create_error_splash("❌ Thiếu Quyền Discord", "Bot thiếu quyền vào/nói trong voice channel này."))
