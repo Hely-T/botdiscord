@@ -9,6 +9,7 @@ import re
 import shutil
 import sys
 import tempfile
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from types import SimpleNamespace
@@ -23,6 +24,17 @@ from cogs.admin_command_utils import (
     create_success_splash,
     format_duration_seconds,
 )
+from services.admin_service import AdminService
+from services.music_player_service import MusicPlayerService
+from services.role_permission_service import RolePermissionService
+from ui.bot.player_ui import (
+    MusicPlayerView,
+    PlayerCardData,
+    PlayerSettingsView,
+    build_player_embed,
+    build_player_file,
+    normalize_accent_color,
+)
 
 
 IDLE_TIMEOUT_SECONDS = 300
@@ -31,7 +43,13 @@ QUEUE_PAGE_SIZE = 12
 DEFAULT_VOLUME = 0.65
 FFMPEG_BEFORE_OPTIONS = "-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5"
 FFMPEG_OPTIONS = "-vn"
-WINDOWS_OPUS_NAMES = ("libopus-0.dll", "opus.dll", "libopus.dll")
+WINDOWS_OPUS_NAMES = (
+    "libopus-0.x64.dll",
+    "libopus-0.x86.dll",
+    "libopus-0.dll",
+    "opus.dll",
+    "libopus.dll",
+)
 POSIX_OPUS_NAMES = ("libopus", "opus")
 
 
@@ -47,6 +65,10 @@ class AudioItem:
     duration: int | None = None
     thumbnail: str | None = None
     local_file: str | None = None
+    video_id: str | None = None
+    artist: str | None = None
+    uploader: str | None = None
+    album: str | None = None
 
 
 @dataclass
@@ -63,6 +85,12 @@ class GuildAudioState:
     idle_task: asyncio.Task | None = None
     skip_requested: bool = False
     stop_requested: bool = False
+    player_message_id: int | None = None
+    player_channel_id: int | None = None
+    player_task: asyncio.Task | None = None
+    playback_started_at: float | None = None
+    playback_elapsed: float = 0.0
+    autoplay_history: list[str] = field(default_factory=list)
 
 
 class BotVoiceCog(commands.Cog):
@@ -110,6 +138,10 @@ class BotVoiceCog(commands.Cog):
         "rm": "remove",
         "delete": "remove",
         "del": "remove",
+        "settings": "settings",
+        "setting": "settings",
+        "config": "settings",
+        "ui": "settings",
     }
 
     def __init__(self, bot: commands.Bot):
@@ -120,11 +152,16 @@ class BotVoiceCog(commands.Cog):
         self._last_opus_error: str | None = None
         self._dll_directory_handles: list[Any] = []
         self._ffmpeg_path: str | None = None
+        self.admins = AdminService()
+        self.role_permissions = RolePermissionService()
+        self.player_service = MusicPlayerService()
 
     def cog_unload(self):
         for state in self.states.values():
             if state.idle_task and not state.idle_task.done():
                 state.idle_task.cancel()
+            if state.player_task and not state.player_task.done():
+                state.player_task.cancel()
 
     def _get_state(self, guild_id: int) -> GuildAudioState:
         if guild_id not in self.states:
@@ -200,7 +237,10 @@ class BotVoiceCog(commands.Cog):
         project_root = self._project_root()
         python_dir = Path(sys.executable).resolve().parent
         if os.name == "nt":
+            discord_bin = Path(discord.opus.__file__).resolve().parent / "bin"
+            architecture = "x64" if ctypes.sizeof(ctypes.c_void_p) * 8 > 32 else "x86"
             search_dirs = [
+                discord_bin,
                 project_root,
                 project_root / "bin",
                 project_root / "libs",
@@ -210,6 +250,7 @@ class BotVoiceCog(commands.Cog):
                 Path("C:/Program Files/ffmpeg/bin"),
                 Path("C:/Program Files/Opus/bin"),
             ]
+            candidates.append(str(discord_bin / f"libopus-0.{architecture}.dll"))
             for directory in search_dirs:
                 for name in WINDOWS_OPUS_NAMES:
                     candidates.append(str(directory / name))
@@ -250,6 +291,15 @@ class BotVoiceCog(commands.Cog):
             return True
 
         errors: list[str] = []
+        default_loader = getattr(discord.opus, "_load_default", None)
+        if callable(default_loader):
+            try:
+                if default_loader() and discord.opus.is_loaded():
+                    self._last_opus_error = None
+                    return True
+            except Exception as exc:
+                errors.append(f"discord.py bundled Opus: {exc}")
+
         for candidate in self._iter_opus_candidates():
             try:
                 candidate_path = Path(candidate)
@@ -259,7 +309,7 @@ class BotVoiceCog(commands.Cog):
                 if discord.opus.is_loaded():
                     self._last_opus_error = None
                     return True
-            except OSError as exc:
+            except (OSError, TypeError, AttributeError) as exc:
                 if len(errors) < 6:
                     errors.append(f"{candidate}: {exc}")
                 continue
@@ -269,10 +319,14 @@ class BotVoiceCog(commands.Cog):
     def _opus_install_hint(self) -> str:
         if os.name == "nt":
             detail = (
-                "Không load được `libopus-0.dll` trên Windows.\n"
-                "Cách sửa nhanh: kiểm tra file `C:\\ffmpeg\\bin\\libopus-0.dll` có tồn tại, "
-                "hoặc đặt biến môi trường `DISCORD_OPUS_LIBRARY=C:\\ffmpeg\\bin\\libopus-0.dll` rồi restart bot.\n"
-                "Nếu chưa có file này, cài bản FFmpeg full/shared từ Gyan rồi giải nén vào `C:\\ffmpeg`."
+                "Không load được Opus đi kèm `discord.py` trên Windows.\n"
+                "Chạy trong thư mục bot rồi restart process:\n"
+                "```bat\n"
+                ".venv\\Scripts\\python.exe -m pip install --upgrade --force-reinstall \"discord.py[voice]\"\n"
+                "```\n"
+                "Bot sẽ tự nhận file `.venv\\Lib\\site-packages\\discord\\bin\\libopus-0.x64.dll`; "
+                "không cần tự chép DLL từ FFmpeg.\n"
+                "Nếu file có tồn tại nhưng vẫn không load được, cài Microsoft Visual C++ Redistributable x64."
             )
             if self._last_opus_error:
                 detail += f"\n\nLần thử gần nhất:\n```text\n{self._short_text(self._last_opus_error, 650)}\n```"
@@ -402,6 +456,48 @@ class BotVoiceCog(commands.Cog):
             state.idle_task.cancel()
         state.idle_task = None
 
+    @staticmethod
+    def _playback_seconds(state: GuildAudioState) -> int:
+        elapsed = state.playback_elapsed
+        if state.playback_started_at is not None:
+            elapsed += max(0.0, time.monotonic() - state.playback_started_at)
+        return max(0, int(elapsed))
+
+    @staticmethod
+    def _pause_playback_clock(state: GuildAudioState):
+        if state.playback_started_at is not None:
+            state.playback_elapsed += max(0.0, time.monotonic() - state.playback_started_at)
+            state.playback_started_at = None
+
+    @staticmethod
+    def _resume_playback_clock(state: GuildAudioState):
+        if state.playback_started_at is None:
+            state.playback_started_at = time.monotonic()
+
+    def _cancel_player_refresh(self, state: GuildAudioState):
+        if state.player_task and not state.player_task.done():
+            state.player_task.cancel()
+        state.player_task = None
+
+    def _schedule_player_refresh(self, guild_id: int):
+        state = self._get_state(guild_id)
+        self._cancel_player_refresh(state)
+        state.player_task = self.bot.loop.create_task(self._player_refresh_loop(guild_id))
+
+    async def _player_refresh_loop(self, guild_id: int):
+        try:
+            while True:
+                await asyncio.sleep(15)
+                state = self._get_state(guild_id)
+                if not state.current or state.current.item_type != "music":
+                    return
+                voice_client = state.voice_client
+                if not voice_client or not voice_client.is_connected():
+                    return
+                await self._refresh_player_message(guild_id)
+        except asyncio.CancelledError:
+            return
+
     def _schedule_idle_disconnect(self, guild_id: int):
         state = self._get_state(guild_id)
         self._cancel_idle(state)
@@ -419,6 +515,7 @@ class BotVoiceCog(commands.Cog):
             await voice_client.disconnect(force=False)
             state.voice_client = None
             state.current = None
+            self._cancel_player_refresh(state)
             self._clear_voice_owner(state)
         except asyncio.CancelledError:
             return
@@ -473,6 +570,10 @@ class BotVoiceCog(commands.Cog):
             thumbnail=entry.get("thumbnail"),
             requester_id=requester.id,
             requester_name=requester.display_name,
+            video_id=str(entry.get("id")) if entry.get("id") else None,
+            artist=entry.get("artist") or entry.get("creator"),
+            uploader=entry.get("uploader") or entry.get("channel"),
+            album=entry.get("album"),
         )
 
     async def _extract_music_items(self, query: str, requester: discord.Member) -> list[AudioItem]:
@@ -547,6 +648,10 @@ class BotVoiceCog(commands.Cog):
         item.webpage_url = info.get("webpage_url") or item.webpage_url
         item.duration = info.get("duration") or item.duration
         item.thumbnail = info.get("thumbnail") or item.thumbnail
+        item.video_id = str(info.get("id")) if info.get("id") else item.video_id
+        item.artist = info.get("artist") or info.get("creator") or item.artist
+        item.uploader = info.get("uploader") or info.get("channel") or item.uploader
+        item.album = info.get("album") or item.album
         return item
 
     async def _create_tts_item(self, ctx, text: str) -> AudioItem:
@@ -588,14 +693,120 @@ class BotVoiceCog(commands.Cog):
                 id=previous.requester_id,
                 display_name=previous.requester_name,
             )
-            items = await self._extract_music_items(f"{previous.title} music", fake_requester)
-            for item in items:
-                if item.webpage_url != previous.webpage_url:
-                    state.queue.append(item)
-                    return True
+            seen = {
+                self._autoplay_item_key(item)
+                for item in [previous, *state.queue]
+                if self._autoplay_item_key(item)
+            }
+            seen.update(state.autoplay_history)
+
+            candidates: list[AudioItem] = []
+            if previous.video_id and "youtube.com" in str(previous.webpage_url or ""):
+                radio_url = (
+                    f"https://www.youtube.com/watch?v={previous.video_id}"
+                    f"&list=RD{previous.video_id}"
+                )
+                try:
+                    candidates.extend(await self._extract_music_items(radio_url, fake_requester))
+                except Exception:
+                    pass
+
+            if not any(self._autoplay_item_key(item) not in seen for item in candidates):
+                candidates.extend(await self._extract_related_search_items(previous, fake_requester))
+
+            ranked = sorted(
+                (
+                    item
+                    for item in candidates
+                    if self._autoplay_item_key(item)
+                    and self._autoplay_item_key(item) not in seen
+                ),
+                key=lambda item: self._related_score(previous, item),
+                reverse=True,
+            )
+            if ranked:
+                state.queue.append(ranked[0])
+                return True
         except Exception:
             return False
         return False
+
+    @staticmethod
+    def _autoplay_item_key(item: AudioItem) -> str:
+        value = item.video_id or item.webpage_url or item.title
+        return " ".join(str(value or "").strip().lower().split())
+
+    @staticmethod
+    def _music_tokens(value: str | None) -> set[str]:
+        stop_words = {
+            "official", "video", "audio", "lyrics", "lyric", "mv", "music",
+            "remix", "hd", "4k", "feat", "ft", "the", "and", "và", "bản",
+        }
+        cleaned = re.sub(r"[\[\](){}|/,_\-]+", " ", str(value or "").lower())
+        return {
+            token
+            for token in re.findall(r"[\wÀ-ỹ]+", cleaned, flags=re.UNICODE)
+            if len(token) >= 2 and token not in stop_words
+        }
+
+    def _related_score(self, previous: AudioItem, candidate: AudioItem) -> int:
+        previous_tokens = self._music_tokens(
+            " ".join(
+                part
+                for part in [previous.artist, previous.uploader, previous.album, previous.title]
+                if part
+            )
+        )
+        candidate_tokens = self._music_tokens(
+            " ".join(
+                part
+                for part in [candidate.artist, candidate.uploader, candidate.album, candidate.title]
+                if part
+            )
+        )
+        score = len(previous_tokens & candidate_tokens) * 10
+        if previous.artist and candidate.artist and previous.artist.lower() == candidate.artist.lower():
+            score += 35
+        if previous.uploader and candidate.uploader and previous.uploader.lower() == candidate.uploader.lower():
+            score += 25
+        if previous.album and candidate.album and previous.album.lower() == candidate.album.lower():
+            score += 20
+        return score
+
+    async def _extract_related_search_items(self, previous: AudioItem, requester) -> list[AudioItem]:
+        from yt_dlp import YoutubeDL
+
+        artist = previous.artist or previous.uploader or ""
+        artist = re.sub(r"\s*-\s*topic$|\s*vevo$", "", artist, flags=re.IGNORECASE).strip()
+        title = re.sub(
+            r"[\[(].*?(official|lyrics?|audio|mv|video).*?[\])]",
+            "",
+            previous.title,
+            flags=re.IGNORECASE,
+        ).strip()
+        query = " ".join(part for part in [artist, title, "radio bài hát tương tự"] if part)
+        search_query = f"ytsearch10:{query}"
+        options = {
+            "quiet": True,
+            "no_warnings": True,
+            "ignoreerrors": True,
+            "extract_flat": "in_playlist",
+            "noplaylist": True,
+        }
+
+        def run_extract():
+            with YoutubeDL(options) as ydl:
+                return ydl.extract_info(search_query, download=False)
+
+        info = await self.bot.loop.run_in_executor(None, run_extract)
+        entries = info.get("entries", []) if isinstance(info, dict) else []
+        return [
+            item
+            for entry in entries
+            if entry
+            for item in [self._build_music_item(entry, requester, query)]
+            if item
+        ]
 
     async def _play_next(self, guild_id: int):
         state = self._get_state(guild_id)
@@ -628,6 +839,10 @@ class BotVoiceCog(commands.Cog):
             ffmpeg_executable = self._find_ffmpeg() or "ffmpeg"
             if item.item_type == "music":
                 item = await self._resolve_stream_url(item)
+                history_key = self._autoplay_item_key(item)
+                if history_key:
+                    state.autoplay_history.append(history_key)
+                    state.autoplay_history = state.autoplay_history[-100:]
                 source = discord.FFmpegPCMAudio(
                     item.stream_url,
                     executable=ffmpeg_executable,
@@ -646,7 +861,11 @@ class BotVoiceCog(commands.Cog):
                 )
 
             voice_client.play(source, after=after_play)
+            state.playback_elapsed = 0.0
+            state.playback_started_at = time.monotonic()
             await self._send_now_playing(guild_id, item)
+            if item.item_type == "music":
+                self._schedule_player_refresh(guild_id)
         except Exception as exc:
             error_text = str(exc) or repr(exc)
             await self._send_to_state_channel(
@@ -660,6 +879,9 @@ class BotVoiceCog(commands.Cog):
     async def _after_play(self, guild_id: int, error):
         state = self._get_state(guild_id)
         finished_item = state.current
+        self._cancel_player_refresh(state)
+        state.playback_started_at = None
+        state.playback_elapsed = 0.0
 
         if error:
             await self._send_to_state_channel(guild_id, create_error_splash("❌ Voice Lỗi", str(error)))
@@ -691,33 +913,373 @@ class BotVoiceCog(commands.Cog):
                 pass
 
     async def _send_now_playing(self, guild_id: int, item: AudioItem):
-        requester_text = f"<@{item.requester_id}>"
         if item.item_type == "tts":
-            embed = discord.Embed(
-                title="🔊 Đang đọc",
-                description=(
-                    f"### “{item.title}”\n"
-                    f"👤 Yêu cầu bởi: {requester_text}"
-                ),
-                color=discord.Color.from_rgb(91, 192, 235),
-            )
-            embed.set_footer(text="Google TTS • Bot tự rời voice sau 5 phút nếu không dùng.")
-        else:
+            return
+        await self._refresh_player_message(guild_id)
+
+    async def _refresh_player_message(self, guild_id: int):
+        state = self._get_state(guild_id)
+        item = state.current
+        if not item or item.item_type != "music" or not state.text_channel_id:
+            return
+        channel = self.bot.get_channel(state.text_channel_id)
+        if not isinstance(channel, (discord.TextChannel, discord.Thread)):
+            return
+
+        theme = self.player_service.get_theme(guild_id)
+        voice_client = state.voice_client
+        data = PlayerCardData(
+            title=item.title,
+            requester=item.requester_name,
+            duration=item.duration,
+            elapsed=self._playback_seconds(state),
+            thumbnail=item.thumbnail,
+            volume=int(state.volume * 100),
+            paused=bool(voice_client and voice_client.is_paused()),
+            loop=state.loop_current,
+            autoplay=state.autoplay,
+            queue_count=len(state.queue),
+            accent_color=theme.get("accent_color", "#7f314d"),
+            background_url=theme.get("background_url") or None,
+            header_text=theme.get("title_text", "BLACK LOUS MUSIC"),
+        )
+        try:
+            player_file = await build_player_file(data)
+            embed = build_player_embed()
+            view = MusicPlayerView(self, guild_id)
+            message = None
+            if state.player_message_id and state.player_channel_id == channel.id:
+                try:
+                    message = await channel.fetch_message(state.player_message_id)
+                except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+                    message = None
+            if message:
+                await message.edit(embed=embed, attachments=[player_file], view=view)
+            else:
+                message = await channel.send(embed=embed, file=player_file, view=view)
+                state.player_message_id = message.id
+                state.player_channel_id = channel.id
+        except (discord.Forbidden, discord.HTTPException, OSError, ValueError):
             link_text = f"[{item.title}]({item.webpage_url})" if item.webpage_url else item.title
-            embed = discord.Embed(
+            fallback = discord.Embed(
                 title="🎧 Đang phát",
-                description=(
-                    f"### {link_text}\n"
-                    f"⏱ Thời lượng: `{self._duration_text(item.duration)}`\n"
-                    f"👤 Yêu cầu bởi: {requester_text}"
-                ),
+                description=f"### {link_text}\n👤 Yêu cầu bởi: <@{item.requester_id}>",
                 color=discord.Color.from_rgb(54, 162, 235),
             )
-            embed.set_footer(text="Music player • Dùng bplay q để xem hàng chờ.")
+            await channel.send(embed=fallback)
 
-        if item.thumbnail:
-            embed.set_thumbnail(url=item.thumbnail)
-        await self._send_to_state_channel(guild_id, embed)
+    @staticmethod
+    def _active_tts_requester(state: GuildAudioState) -> int | None:
+        voice_client = state.voice_client
+        current = state.current
+        if (
+            current
+            and current.item_type == "tts"
+            and voice_client
+            and (voice_client.is_playing() or voice_client.is_paused())
+        ):
+            return current.requester_id
+        return None
+
+    async def _notify_tts_busy(self, ctx, requester_id: int):
+        await ctx.reply(
+            f"🔊 Bot hiện đang được <@{requester_id}> sử dụng, vui lòng đợi đọc xong.",
+            mention_author=False,
+        )
+
+    def _can_manage_player_settings(self, member: discord.Member) -> bool:
+        if self.admins.is_admin(member.id):
+            return True
+        role_ids = [role.id for role in member.roles if role.name != "@everyone"]
+        return self.role_permissions.user_can_use(member.guild.id, role_ids, "play settings")
+
+    async def check_player_settings_interaction(self, interaction: discord.Interaction, guild_id: int) -> bool:
+        allowed = (
+            interaction.guild_id == guild_id
+            and isinstance(interaction.user, discord.Member)
+            and self._can_manage_player_settings(interaction.user)
+        )
+        if allowed:
+            return True
+        await interaction.response.send_message(
+            "❌ Chỉ bot admin hoặc role có quyền `play settings` trong DB mới chỉnh được giao diện.",
+            ephemeral=True,
+        )
+        return False
+
+    async def check_player_interaction(self, interaction: discord.Interaction, guild_id: int) -> bool:
+        if interaction.guild_id != guild_id or not isinstance(interaction.user, discord.Member):
+            await interaction.response.send_message("❌ Nút này không thuộc server hiện tại.", ephemeral=True)
+            return False
+        state = self._get_state(guild_id)
+        voice_client = state.voice_client
+        member_channel = getattr(getattr(interaction.user, "voice", None), "channel", None)
+        if not voice_client or not voice_client.is_connected() or member_channel != voice_client.channel:
+            await interaction.response.send_message(
+                "❌ Bạn cần ở cùng voice channel với bot để điều khiển.",
+                ephemeral=True,
+            )
+            return False
+        return True
+
+    def _player_settings_embed(self, guild_id: int) -> discord.Embed:
+        theme = self.player_service.get_theme(guild_id)
+        background = theme.get("background_url") or "`ui/bot/assets/player_background.png` hoặc thumbnail bài hát"
+        embed = discord.Embed(
+            title="🎨 Music Player UI",
+            description="Chỉnh canvas player bằng menu hoặc lệnh prefix.",
+            color=discord.Color.from_str(normalize_accent_color(theme.get("accent_color"))),
+        )
+        embed.add_field(name="Màu chính", value=f"`{theme.get('accent_color')}`", inline=True)
+        embed.add_field(name="Tiêu đề", value=f"`{theme.get('title_text')}`", inline=True)
+        embed.add_field(name="Ảnh nền", value=str(background), inline=False)
+        embed.add_field(
+            name="Lệnh nhanh",
+            value=(
+                "`play settings accent #7f314d`\n"
+                "`play settings title Black Lous Music`\n"
+                "`play settings background <url|off>` hoặc đính kèm ảnh\n"
+                "`play settings reset`"
+            ),
+            inline=False,
+        )
+        return embed
+
+    async def _show_player_settings(self, ctx, raw: str):
+        if not isinstance(ctx.author, discord.Member) or not self._can_manage_player_settings(ctx.author):
+            await ctx.send(
+                embed=create_error_splash(
+                    "❌ Quyền Bị Từ Chối",
+                    "Chỉ bot admin hoặc role có quyền `play settings` trong DB mới chỉnh được giao diện.",
+                )
+            )
+            return
+
+        raw = (raw or "").strip()
+        if not raw:
+            await ctx.send(
+                embed=self._player_settings_embed(ctx.guild.id),
+                view=PlayerSettingsView(self, ctx.guild.id),
+            )
+            return
+
+        key, _, value = raw.partition(" ")
+        key = key.lower()
+        value = value.strip()
+        if key in {"reset", "default", "macdinh", "mặcđịnh"}:
+            self.player_service.reset_theme(ctx.guild.id)
+            await ctx.send(embed=create_success_splash("✅ Đã Reset Player", "Giao diện đã trở về mặc định."))
+        elif key in {"accent", "color", "mau", "màu"}:
+            normalized = normalize_accent_color(value)
+            if normalized != value.lower():
+                await ctx.send(embed=create_error_splash("❌ Màu Không Hợp Lệ", "Dùng mã HEX dạng `#7f314d`."))
+                return
+            self.player_service.set_theme(ctx.guild.id, accent_color=normalized)
+            await ctx.send(embed=create_success_splash("✅ Đã Đổi Màu Player", f"Màu chính: `{normalized}`."))
+        elif key in {"title", "header", "tieude", "tiêuđề"}:
+            if not value:
+                await ctx.send(embed=create_error_splash("❌ Thiếu Tiêu Đề", "Nhập nội dung tiêu đề sau `play settings title`."))
+                return
+            self.player_service.set_theme(ctx.guild.id, title_text=value[:40])
+            await ctx.send(embed=create_success_splash("✅ Đã Đổi Tiêu Đề", value[:40]))
+        elif key in {"background", "bg", "nen", "nền"}:
+            attachment_url = ctx.message.attachments[0].url if ctx.message.attachments else ""
+            background_url = attachment_url or value
+            if background_url.lower() in {"off", "none", "default", "macdinh", "mặcđịnh"}:
+                background_url = ""
+            if background_url and not self._is_url(background_url):
+                await ctx.send(embed=create_error_splash("❌ Ảnh Nền Không Hợp Lệ", "Hãy gửi URL ảnh hoặc đính kèm ảnh cùng lệnh."))
+                return
+            self.player_service.set_theme(ctx.guild.id, background_url=background_url)
+            text = background_url or "Dùng ảnh trong `ui/bot/assets` hoặc thumbnail bài hát."
+            await ctx.send(embed=create_success_splash("✅ Đã Đổi Ảnh Nền", text))
+        else:
+            await ctx.send(embed=self._player_settings_embed(ctx.guild.id), view=PlayerSettingsView(self, ctx.guild.id))
+            return
+
+        await self._refresh_player_message(ctx.guild.id)
+
+    async def handle_player_theme_submit(
+        self,
+        interaction: discord.Interaction,
+        guild_id: int,
+        *,
+        accent: str,
+        title_text: str,
+        background_url: str,
+    ):
+        normalized = normalize_accent_color(accent)
+        if accent.strip() and normalized != accent.strip().lower():
+            await interaction.response.send_message("❌ Màu phải có dạng HEX, ví dụ `#7f314d`.", ephemeral=True)
+            return
+        background_url = background_url.strip()
+        if background_url and not self._is_url(background_url):
+            await interaction.response.send_message("❌ URL ảnh nền không hợp lệ.", ephemeral=True)
+            return
+        self.player_service.set_theme(
+            guild_id,
+            accent_color=normalized,
+            title_text=(title_text.strip() or "BLACK LOUS MUSIC")[:40],
+            background_url=background_url,
+        )
+        await interaction.response.send_message("✅ Đã lưu giao diện player.", ephemeral=True)
+        await self._refresh_player_message(guild_id)
+
+    async def handle_player_settings_button(self, interaction: discord.Interaction, guild_id: int):
+        if not isinstance(interaction.user, discord.Member) or not self._can_manage_player_settings(interaction.user):
+            await interaction.response.send_message(
+                "❌ Chỉ bot admin hoặc role có quyền `play settings` trong DB mới chỉnh được giao diện.",
+                ephemeral=True,
+            )
+            return
+        await interaction.response.send_message(
+            embed=self._player_settings_embed(guild_id),
+            view=PlayerSettingsView(self, guild_id),
+            ephemeral=True,
+        )
+
+    async def reset_player_theme(self, interaction: discord.Interaction, guild_id: int):
+        self.player_service.reset_theme(guild_id)
+        await interaction.response.send_message("✅ Player đã trở về giao diện mặc định.", ephemeral=True)
+        await self._refresh_player_message(guild_id)
+
+    async def send_player_preview(self, interaction: discord.Interaction, guild_id: int):
+        state = self._get_state(guild_id)
+        current = state.current if state.current and state.current.item_type == "music" else None
+        theme = self.player_service.get_theme(guild_id)
+        data = PlayerCardData(
+            title=current.title if current else "Tên bài hát đang phát",
+            requester=interaction.user.display_name,
+            duration=current.duration if current else 245,
+            elapsed=self._playback_seconds(state) if current else 72,
+            thumbnail=current.thumbnail if current else None,
+            volume=int(state.volume * 100),
+            paused=bool(state.voice_client and state.voice_client.is_paused()),
+            loop=state.loop_current,
+            autoplay=state.autoplay,
+            queue_count=len(state.queue),
+            accent_color=theme.get("accent_color", "#7f314d"),
+            background_url=theme.get("background_url") or None,
+            header_text=theme.get("title_text", "BLACK LOUS MUSIC"),
+        )
+        player_file = await build_player_file(data)
+        await interaction.response.send_message(
+            embed=build_player_embed(),
+            file=player_file,
+            ephemeral=True,
+        )
+
+    async def handle_player_volume(self, interaction: discord.Interaction, guild_id: int, raw_volume: str):
+        try:
+            volume = int(raw_volume)
+        except ValueError:
+            await interaction.response.send_message("❌ Âm lượng phải là số từ 0 đến 200.", ephemeral=True)
+            return
+        if volume < 0 or volume > 200:
+            await interaction.response.send_message("❌ Âm lượng phải nằm trong khoảng 0-200.", ephemeral=True)
+            return
+        state = self._get_state(guild_id)
+        state.volume = volume / 100
+        voice_client = state.voice_client
+        if voice_client and isinstance(voice_client.source, discord.PCMVolumeTransformer):
+            voice_client.source.volume = state.volume
+        await interaction.response.send_message(f"🔊 Âm lượng: `{volume}%`.", ephemeral=True)
+        await self._refresh_player_message(guild_id)
+
+    async def handle_player_button(self, interaction: discord.Interaction, guild_id: int, action: str):
+        state = self._get_state(guild_id)
+        voice_client = state.voice_client
+        if action == "pause_resume":
+            if voice_client and voice_client.is_playing():
+                self._pause_playback_clock(state)
+                voice_client.pause()
+                message = "⏸️ Đã tạm dừng."
+            elif voice_client and voice_client.is_paused():
+                voice_client.resume()
+                self._resume_playback_clock(state)
+                message = "▶️ Đã tiếp tục."
+            else:
+                await interaction.response.send_message("❌ Hiện không có bài đang phát.", ephemeral=True)
+                return
+            await interaction.response.send_message(message, ephemeral=True)
+            await self._refresh_player_message(guild_id)
+            return
+        if action == "skip":
+            if not voice_client or not voice_client.is_playing():
+                await interaction.response.send_message("❌ Hiện không có bài đang phát.", ephemeral=True)
+                return
+            state.skip_requested = True
+            await interaction.response.send_message("⏭️ Đã bỏ qua bài hiện tại.", ephemeral=True)
+            voice_client.stop()
+            return
+        if action == "stop":
+            state.queue.clear()
+            state.loop_current = False
+            state.stop_requested = True
+            await interaction.response.send_message("⏹️ Đã dừng và xóa queue.", ephemeral=True)
+            if voice_client and (voice_client.is_playing() or voice_client.is_paused()):
+                voice_client.stop()
+            return
+        if action == "loop":
+            state.loop_current = not state.loop_current
+            await interaction.response.send_message(
+                f"🔁 Loop: `{'Bật' if state.loop_current else 'Tắt'}`.",
+                ephemeral=True,
+            )
+            await self._refresh_player_message(guild_id)
+            return
+        if action == "autoplay":
+            state.autoplay = not state.autoplay
+            await interaction.response.send_message(
+                f"♾️ Autoplay: `{'Bật' if state.autoplay else 'Tắt'}`.",
+                ephemeral=True,
+            )
+            await self._refresh_player_message(guild_id)
+            return
+        if action == "shuffle":
+            if len(state.queue) < 2:
+                await interaction.response.send_message("❌ Queue cần ít nhất 2 bài để trộn.", ephemeral=True)
+                return
+            random.shuffle(state.queue)
+            await interaction.response.send_message(f"🔀 Đã trộn `{len(state.queue)}` bài.", ephemeral=True)
+            await self._refresh_player_message(guild_id)
+            return
+        if action == "queue":
+            lines = []
+            if state.current:
+                lines.append(f"**Đang phát:** `{self._short_text(state.current.title, 70)}`")
+            for index, queued in enumerate(state.queue[:QUEUE_PAGE_SIZE], 1):
+                lines.append(f"`{index}.` {self._short_text(queued.title, 80)}")
+            if len(state.queue) > QUEUE_PAGE_SIZE:
+                lines.append(f"... và `{len(state.queue) - QUEUE_PAGE_SIZE}` bài nữa")
+            await interaction.response.send_message(
+                embed=create_info_splash("🎶 Queue", "\n".join(lines) if lines else "Queue đang trống."),
+                ephemeral=True,
+            )
+            return
+        if action == "leave":
+            if state.voice_owner_id and state.voice_owner_id != interaction.user.id:
+                await interaction.response.send_message(
+                    f"❌ Chỉ {self._voice_owner_text(state)} mới được cho bot rời voice.",
+                    ephemeral=True,
+                )
+                return
+            await interaction.response.send_message("🚪 Bot đã rời voice.", ephemeral=True)
+            state.queue.clear()
+            state.current = None
+            state.loop_current = False
+            state.stop_requested = True
+            self._cancel_idle(state)
+            self._cancel_player_refresh(state)
+            if voice_client and voice_client.is_connected():
+                if voice_client.is_playing() or voice_client.is_paused():
+                    voice_client.stop()
+                await voice_client.disconnect(force=True)
+            state.voice_client = None
+            state.stop_requested = False
+            state.playback_started_at = None
+            state.playback_elapsed = 0.0
+            self._clear_voice_owner(state)
 
     async def _show_play_help(self, ctx):
         prefix = ctx.clean_prefix
@@ -729,7 +1291,8 @@ class BotVoiceCog(commands.Cog):
                 f"`{prefix}play <url|từ khóa|playlist>` - phát nhạc\n"
                 f"`{prefix}a <url|từ khóa|playlist>` - viết tắt của play\n\n"
                 "**Điều khiển trong play**\n"
-                "`play q/queue`, `play sh/shuffle`, `play a/autoplay`, `play s/skip`, `play p/pause`, `play r/resume`, `play st/stop`, `play l/leave`, `play n/now`, `play lo/loop`, `play v/vol <0-200>`, `play rm <số>`, `play c/clear`"
+                "`play q/queue`, `play sh/shuffle`, `play a/autoplay`, `play s/skip`, `play p/pause`, `play r/resume`, `play st/stop`, `play l/leave`, `play n/now`, `play lo/loop`, `play v/vol <0-200>`, `play rm <số>`, `play c/clear`\n"
+                "`play settings` - mở menu chỉnh canvas player"
             ),
         )
         await ctx.send(embed=embed)
@@ -767,11 +1330,15 @@ class BotVoiceCog(commands.Cog):
             state.autoplay = not state.autoplay
         status = "bật" if state.autoplay else "tắt"
         await ctx.send(embed=create_success_splash("✅ Autoplay", f"Autoplay hiện đang **{status}**."))
+        await self._refresh_player_message(ctx.guild.id)
 
     async def _handle_play_action(self, ctx, action: str, rest: str):
         state = self._get_state(ctx.guild.id)
         voice_client = ctx.voice_client or state.voice_client
 
+        if action == "settings":
+            await self._show_player_settings(ctx, rest)
+            return
         if action == "queue":
             await self._show_queue(ctx)
             return
@@ -781,12 +1348,13 @@ class BotVoiceCog(commands.Cog):
                 return
             random.shuffle(state.queue)
             await ctx.send(embed=create_success_splash("✅ Shuffle", f"Đã trộn `{len(state.queue)}` bài trong queue."))
+            await self._refresh_player_message(ctx.guild.id)
             return
         if action == "autoplay":
             await self._toggle_autoplay(ctx, rest or None)
             return
         if action == "skip":
-            if not voice_client or not voice_client.is_playing():
+            if not voice_client or not (voice_client.is_playing() or voice_client.is_paused()):
                 await ctx.send(embed=create_error_splash("❌ Không Có Bài", "Hiện không có bài nào đang phát."))
                 return
             state.skip_requested = True
@@ -795,15 +1363,19 @@ class BotVoiceCog(commands.Cog):
             return
         if action == "pause":
             if voice_client and voice_client.is_playing():
+                self._pause_playback_clock(state)
                 voice_client.pause()
                 await ctx.send(embed=create_success_splash("✅ Pause", "Đã tạm dừng phát nhạc."))
+                await self._refresh_player_message(ctx.guild.id)
             else:
                 await ctx.send(embed=create_error_splash("❌ Không Phát", "Hiện không có bài nào đang phát."))
             return
         if action == "resume":
             if voice_client and voice_client.is_paused():
                 voice_client.resume()
+                self._resume_playback_clock(state)
                 await ctx.send(embed=create_success_splash("✅ Resume", "Đã tiếp tục phát nhạc."))
+                await self._refresh_player_message(ctx.guild.id)
             else:
                 await ctx.send(embed=create_error_splash("❌ Không Pause", "Bot không đang tạm dừng."))
             return
@@ -815,12 +1387,16 @@ class BotVoiceCog(commands.Cog):
                 voice_client.stop()
             else:
                 self._schedule_idle_disconnect(ctx.guild.id)
+                self._cancel_player_refresh(state)
+                state.playback_started_at = None
+                state.playback_elapsed = 0.0
             await ctx.send(embed=create_success_splash("✅ Stop", "Đã dừng phát và xóa queue. Bot sẽ tự out sau 5 phút nếu không dùng."))
             return
         if action == "clear":
             count = len(state.queue)
             state.queue.clear()
             await ctx.send(embed=create_success_splash("✅ Clear Queue", f"Đã xóa `{count}` bài khỏi queue."))
+            await self._refresh_player_message(ctx.guild.id)
             return
         if action == "leave":
             if state.voice_owner_id and state.voice_owner_id != ctx.author.id:
@@ -836,12 +1412,15 @@ class BotVoiceCog(commands.Cog):
             state.loop_current = False
             state.stop_requested = True
             self._cancel_idle(state)
+            self._cancel_player_refresh(state)
             if voice_client and voice_client.is_connected():
                 if voice_client.is_playing() or voice_client.is_paused():
                     voice_client.stop()
                 await voice_client.disconnect(force=True)
             state.voice_client = None
             state.stop_requested = False
+            state.playback_started_at = None
+            state.playback_elapsed = 0.0
             self._clear_voice_owner(state)
             await ctx.send(embed=create_success_splash("✅ Đã Rời Voice", "Bot đã rời voice channel."))
             return
@@ -867,6 +1446,7 @@ class BotVoiceCog(commands.Cog):
             if voice_client and voice_client.source and isinstance(voice_client.source, discord.PCMVolumeTransformer):
                 voice_client.source.volume = state.volume
             await ctx.send(embed=create_success_splash("✅ Volume", f"Đã set volume thành `{volume}%`."))
+            await self._refresh_player_message(ctx.guild.id)
             return
         if action == "loop":
             if rest:
@@ -882,6 +1462,7 @@ class BotVoiceCog(commands.Cog):
                 state.loop_current = not state.loop_current
             status = "bật" if state.loop_current else "tắt"
             await ctx.send(embed=create_success_splash("✅ Loop", f"Loop bài hiện tại đang **{status}**."))
+            await self._refresh_player_message(ctx.guild.id)
             return
         if action == "remove":
             if not rest:
@@ -897,6 +1478,7 @@ class BotVoiceCog(commands.Cog):
                 return
             removed = state.queue.pop(index - 1)
             await ctx.send(embed=create_success_splash("✅ Đã Xóa Khỏi Queue", f"Đã xóa `{removed.title}`."))
+            await self._refresh_player_message(ctx.guild.id)
 
     async def _add_music(self, ctx, query: str):
         if not await self._require_ffmpeg(ctx):
@@ -929,6 +1511,7 @@ class BotVoiceCog(commands.Cog):
 
         state.queue.extend(items)
         await self._start_player_if_needed(ctx.guild.id)
+        await self._refresh_player_message(ctx.guild.id)
 
     @commands.command(name="join", aliases=["j"])
     async def join(self, ctx):
@@ -943,6 +1526,16 @@ class BotVoiceCog(commands.Cog):
         if not text or not text.strip():
             await ctx.send(embed=create_error_splash("❌ Thiếu Nội Dung", "Dùng: `say <nội dung>` để bot đọc bằng giọng Google."))
             return
+        if ctx.guild is None:
+            await ctx.send(embed=create_error_splash("❌ Chỉ Dùng Trong Server", "Lệnh `say` chỉ hoạt động trong server."))
+            return
+
+        state = self._get_state(ctx.guild.id)
+        active_requester = self._active_tts_requester(state)
+        if active_requester and active_requester != ctx.author.id:
+            await self._notify_tts_busy(ctx, active_requester)
+            return
+
         if not await self._require_ffmpeg(ctx):
             return
         if not await self._require_package(ctx, "gtts", "gTTS"):
@@ -964,9 +1557,18 @@ class BotVoiceCog(commands.Cog):
             await ctx.send(embed=create_error_splash("❌ Tạo Giọng Đọc Thất Bại", str(exc)))
             return
 
-        state = self._get_state(ctx.guild.id)
+        active_requester = self._active_tts_requester(state)
+        if active_requester and active_requester != ctx.author.id:
+            await self._cleanup_item(item)
+            await self._notify_tts_busy(ctx, active_requester)
+            return
+
         state.text_channel_id = ctx.channel.id
         state.queue.append(item)
+        try:
+            await ctx.message.add_reaction("🔊")
+        except (discord.Forbidden, discord.HTTPException):
+            pass
         await self._start_player_if_needed(ctx.guild.id)
 
     @commands.command(name="leave", aliases=["l", "disconnect", "dc"])
