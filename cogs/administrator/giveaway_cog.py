@@ -4,7 +4,6 @@ import asyncio
 import random
 import re
 import shlex
-import time
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -53,13 +52,12 @@ class GiveawayWinnerSelect(discord.ui.Select):
                 label=str(row["username"])[:100],
                 value=str(row["user_id"]),
                 description=f"ID {row['user_id']}"[:100],
-                emoji=cog.giveaway_entry_emoji_for_ui(giveaway),
             )
             for row in participants[:25]
         ]
         super().__init__(
             placeholder=f"Chọn {min(winners_count, len(options))} winner thủ công...",
-            min_values=1,
+            min_values=max(1, min(winners_count, len(options))),
             max_values=max(1, min(winners_count, len(options))),
             options=options,
             custom_id=f"giveaway:set_winner:{giveaway['giveaway_id']}",
@@ -111,9 +109,6 @@ class AdministratorGiveawayCog(AdminCommandBase):
         giveaway_id = int(giveaway["giveaway_id"])
         if giveaway["status"] != "active":
             return
-        if int(giveaway["ends_at"]) <= int(time.time()):
-            await self._end_giveaway(giveaway_id, automatic=True)
-            return
 
         username = None
         if payload.member:
@@ -146,11 +141,7 @@ class AdministratorGiveawayCog(AdminCommandBase):
         self._restored = True
         for giveaway in self.service.get_active_giveaways():
             giveaway_id = int(giveaway["giveaway_id"])
-            if self._is_overdue_giveaway(giveaway):
-                await self._end_giveaway(giveaway_id, automatic=True)
-                continue
-            await self.refresh_giveaway_message(giveaway_id)
-            self._schedule_end(giveaway)
+            await self.refresh_giveaway_message(giveaway_id, schedule_end=True)
 
     @staticmethod
     async def _delete_invocation_message(ctx):
@@ -158,10 +149,6 @@ class AdministratorGiveawayCog(AdminCommandBase):
             await ctx.message.delete()
         except (discord.Forbidden, discord.NotFound, discord.HTTPException):
             pass
-
-    @staticmethod
-    def _is_overdue_giveaway(giveaway: dict) -> bool:
-        return giveaway.get("status") == "active" and int(giveaway["ends_at"]) <= int(time.time())
 
     @staticmethod
     def _is_duration_token(token: str) -> bool:
@@ -378,6 +365,13 @@ class AdministratorGiveawayCog(AdminCommandBase):
     def _theme_icon(self, giveaway: dict | None, key: str) -> str:
         return self._theme_value(giveaway, f"icon_{key}")
 
+    def _giveaway_host_avatar_url(self, giveaway: dict) -> str | None:
+        creator_id = int(giveaway["creator_id"])
+        guild = self.bot.get_guild(int(giveaway["guild_id"]))
+        host = guild.get_member(creator_id) if guild else None
+        host = host or self.bot.get_user(creator_id)
+        return str(host.display_avatar.url) if host else None
+
     def _build_giveaway_embed(self, giveaway: dict, ended: bool = False) -> discord.Embed:
         winner_ids = self.service.decode_winner_ids(giveaway)
         selected_winner_ids = self.service.decode_selected_winner_ids(giveaway)
@@ -389,46 +383,47 @@ class AdministratorGiveawayCog(AdminCommandBase):
         reward = str(giveaway["reward"])
         title_key = "title_start" if status_text == "Đang mở" else "title_ended"
         description_key = "text_join" if status_text == "Đang mở" else "text_ended"
-
-        embed = discord.Embed(
-            title=self._theme_value(giveaway, title_key, start=start_icon, ended=ended_icon, reward=reward),
-            description=(
-                f"## {reward}\n\n"
-                + self._theme_value(
-                    giveaway,
-                    description_key,
-                    emoji=entry_emoji,
-                    reward=reward,
-                    host=f"<@{int(giveaway['creator_id'])}>",
-                )
+        host_mention = f"<@{int(giveaway['creator_id'])}>"
+        description_lines = [
+            f"## {reward}",
+            "",
+            self._theme_value(
+                giveaway,
+                description_key,
+                emoji=entry_emoji,
+                reward=reward,
+                host=host_mention,
             ),
-            color=color,
-        )
+        ]
+
         if status_text == "Đã kết thúc":
             winners_text = ", ".join(f"<@{user_id}>" for user_id in winner_ids) if winner_ids else "`Không có`"
-            embed.add_field(
-                name=f"{self._theme_icon(giveaway, 'winner')} {self._theme_value(giveaway, 'label_winner')}",
-                value=winners_text,
-                inline=False,
+            description_lines.extend(
+                [
+                    f"{self._theme_icon(giveaway, 'winner')} **{self._theme_value(giveaway, 'label_winner')}:** {winners_text}",
+                    f"{self._theme_icon(giveaway, 'host')} **{self._theme_value(giveaway, 'label_host')}:** {host_mention}",
+                ]
             )
         else:
             ends_at = int(giveaway["ends_at"])
-            embed.add_field(
-                name=f"{self._theme_icon(giveaway, 'time')} {self._theme_value(giveaway, 'label_time')}",
-                value=f"<t:{ends_at}:F>\n<t:{ends_at}:R>",
-                inline=False,
+            description_lines.extend(
+                [
+                    f"{self._theme_icon(giveaway, 'time')} **{self._theme_value(giveaway, 'label_time')}:** <t:{ends_at}:R>",
+                    f"{self._theme_icon(giveaway, 'host')} **{self._theme_value(giveaway, 'label_host')}:** {host_mention}",
+                ]
             )
-        embed.add_field(
-            name=f"{self._theme_icon(giveaway, 'host')} {self._theme_value(giveaway, 'label_host')}",
-            value=f"<@{int(giveaway['creator_id'])}>",
-            inline=False,
+            if selected_winner_ids:
+                selected_text = ", ".join(f"<@{user_id}>" for user_id in selected_winner_ids)
+                description_lines.append(
+                    f"{self._theme_icon(giveaway, 'selected')} "
+                    f"**{self._theme_value(giveaway, 'label_selected')}:** {selected_text}"
+                )
+
+        embed = discord.Embed(
+            title=self._theme_value(giveaway, title_key, start=start_icon, ended=ended_icon, reward=reward),
+            description="\n".join(description_lines),
+            color=color,
         )
-        if selected_winner_ids and status_text == "Đang mở":
-            embed.add_field(
-                name=f"{self._theme_icon(giveaway, 'selected')} {self._theme_value(giveaway, 'label_selected')}",
-                value=", ".join(f"<@{user_id}>" for user_id in selected_winner_ids),
-                inline=False,
-            )
 
         if int(giveaway.get("quantity_total") or 1) > 1:
             embed.add_field(
@@ -443,6 +438,9 @@ class AdministratorGiveawayCog(AdminCommandBase):
                 inline=False,
             )
 
+        host_avatar_url = self._giveaway_host_avatar_url(giveaway)
+        if host_avatar_url:
+            embed.set_thumbnail(url=host_avatar_url)
         embed.set_footer(text=self._local_footer_text())
         return embed
 
@@ -593,11 +591,21 @@ class AdministratorGiveawayCog(AdminCommandBase):
                 create_error_splash("❌ Giveaway Không Tồn Tại", f"Không tìm thấy giveaway `{giveaway_id}`."),
             )
             return
+        if giveaway["status"] != "active":
+            await self._send_interaction_splash(
+                interaction,
+                create_error_splash(
+                    "❌ Giveaway Đã Kết Thúc",
+                    "Chỉ có thể set winner trước khi giveaway kết thúc. Hãy dùng reroll cho giveaway đã kết thúc.",
+                ),
+            )
+            return
 
-        participants = self.service.get_participants(giveaway_id)
+        await interaction.response.defer(ephemeral=interaction.guild is not None, thinking=True)
+        participants = await self._sync_reaction_participants(giveaway)
         embed = self._build_manual_set_embed(giveaway, participants)
         view = GiveawayManualSetView(self, giveaway, participants)
-        await interaction.response.send_message(embed=embed, view=view, ephemeral=interaction.guild is not None)
+        await interaction.edit_original_response(embed=embed, view=view)
 
     async def _save_selected_winners_interaction(self, interaction: discord.Interaction, giveaway_id: int, winner_ids: list[int]):
         if not self.admins.is_hard_admin(interaction.user.id):
@@ -606,22 +614,45 @@ class AdministratorGiveawayCog(AdminCommandBase):
                 create_error_splash("❌ Quyền Bị Từ Chối", "Bạn không có quyền dùng thao tác này."),
             )
             return
+        if not interaction.response.is_done():
+            await interaction.response.defer()
+
         giveaway = self.service.get_giveaway(giveaway_id)
         if not giveaway:
-            await interaction.response.edit_message(
+            await interaction.edit_original_response(
                 embed=create_error_splash("❌ Giveaway Không Tồn Tại", f"Không tìm thấy giveaway `{giveaway_id}`."),
                 view=None,
             )
             return
         if giveaway["status"] != "active":
-            await interaction.response.edit_message(
+            await interaction.edit_original_response(
                 embed=create_error_splash("❌ Giveaway Đã Kết Thúc", "Giveaway đã kết thúc. Hãy dùng reroll nếu muốn quay lại winner."),
                 view=None,
             )
             return
 
-        if not interaction.response.is_done():
-            await interaction.response.defer()
+        participants = await self._sync_reaction_participants(giveaway)
+        participant_ids = {int(row["user_id"]) for row in participants}
+        winner_ids = list(dict.fromkeys(int(user_id) for user_id in winner_ids))
+        if not winner_ids or any(user_id not in participant_ids for user_id in winner_ids):
+            await interaction.edit_original_response(
+                embed=create_error_splash(
+                    "❌ Winner Không Hợp Lệ",
+                    "Winner phải nằm trong danh sách người đã react tham gia giveaway.",
+                ),
+                view=None,
+            )
+            return
+        if len(winner_ids) > int(giveaway["winners_count"]):
+            await interaction.edit_original_response(
+                embed=create_error_splash(
+                    "❌ Quá Số Winner",
+                    f"Giveaway này chỉ cho chọn tối đa `{int(giveaway['winners_count'])}` winner.",
+                ),
+                view=None,
+            )
+            return
+
         self.service.set_selected_winners(giveaway_id, winner_ids)
         await self.refresh_giveaway_message(giveaway_id)
         winners_text = ", ".join(f"<@{user_id}>" for user_id in winner_ids)
@@ -640,26 +671,28 @@ class AdministratorGiveawayCog(AdminCommandBase):
                 create_error_splash("❌ Quyền Bị Từ Chối", "Bạn không có quyền dùng thao tác này."),
             )
             return
+        if not interaction.response.is_done():
+            await interaction.response.defer()
 
         giveaway = self.service.get_giveaway(giveaway_id)
         if not giveaway:
-            await self._send_interaction_splash(
-                interaction,
-                create_error_splash("❌ Giveaway Không Tồn Tại", f"Không tìm thấy giveaway `{giveaway_id}`."),
+            await interaction.edit_original_response(
+                embed=create_error_splash("❌ Giveaway Không Tồn Tại", f"Không tìm thấy giveaway `{giveaway_id}`."),
+                view=None,
             )
             return
 
         if giveaway["status"] != "active":
-            await interaction.response.edit_message(
+            await interaction.edit_original_response(
                 embed=create_error_splash("❌ Giveaway Đã Kết Thúc", "Giveaway đã kết thúc. Hãy dùng reroll nếu muốn quay lại winner."),
                 view=None,
             )
             return
 
-        participants = self.service.get_participants(giveaway_id)
+        participants = await self._sync_reaction_participants(giveaway)
         winner_ids = self._pick_winners(participants, int(giveaway["winners_count"]))
         if not winner_ids:
-            await interaction.response.edit_message(
+            await interaction.edit_original_response(
                 embed=create_error_splash("❌ Chưa Có Người Tham Gia", "Không có ai trong danh sách tham gia để random."),
                 view=None,
             )
@@ -678,19 +711,62 @@ class AdministratorGiveawayCog(AdminCommandBase):
         except (discord.NotFound, discord.Forbidden, discord.HTTPException):
             return None
 
-    async def refresh_giveaway_message(self, giveaway_id: int):
+    async def _sync_reaction_participants(
+        self,
+        giveaway: dict,
+        message: discord.Message | None = None,
+    ) -> list[dict]:
+        message = message or await self._fetch_giveaway_message(giveaway)
+        if not message:
+            return self.service.get_participants(int(giveaway["giveaway_id"]))
+
+        expected_emoji = self.giveaway_entry_emoji(giveaway)
+        expected_id = self._custom_emoji_id(expected_emoji)
+        for reaction in message.reactions:
+            reaction_id = getattr(reaction.emoji, "id", None)
+            if expected_id is not None:
+                matched = int(reaction_id or 0) == expected_id
+            else:
+                matched = str(reaction.emoji) == expected_emoji
+            if not matched:
+                continue
+            try:
+                async for user in reaction.users(limit=None):
+                    if user.bot:
+                        continue
+                    username = getattr(user, "display_name", None) or user.name
+                    self.service.sync_participant(
+                        int(giveaway["giveaway_id"]),
+                        int(user.id),
+                        username,
+                    )
+            except (discord.Forbidden, discord.HTTPException):
+                pass
+            break
+        return self.service.get_participants(int(giveaway["giveaway_id"]))
+
+    async def refresh_giveaway_message(self, giveaway_id: int, schedule_end: bool = False):
         giveaway = self.service.get_giveaway(giveaway_id)
         if not giveaway:
-            return
-        if self._is_overdue_giveaway(giveaway):
-            await self._end_giveaway(giveaway_id, automatic=True)
             return
         message = await self._fetch_giveaway_message(giveaway)
         if message:
             ended = giveaway["status"] == "ended"
-            await message.edit(embed=self._build_giveaway_embed(giveaway, ended), view=None)
+            if not ended:
+                discord_ends_at = int(message.created_at.timestamp()) + int(giveaway["duration_seconds"])
+                if int(giveaway["ends_at"]) != discord_ends_at:
+                    self.service.update_ends_at(giveaway_id, discord_ends_at)
+                    giveaway["ends_at"] = discord_ends_at
+            edited_message = await message.edit(embed=self._build_giveaway_embed(giveaway, ended), view=None)
+            discord_now = edited_message.edited_at or edited_message.created_at
+            remaining_seconds = int(giveaway["ends_at"]) - int(discord_now.timestamp())
+            if not ended and remaining_seconds <= 0:
+                await self._end_giveaway(giveaway_id, automatic=True)
+                return
             if not ended:
                 await self._add_entry_reaction(message, giveaway)
+                if schedule_end:
+                    self._schedule_end(giveaway, delay_seconds=remaining_seconds)
 
     async def _create_one_giveaway(
         self,
@@ -700,7 +776,6 @@ class AdministratorGiveawayCog(AdminCommandBase):
         payload: GiveawayCreatePayload,
         quantity_index: int,
     ) -> int:
-        ends_at = int(time.time()) + int(payload.duration_seconds)
         theme = self.service.get_theme(guild_id)
         start_icon = giveaway_theme_value(theme, "icon_start")
         placeholder = discord.Embed(
@@ -709,6 +784,7 @@ class AdministratorGiveawayCog(AdminCommandBase):
             color=discord.Color.from_rgb(255, 136, 190),
         )
         message = await channel.send(embed=placeholder)
+        ends_at = int(message.created_at.timestamp()) + int(payload.duration_seconds)
         giveaway_id = int(message.id)
         self.service.create_giveaway(
             giveaway_id=giveaway_id,
@@ -728,7 +804,7 @@ class AdministratorGiveawayCog(AdminCommandBase):
         giveaway = self.service.get_giveaway(giveaway_id)
         await message.edit(embed=self._build_giveaway_embed(giveaway), view=None)
         await self._add_entry_reaction(message, giveaway)
-        self._schedule_end(giveaway)
+        self._schedule_end(giveaway, delay_seconds=payload.duration_seconds)
         return giveaway_id
 
     async def _create_giveaways(self, channel, guild_id: int, creator_id: int, payload: GiveawayCreatePayload) -> list[int]:
@@ -745,7 +821,7 @@ class AdministratorGiveawayCog(AdminCommandBase):
             )
         return giveaway_ids
 
-    def _schedule_end(self, giveaway: dict):
+    def _schedule_end(self, giveaway: dict, delay_seconds: int | float | None = None):
         giveaway_id = int(giveaway["giveaway_id"])
         existing = self._end_tasks.pop(giveaway_id, None)
         if existing:
@@ -753,7 +829,12 @@ class AdministratorGiveawayCog(AdminCommandBase):
 
         async def runner():
             try:
-                delay = max(0, int(giveaway["ends_at"]) - int(time.time()))
+                delay = max(
+                    0,
+                    float(delay_seconds)
+                    if delay_seconds is not None
+                    else float(giveaway["duration_seconds"]),
+                )
                 await asyncio.sleep(delay)
                 await self._end_giveaway(giveaway_id, automatic=True)
             except asyncio.CancelledError:
@@ -778,9 +859,37 @@ class AdministratorGiveawayCog(AdminCommandBase):
         if not giveaway:
             return False, "Giveaway không tồn tại."
         if giveaway["status"] == "ended":
-            return False, "Giveaway đã kết thúc."
+            existing_winner_ids = self.service.decode_winner_ids(giveaway)
+            if existing_winner_ids:
+                return False, "Giveaway đã kết thúc."
 
-        participants = self.service.get_participants(giveaway_id)
+            giveaway_message = await self._fetch_giveaway_message(giveaway)
+            participants = await self._sync_reaction_participants(giveaway, giveaway_message)
+            selected_winner_ids = self.service.decode_selected_winner_ids(giveaway)
+            winner_ids = selected_winner_ids or self._pick_winners(
+                participants,
+                int(giveaway["winners_count"]),
+            )
+            if not winner_ids:
+                return False, "Giveaway đã kết thúc và không tìm thấy người tham gia."
+
+            self.service.update_winners(giveaway_id, winner_ids)
+            updated = self.service.get_giveaway(giveaway_id)
+            if giveaway_message:
+                await giveaway_message.edit(
+                    embed=self._build_giveaway_embed(updated, ended=True),
+                    view=None,
+                )
+                await self._send_result_message(
+                    giveaway_message.channel,
+                    updated,
+                    winner_ids,
+                )
+            await self._send_winner_dms(updated, winner_ids)
+            return True, "Đã cập nhật người thắng cho giveaway đã kết thúc."
+
+        giveaway_message = await self._fetch_giveaway_message(giveaway)
+        participants = await self._sync_reaction_participants(giveaway, giveaway_message)
         selected_winner_ids = self.service.decode_selected_winner_ids(giveaway)
         winner_ids = selected_winner_ids or self._pick_winners(participants, int(giveaway["winners_count"]))
         self.service.mark_ended(giveaway_id, winner_ids)
@@ -791,7 +900,7 @@ class AdministratorGiveawayCog(AdminCommandBase):
         if task and task is not current_task and not task.done():
             task.cancel()
 
-        message = await self._fetch_giveaway_message(updated)
+        message = giveaway_message or await self._fetch_giveaway_message(updated)
         if message:
             await message.edit(embed=self._build_giveaway_embed(updated, ended=True), view=None)
             await self._send_result_message(message.channel, updated, winner_ids)
@@ -805,14 +914,15 @@ class AdministratorGiveawayCog(AdminCommandBase):
         if giveaway["status"] != "ended":
             return False, "Giveaway chưa kết thúc, không thể reroll.", []
 
-        participants = self.service.get_participants(giveaway_id)
+        giveaway_message = await self._fetch_giveaway_message(giveaway)
+        participants = await self._sync_reaction_participants(giveaway, giveaway_message)
         previous_winners = set(self.service.decode_winner_ids(giveaway))
         winner_ids = self._pick_winners(participants, int(giveaway["winners_count"]), exclude_ids=previous_winners)
         reroll_round = int(giveaway.get("reroll_count") or 0) + 1
         self.service.update_winners(giveaway_id, winner_ids, reroll_count=reroll_round)
         updated = self.service.get_giveaway(giveaway_id)
 
-        message = await self._fetch_giveaway_message(updated)
+        message = giveaway_message or await self._fetch_giveaway_message(updated)
         if message:
             await message.edit(embed=self._build_giveaway_embed(updated, ended=True), view=None)
             await self._send_result_message(message.channel, updated, winner_ids, reroll=True, reroll_round=reroll_round)
