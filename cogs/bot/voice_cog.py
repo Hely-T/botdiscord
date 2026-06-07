@@ -3,14 +3,17 @@ from __future__ import annotations
 import asyncio
 import ctypes.util
 import importlib.util
+import math
 import os
 import random
 import re
 import shutil
 import subprocess
+import struct
 import sys
 import tempfile
 import time
+import wave
 from dataclasses import dataclass, field
 from pathlib import Path
 from types import SimpleNamespace
@@ -151,7 +154,10 @@ class BotVoiceCog(commands.Cog):
         "ui": "settings",
         "debug": "debug",
         "diag": "debug",
-        "test": "debug",
+        "test": "voice_test",
+        "tone": "voice_test",
+        "beep": "voice_test",
+        "soundtest": "voice_test",
     }
 
     def __init__(self, bot: commands.Bot):
@@ -442,7 +448,7 @@ class BotVoiceCog(commands.Cog):
         except (discord.Forbidden, discord.HTTPException, RuntimeError):
             pass
 
-    async def _show_voice_debug(self, ctx):
+    async def _show_voice_debug(self, ctx, *, try_connect: bool = False):
         if ctx.guild is None:
             await ctx.send(embed=create_error_splash("❌ Chỉ Dùng Trong Server", "Debug voice chỉ hoạt động trong server."))
             return
@@ -456,6 +462,11 @@ class BotVoiceCog(commands.Cog):
         ffmpeg_ok, ffmpeg_detail = await self._run_ffmpeg_probe()
         bot_member = ctx.guild.me or ctx.guild.get_member(self.bot.user.id)
         target_channel = getattr(getattr(ctx.author, "voice", None), "channel", None)
+        if try_connect and target_channel and not (voice_client and voice_client.is_connected()):
+            voice_client = await self._ensure_voice(ctx)
+            if voice_client and voice_client.is_connected():
+                state.voice_client = voice_client
+                bot_member = ctx.guild.me or ctx.guild.get_member(self.bot.user.id)
         bot_voice = getattr(bot_member, "voice", None) if bot_member else None
 
         def ok_text(value: bool) -> str:
@@ -926,6 +937,77 @@ class BotVoiceCog(commands.Cog):
             item_type="tts",
             local_file=str(output_path),
         )
+
+    async def _create_tone_item(self, ctx, duration: float = 2.0) -> AudioItem:
+        safe_id = f"{ctx.guild.id}-{ctx.message.id}-{random.randint(1000, 9999)}"
+        output_path = self.tts_dir / f"tone-{safe_id}.wav"
+        sample_rate = 48_000
+        frequency = 660.0
+        amplitude = 14_000
+        frame_count = int(sample_rate * duration)
+
+        def write_tone():
+            frames = bytearray()
+            for index in range(frame_count):
+                sample = int(amplitude * math.sin(2 * math.pi * frequency * index / sample_rate))
+                frames.extend(struct.pack("<h", sample))
+
+            with wave.open(str(output_path), "wb") as wav_file:
+                wav_file.setnchannels(1)
+                wav_file.setsampwidth(2)
+                wav_file.setframerate(sample_rate)
+                wav_file.writeframes(bytes(frames))
+
+        try:
+            await self.bot.loop.run_in_executor(None, write_tone)
+        except Exception:
+            if output_path.exists():
+                try:
+                    output_path.unlink()
+                except OSError:
+                    pass
+            raise
+
+        return AudioItem(
+            title="Voice test tone",
+            query=str(output_path),
+            requester_id=ctx.author.id,
+            requester_name=ctx.author.display_name,
+            item_type="tts",
+            local_file=str(output_path),
+        )
+
+    async def _run_voice_test(self, ctx):
+        if ctx.guild is None:
+            await ctx.send(embed=create_error_splash("❌ Chỉ Dùng Trong Server", "Test voice chỉ hoạt động trong server."))
+            return
+        if not await self._require_ffmpeg(ctx):
+            return
+
+        voice_client = await self._ensure_voice(ctx)
+        if not voice_client:
+            return
+
+        state = self._get_state(ctx.guild.id)
+        state.text_channel_id = ctx.channel.id
+        try:
+            item = await self._create_tone_item(ctx)
+        except Exception as exc:
+            await ctx.send(embed=create_error_splash("❌ Không Tạo Được Test Tone", str(exc)))
+            return
+
+        state.queue.append(item)
+        await ctx.send(
+            embed=create_info_splash(
+                "🔊 Voice Test",
+                (
+                    "Đang phát tone test nội bộ trong 2 giây.\n"
+                    "Nếu không nghe tiếng beep thì lỗi nằm ở voice transport/VPS hoặc trạng thái mute/deaf, "
+                    "không phải do YouTube hay Google TTS."
+                ),
+            )
+        )
+        await self._start_player_if_needed(ctx.guild.id)
 
     async def _start_player_if_needed(self, guild_id: int):
         state = self._get_state(guild_id)
@@ -1629,7 +1711,10 @@ class BotVoiceCog(commands.Cog):
             state.voice_client = voice_client
 
         if action == "debug":
-            await self._show_voice_debug(ctx)
+            await self._show_voice_debug(ctx, try_connect=True)
+            return
+        if action == "voice_test":
+            await self._run_voice_test(ctx)
             return
         if action == "settings":
             await self._show_player_settings(ctx, rest)
