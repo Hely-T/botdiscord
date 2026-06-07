@@ -24,7 +24,10 @@ from services.giveaway_service import GiveawayService
 from ui.administrator.emoji import (
     GIVEAWAY_CUSTOM_EMOJI_RE,
     GIVEAWAY_DEFAULT_ENTRY_EMOJI,
+    GIVEAWAY_THEME_DEFAULTS,
     giveaway_icon,
+    giveaway_theme_key,
+    giveaway_theme_value,
 )
 
 
@@ -143,6 +146,9 @@ class AdministratorGiveawayCog(AdminCommandBase):
         self._restored = True
         for giveaway in self.service.get_active_giveaways():
             giveaway_id = int(giveaway["giveaway_id"])
+            if self._is_overdue_giveaway(giveaway):
+                await self._end_giveaway(giveaway_id, automatic=True)
+                continue
             await self.refresh_giveaway_message(giveaway_id)
             self._schedule_end(giveaway)
 
@@ -152,6 +158,10 @@ class AdministratorGiveawayCog(AdminCommandBase):
             await ctx.message.delete()
         except (discord.Forbidden, discord.NotFound, discord.HTTPException):
             pass
+
+    @staticmethod
+    def _is_overdue_giveaway(giveaway: dict) -> bool:
+        return giveaway.get("status") == "active" and int(giveaway["ends_at"]) <= int(time.time())
 
     @staticmethod
     def _is_duration_token(token: str) -> bool:
@@ -349,46 +359,89 @@ class AdministratorGiveawayCog(AdminCommandBase):
         else:
             await interaction.response.send_message(embed=embed, ephemeral=ephemeral)
 
+    def _giveaway_theme(self, giveaway: dict | None) -> dict[str, str]:
+        if not giveaway:
+            return {}
+        return self.service.get_theme(int(giveaway["guild_id"]))
+
+    @staticmethod
+    def _format_theme_template(template: str, **values) -> str:
+        try:
+            return str(template).format(**values)
+        except (KeyError, ValueError):
+            return str(template)
+
+    def _theme_value(self, giveaway: dict | None, key: str, **values) -> str:
+        template = giveaway_theme_value(self._giveaway_theme(giveaway), key)
+        return self._format_theme_template(template, **values) if values else template
+
+    def _theme_icon(self, giveaway: dict | None, key: str) -> str:
+        return self._theme_value(giveaway, f"icon_{key}")
+
     def _build_giveaway_embed(self, giveaway: dict, ended: bool = False) -> discord.Embed:
         winner_ids = self.service.decode_winner_ids(giveaway)
         selected_winner_ids = self.service.decode_selected_winner_ids(giveaway)
         entry_emoji = self.giveaway_entry_emoji(giveaway)
         status_text = "Đã kết thúc" if ended or giveaway["status"] == "ended" else "Đang mở"
         color = discord.Color.from_rgb(255, 136, 190) if status_text == "Đang mở" else discord.Color.from_rgb(89, 96, 110)
+        start_icon = self._theme_icon(giveaway, "start")
+        ended_icon = self._theme_icon(giveaway, "ended")
+        reward = str(giveaway["reward"])
+        title_key = "title_start" if status_text == "Đang mở" else "title_ended"
+        description_key = "text_join" if status_text == "Đang mở" else "text_ended"
 
         embed = discord.Embed(
-            title=(
-                f"{giveaway_icon('start')} GIVEAWAY BẮT ĐẦU {giveaway_icon('start')}"
-                if status_text == "Đang mở"
-                else f"{giveaway_icon('ended')} GIVEAWAY ĐÃ KẾT THÚC"
-            ),
+            title=self._theme_value(giveaway, title_key, start=start_icon, ended=ended_icon, reward=reward),
             description=(
-                f"## {giveaway['reward']}\n\n"
-                + (
-                    "Kết quả winner ở bên dưới."
-                    if status_text == "Đã kết thúc"
-                    else f"Nhấn vào {entry_emoji} để tham gia."
+                f"## {reward}\n\n"
+                + self._theme_value(
+                    giveaway,
+                    description_key,
+                    emoji=entry_emoji,
+                    reward=reward,
+                    host=f"<@{int(giveaway['creator_id'])}>",
                 )
             ),
             color=color,
         )
         if status_text == "Đã kết thúc":
             winners_text = ", ".join(f"<@{user_id}>" for user_id in winner_ids) if winner_ids else "`Không có`"
-            embed.add_field(name=f"{giveaway_icon('winner')} Người thắng", value=winners_text, inline=False)
+            embed.add_field(
+                name=f"{self._theme_icon(giveaway, 'winner')} {self._theme_value(giveaway, 'label_winner')}",
+                value=winners_text,
+                inline=False,
+            )
         else:
-            embed.add_field(name=f"{giveaway_icon('time')} Kết thúc", value=f"<t:{int(giveaway['ends_at'])}:R>", inline=False)
-        embed.add_field(name=f"{giveaway_icon('host')} Host", value=f"<@{int(giveaway['creator_id'])}>", inline=False)
+            ends_at = int(giveaway["ends_at"])
+            embed.add_field(
+                name=f"{self._theme_icon(giveaway, 'time')} {self._theme_value(giveaway, 'label_time')}",
+                value=f"<t:{ends_at}:F>\n<t:{ends_at}:R>",
+                inline=False,
+            )
+        embed.add_field(
+            name=f"{self._theme_icon(giveaway, 'host')} {self._theme_value(giveaway, 'label_host')}",
+            value=f"<@{int(giveaway['creator_id'])}>",
+            inline=False,
+        )
         if selected_winner_ids and status_text == "Đang mở":
-            embed.add_field(name=f"{giveaway_icon('selected')} Winner đã chọn", value=f"`{len(selected_winner_ids)}` người", inline=False)
+            embed.add_field(
+                name=f"{self._theme_icon(giveaway, 'selected')} {self._theme_value(giveaway, 'label_selected')}",
+                value=", ".join(f"<@{user_id}>" for user_id in selected_winner_ids),
+                inline=False,
+            )
 
         if int(giveaway.get("quantity_total") or 1) > 1:
             embed.add_field(
-                name=f"{giveaway_icon('package')} Gói",
+                name=f"{self._theme_icon(giveaway, 'package')} {self._theme_value(giveaway, 'label_package')}",
                 value=f"`{int(giveaway['quantity_index'])}/{int(giveaway['quantity_total'])}`",
                 inline=False,
             )
         if giveaway.get("template"):
-            embed.add_field(name=f"{giveaway_icon('template')} Template", value=str(giveaway["template"])[:1024], inline=False)
+            embed.add_field(
+                name=f"{self._theme_icon(giveaway, 'template')} {self._theme_value(giveaway, 'label_template')}",
+                value=str(giveaway["template"])[:1024],
+                inline=False,
+            )
 
         embed.set_footer(text=self._local_footer_text())
         return embed
@@ -412,12 +465,20 @@ class AdministratorGiveawayCog(AdminCommandBase):
         guild = self.bot.get_guild(int(giveaway["guild_id"]))
         guild_name = guild.name if guild else "server"
         action_text = f"trúng thưởng reroll lần {reroll_round}" if reroll and reroll_round else "trúng thưởng"
+        content_template = self._theme_value(giveaway, "dm_winner")
         for user_id in winner_ids:
             try:
                 user = self.bot.get_user(int(user_id)) or await self.bot.fetch_user(int(user_id))
                 await user.send(
-                    f"{giveaway_icon('dm')} Chúc mừng! Bạn đã {action_text} giveaway **{giveaway['reward']}** tại **{guild_name}**.\n"
-                    "Hãy quay lại server để nhận thưởng nhé."
+                    self._format_theme_template(
+                        content_template,
+                        dm=self._theme_icon(giveaway, "dm"),
+                        action=action_text,
+                        reward=giveaway["reward"],
+                        guild=guild_name,
+                        user=user.mention,
+                        host=f"<@{int(giveaway['creator_id'])}>",
+                    )
                 )
             except (discord.Forbidden, discord.NotFound, discord.HTTPException):
                 continue
@@ -425,20 +486,32 @@ class AdministratorGiveawayCog(AdminCommandBase):
     async def _send_result_message(self, channel, giveaway: dict, winner_ids: list[int], reroll: bool = False, reroll_round: int | None = None):
         if winner_ids:
             winners_text = ", ".join(f"<@{user_id}>" for user_id in winner_ids)
-            prefix = (
-                f"{giveaway_icon('reroll')} Giveaway đã reroll lần {reroll_round}!"
-                if reroll and reroll_round
-                else f"{giveaway_icon('result')} Giveaway đã kết thúc!"
-            )
-            content = (
-                f"{prefix}\n"
-                f"Chúc mừng {winners_text} đã trúng **{giveaway['reward']}**.\n"
-                "Liên hệ host để nhận thưởng nhé."
-            )
+            if reroll and reroll_round:
+                content = self._theme_value(
+                    giveaway,
+                    "result_reroll",
+                    icon=self._theme_icon(giveaway, "reroll"),
+                    winners=winners_text,
+                    reward=giveaway["reward"],
+                    host=f"<@{int(giveaway['creator_id'])}>",
+                    round=reroll_round,
+                )
+            else:
+                content = self._theme_value(
+                    giveaway,
+                    "result_winner",
+                    icon=self._theme_icon(giveaway, "result"),
+                    winners=winners_text,
+                    reward=giveaway["reward"],
+                    host=f"<@{int(giveaway['creator_id'])}>",
+                )
         else:
-            content = (
-                f"{giveaway_icon('result')} Giveaway **{giveaway['reward']}** đã kết thúc.\n"
-                "Không có người tham gia nên không có winner."
+            content = self._theme_value(
+                giveaway,
+                "result_no_winner",
+                icon=self._theme_icon(giveaway, "result"),
+                reward=giveaway["reward"],
+                host=f"<@{int(giveaway['creator_id'])}>",
             )
         try:
             await channel.send(content)
@@ -472,7 +545,7 @@ class AdministratorGiveawayCog(AdminCommandBase):
         winners_count = int(giveaway["winners_count"])
         selected_winner_ids = self.service.decode_selected_winner_ids(giveaway)
         embed = create_info_splash(
-            f"{giveaway_icon('set')} Set Winner Giveaway",
+            f"{self._theme_icon(giveaway, 'set')} Set Giveaway",
             (
                 f"**Phần thưởng:** {giveaway['reward']}\n"
                 f"**Số winner cần chọn:** `{winners_count}`\n"
@@ -609,6 +682,9 @@ class AdministratorGiveawayCog(AdminCommandBase):
         giveaway = self.service.get_giveaway(giveaway_id)
         if not giveaway:
             return
+        if self._is_overdue_giveaway(giveaway):
+            await self._end_giveaway(giveaway_id, automatic=True)
+            return
         message = await self._fetch_giveaway_message(giveaway)
         if message:
             ended = giveaway["status"] == "ended"
@@ -625,8 +701,10 @@ class AdministratorGiveawayCog(AdminCommandBase):
         quantity_index: int,
     ) -> int:
         ends_at = int(time.time()) + int(payload.duration_seconds)
+        theme = self.service.get_theme(guild_id)
+        start_icon = giveaway_theme_value(theme, "icon_start")
         placeholder = discord.Embed(
-            title=f"{giveaway_icon('start')} GIVEAWAY",
+            title=f"{start_icon} GIVEAWAY",
             description="Đang khởi tạo giveaway...",
             color=discord.Color.from_rgb(255, 136, 190),
         )
@@ -797,35 +875,83 @@ class AdministratorGiveawayCog(AdminCommandBase):
         embed_factory = create_success_splash if ok else create_error_splash
         await ctx.send(embed=embed_factory(f"{giveaway_icon('reroll')} Reroll Giveaway", message))
 
+    @staticmethod
+    def _is_entry_emoji_key(raw_key: str) -> bool:
+        return str(raw_key or "").strip().lower() in {"emoji", "icon", "reaction", "entry", "entry_emoji", "thamgia", "tham_gia"}
+
+    def _build_config_help_embed(self, guild_id: int) -> discord.Embed:
+        theme = self.service.get_theme(guild_id)
+        current = self.get_entry_emoji(guild_id)
+        lines = [
+            f"Emoji tham gia: {current}",
+            "`ga config emoji <emoji>` đổi emoji react tham gia.",
+            "`ga config host <emoji>` đổi emoji host.",
+            "`ga config winner <emoji>` đổi emoji người thắng.",
+            "`ga config time <emoji>` đổi emoji thời gian.",
+            "`ga config join_text <nội dung>` đổi câu tham gia.",
+            "`ga config ended_text <nội dung>` đổi câu kết thúc.",
+            "`ga config host_text <text>` đổi chữ Host.",
+            "`ga config winner_text <text>` đổi chữ Người thắng.",
+            "`ga config <key> reset` để về mặc định.",
+        ]
+        changed = [
+            f"`{key}` = {value}"
+            for key, value in sorted(theme.items())
+            if key in GIVEAWAY_THEME_DEFAULTS
+        ]
+        if changed:
+            lines.append("\nĐang custom:\n" + "\n".join(changed[:15]))
+        return create_info_splash(f"{giveaway_icon('config')} Giveaway Config", "\n".join(lines))
+
+    async def _set_entry_emoji_config(self, guild: discord.Guild, raw_emoji: str) -> tuple[bool, str]:
+        if not str(raw_emoji or "").strip():
+            return False, "Thiếu emoji. Dùng: `ga config emoji <emoji>`."
+        normalized = await self.resolve_entry_emoji_input(guild, raw_emoji)
+        self.service.set_entry_emoji(guild.id, normalized)
+        return True, f"Giveaway mới sẽ dùng {normalized} để tham gia.\nCác giveaway đang chạy vẫn giữ emoji cũ."
+
+    async def _set_theme_config(self, guild: discord.Guild, raw_key: str, raw_value: str) -> tuple[bool, str]:
+        key = giveaway_theme_key(raw_key)
+        if not key:
+            return False, f"Key config `{raw_key}` không tồn tại. Dùng `ga config` để xem mẫu."
+        raw_value = str(raw_value or "").strip()
+        if not raw_value:
+            current = giveaway_theme_value(self.service.get_theme(guild.id), key)
+            return False, f"`{key}` hiện tại: {current}\nDùng: `ga config {raw_key} <giá trị>`."
+        if raw_value.lower() in {"reset", "default", "macdinh", "mặcđịnh", "mac_dinh", "mặc_định"}:
+            self.service.reset_theme_value(guild.id, key)
+            return True, f"Đã reset `{key}` về mặc định: {GIVEAWAY_THEME_DEFAULTS.get(key, '')}"
+        value = (
+            await self.resolve_entry_emoji_input(guild, raw_value)
+            if key.startswith("icon_")
+            else raw_value.replace("\\n", "\n")
+        )
+        self.service.set_theme_value(guild.id, key, value)
+        return True, f"`{key}` đã đổi thành: {value}"
+
     async def _handle_config_command(self, ctx, content: str, action: str = "config"):
         raw = (content or "").strip()
-        if action in {"config", "cfg"}:
-            first, _, rest = raw.partition(" ")
-            if first.lower() in {"emoji", "icon", "reaction"}:
-                raw = rest.strip()
-
         if not raw:
-            current = self.get_entry_emoji(ctx.guild.id)
-            await ctx.send(
-                embed=create_info_splash(
-                    f"{giveaway_icon('config')} Giveaway Emoji",
-                    f"Emoji tham gia hiện tại: {current}\nDùng: `ga config emoji <emoji>` hoặc `ga emoji <emoji>`.",
-                )
-            )
+            await ctx.send(embed=self._build_config_help_embed(ctx.guild.id))
             return
 
+        first, _, rest = raw.partition(" ")
         try:
-            normalized = await self.resolve_entry_emoji_input(ctx.guild, raw)
+            if action in {"emoji", "reaction"}:
+                ok, message = await self._set_entry_emoji_config(ctx.guild, raw)
+            elif action == "icon" and first and rest:
+                ok, message = await self._set_theme_config(ctx.guild, first, rest)
+            elif action == "icon":
+                ok, message = await self._set_entry_emoji_config(ctx.guild, raw)
+            elif self._is_entry_emoji_key(first):
+                ok, message = await self._set_entry_emoji_config(ctx.guild, rest)
+            else:
+                ok, message = await self._set_theme_config(ctx.guild, first, rest)
         except ValueError as exc:
             await ctx.send(embed=create_error_splash("❌ Emoji Không Hợp Lệ", str(exc)))
             return
-        self.service.set_entry_emoji(ctx.guild.id, normalized)
-        await ctx.send(
-            embed=create_success_splash(
-                "✅ Đã Đổi Emoji Giveaway",
-                f"Giveaway mới sẽ dùng {normalized} để tham gia.\nCác giveaway đang chạy vẫn giữ emoji cũ.",
-            )
-        )
+        embed_factory = create_success_splash if ok else create_error_splash
+        await ctx.send(embed=embed_factory(f"{giveaway_icon('config')} Giveaway Config", message))
 
     @commands.command(name="end")
     async def end(self, ctx, giveaway_id: str = None):
@@ -872,6 +998,8 @@ class AdministratorGiveawayCog(AdminCommandBase):
         template="Template riêng nếu có",
         giveaway_id="ID giveaway/message ID khi set/end/reroll",
         emoji="Emoji tham gia khi action là config",
+        config_key="Key config: emoji, host, winner, time, join_text, ended_text...",
+        config_value="Giá trị config mới; nhập reset để về mặc định",
     )
     async def slash_giveaway(
         self,
@@ -884,6 +1012,8 @@ class AdministratorGiveawayCog(AdminCommandBase):
         template: str = "",
         giveaway_id: str = "",
         emoji: str = "",
+        config_key: str = "",
+        config_value: str = "",
     ):
         action = (action or "").strip().lower()
         if action == "config":
@@ -895,28 +1025,29 @@ class AdministratorGiveawayCog(AdminCommandBase):
                 return
             if not await self.require_role_or_admin_interaction(interaction, "giveaway"):
                 return
-            if not str(emoji or "").strip():
-                current = self.get_entry_emoji(interaction.guild.id)
+            raw_key = str(config_key or "").strip()
+            raw_value = str(config_value or "").strip() or str(emoji or "").strip()
+            if not raw_key and not raw_value:
                 await self._send_interaction_splash(
                     interaction,
-                    create_info_splash(f"{giveaway_icon('config')} Giveaway Emoji", f"Emoji tham gia hiện tại: {current}"),
+                    self._build_config_help_embed(interaction.guild.id),
                 )
                 return
             try:
-                normalized = await self.resolve_entry_emoji_input(interaction.guild, emoji)
+                if not raw_key or self._is_entry_emoji_key(raw_key):
+                    ok, message = await self._set_entry_emoji_config(interaction.guild, raw_value)
+                else:
+                    ok, message = await self._set_theme_config(interaction.guild, raw_key, raw_value)
             except ValueError as exc:
                 await self._send_interaction_splash(
                     interaction,
                     create_error_splash("❌ Emoji Không Hợp Lệ", str(exc)),
                 )
                 return
-            self.service.set_entry_emoji(interaction.guild.id, normalized)
+            embed_factory = create_success_splash if ok else create_error_splash
             await self._send_interaction_splash(
                 interaction,
-                create_success_splash(
-                    "✅ Đã Đổi Emoji Giveaway",
-                    f"Giveaway mới sẽ dùng {normalized} để tham gia.\nCác giveaway đang chạy vẫn giữ emoji cũ.",
-                ),
+                embed_factory(f"{giveaway_icon('config')} Giveaway Config", message),
             )
             return
         if action in {"set", "end", "reroll"}:

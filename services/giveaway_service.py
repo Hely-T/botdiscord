@@ -52,6 +52,16 @@ class GiveawayService:
             """,
         )
         self.db.create_table(
+            "giveaway_theme",
+            """
+            guild_id INTEGER NOT NULL,
+            theme_key TEXT NOT NULL,
+            theme_value TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            PRIMARY KEY (guild_id, theme_key)
+            """,
+        )
+        self.db.create_table(
             "giveaway_participants",
             """
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -273,4 +283,51 @@ class GiveawayService:
             {"entry_emoji": str(emoji), "updated_at": get_timestamp()},
             "guild_id = ?",
             (int(guild_id),),
+        )
+
+    def get_theme(self, guild_id: int) -> dict[str, str]:
+        rows = self.db.fetch(
+            """
+            SELECT theme_key, theme_value
+            FROM giveaway_theme
+            WHERE guild_id = ?
+            """,
+            (int(guild_id),),
+        )
+        return {str(row["theme_key"]): str(row["theme_value"]) for row in rows}
+
+    def set_theme_value(self, guild_id: int, theme_key: str, theme_value: str):
+        guild_id = int(guild_id)
+        theme_key = str(theme_key)
+        existing = self.db.select_one(
+            "giveaway_theme",
+            "guild_id = ? AND theme_key = ?",
+            (guild_id, theme_key),
+        )
+        data = {
+            "theme_value": str(theme_value),
+            "updated_at": get_timestamp(),
+        }
+        if existing:
+            self.db.update(
+                "giveaway_theme",
+                data,
+                "guild_id = ? AND theme_key = ?",
+                (guild_id, theme_key),
+            )
+            return
+        self.db.insert(
+            "giveaway_theme",
+            {
+                "guild_id": guild_id,
+                "theme_key": theme_key,
+                **data,
+            },
+        )
+
+    def reset_theme_value(self, guild_id: int, theme_key: str):
+        self.db.delete(
+            "giveaway_theme",
+            "guild_id = ? AND theme_key = ?",
+            (int(guild_id), str(theme_key)),
         )
