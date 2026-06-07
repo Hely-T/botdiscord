@@ -47,6 +47,7 @@ VOICE_CONNECT_TIMEOUT = 20
 YTDLP_SEARCH_TIMEOUT = 35
 YTDLP_STREAM_TIMEOUT = 45
 TTS_CREATE_TIMEOUT = 25
+PLAYBACK_START_GRACE_SECONDS = 1.2
 WINDOWS_OPUS_NAMES = (
     "libopus-0.x64.dll",
     "libopus-0.x86.dll",
@@ -95,6 +96,7 @@ class GuildAudioState:
     playback_started_at: float | None = None
     playback_elapsed: float = 0.0
     autoplay_history: list[str] = field(default_factory=list)
+    last_music_item: AudioItem | None = None
 
 
 class BotVoiceCog(commands.Cog):
@@ -409,6 +411,17 @@ class BotVoiceCog(commands.Cog):
         except (discord.Forbidden, discord.HTTPException):
             pass
 
+    def _find_guild_voice_client(self, guild: discord.Guild) -> discord.VoiceClient | None:
+        voice_client = getattr(guild, "voice_client", None)
+        if voice_client and voice_client.is_connected():
+            return voice_client
+
+        for client in self.bot.voice_clients:
+            client_guild = getattr(client, "guild", None)
+            if client_guild and client_guild.id == guild.id and client.is_connected():
+                return client
+        return None
+
     async def _ensure_voice(self, ctx) -> discord.VoiceClient | None:
         if ctx.guild is None:
             await ctx.send(embed=create_error_splash("❌ Chỉ Dùng Trong Server", "Lệnh voice chỉ hoạt động trong server."))
@@ -421,7 +434,16 @@ class BotVoiceCog(commands.Cog):
 
         state = self._get_state(ctx.guild.id)
         target_channel = ctx.author.voice.channel
-        voice_client = ctx.voice_client or state.voice_client
+        bot_member = ctx.guild.me or ctx.guild.get_member(self.bot.user.id)
+        if bot_member:
+            voice_permissions = target_channel.permissions_for(bot_member)
+            if not voice_permissions.connect:
+                await ctx.send(embed=create_error_splash("❌ Thiếu Quyền Voice", f"Bot thiếu quyền `Connect` trong `{target_channel.name}`."))
+                return None
+            if not voice_permissions.speak:
+                await ctx.send(embed=create_error_splash("❌ Thiếu Quyền Voice", f"Bot thiếu quyền `Speak` trong `{target_channel.name}` nên có vào room cũng không phát ra tiếng."))
+                return None
+        voice_client = self._find_guild_voice_client(ctx.guild) or ctx.voice_client or state.voice_client
 
         try:
             if voice_client and voice_client.is_connected():
@@ -455,6 +477,51 @@ class BotVoiceCog(commands.Cog):
                 )
             )
         except discord.ClientException as exc:
+            if "already connected" in str(exc).lower():
+                existing_client = self._find_guild_voice_client(ctx.guild)
+                if existing_client and existing_client.is_connected():
+                    if existing_client.channel == target_channel:
+                        state.voice_client = existing_client
+                        state.text_channel_id = ctx.channel.id
+                        if state.voice_owner_id is None:
+                            self._set_voice_owner(state, ctx.author)
+                        self._cancel_idle(state)
+                        return existing_client
+                    await ctx.send(
+                        embed=create_error_splash(
+                            "❌ Voice Đang Ở Phòng Khác",
+                            f"Bot đang ở `{existing_client.channel.name}`. Hãy vào đúng phòng đó hoặc dùng người giữ quyền leave để chuyển phòng.",
+                        )
+                    )
+                    return None
+                try:
+                    await ctx.guild.change_voice_state(channel=None)
+                    await asyncio.sleep(1)
+                    voice_client = await target_channel.connect(
+                        timeout=VOICE_CONNECT_TIMEOUT,
+                        self_deaf=True,
+                    )
+                    self._set_voice_owner(state, ctx.author)
+                    state.voice_client = voice_client
+                    state.text_channel_id = ctx.channel.id
+                    self._cancel_idle(state)
+                    return voice_client
+                except asyncio.TimeoutError:
+                    await ctx.send(
+                        embed=create_error_splash(
+                            "❌ Voice Timeout",
+                            "Bot vừa reset voice state nhưng Discord phản hồi quá lâu. Hãy thử lại sau vài giây.",
+                        )
+                    )
+                    return None
+                except (discord.ClientException, discord.Forbidden, discord.HTTPException) as reset_exc:
+                    await ctx.send(
+                        embed=create_error_splash(
+                            "❌ Không Reset Được Voice",
+                            f"Bot đang có voice session cũ nhưng process hiện tại không điều khiển được.\nChi tiết: `{reset_exc}`\nNếu vẫn lặp lại, hãy tắt process bot cũ trên VPS rồi chạy lại một process duy nhất.",
+                        )
+                    )
+                    return None
             await ctx.send(embed=create_error_splash("❌ Không Join Được Voice", str(exc)))
         except discord.Forbidden:
             await ctx.send(embed=create_error_splash("❌ Thiếu Quyền Discord", "Bot thiếu quyền vào/nói trong voice channel này."))
@@ -565,6 +632,42 @@ class BotVoiceCog(commands.Cog):
         channel = self.bot.get_channel(state.text_channel_id)
         if channel:
             await channel.send(embed=embed)
+
+    async def _send_playback_start_error(self, guild_id: int, item: AudioItem, detail: str):
+        ffmpeg_path = self._find_ffmpeg() or "ffmpeg"
+        source_hint = item.local_file or item.stream_url or item.webpage_url or item.query
+        await self._send_to_state_channel(
+            guild_id,
+            create_error_splash(
+                "❌ Không Phát Được",
+                (
+                    f"`{self._short_text(item.title, 120)}`\n"
+                    f"{detail}\n"
+                    f"FFmpeg: `{ffmpeg_path}`\n"
+                    f"Nguồn: `{self._short_text(str(source_hint), 180)}`"
+                ),
+            ),
+        )
+
+    async def _verify_playback_started(self, guild_id: int, item: AudioItem):
+        await asyncio.sleep(PLAYBACK_START_GRACE_SECONDS)
+        state = self._get_state(guild_id)
+        voice_client = state.voice_client
+        if state.current is not item:
+            return
+        if voice_client and voice_client.is_connected() and (voice_client.is_playing() or voice_client.is_paused()):
+            return
+        await self._send_playback_start_error(
+            guild_id,
+            item,
+            (
+                "Nguồn phát đã được đưa vào voice nhưng FFmpeg/Discord voice dừng ngay sau khi bắt đầu. "
+                "Nếu lỗi này chỉ xảy ra trên VPS Windows, hãy kiểm tra firewall/nhà VPS có chặn UDP outbound tới Discord voice không."
+            ),
+        )
+        state.current = None
+        await self._cleanup_item(item)
+        await self._play_next(guild_id)
 
     def _build_music_item(self, entry: dict[str, Any], requester: discord.Member, fallback_query: str) -> AudioItem | None:
         if not entry:
@@ -715,14 +818,34 @@ class BotVoiceCog(commands.Cog):
         state = self._get_state(guild_id)
         voice_client = state.voice_client
         if not voice_client or not voice_client.is_connected():
+            guild = self.bot.get_guild(guild_id)
+            if guild:
+                voice_client = self._find_guild_voice_client(guild)
+                if voice_client and voice_client.is_connected():
+                    state.voice_client = voice_client
+        if not voice_client or not voice_client.is_connected():
             return
         if voice_client.is_playing() or voice_client.is_paused():
+            if state.current is None:
+                try:
+                    voice_client.stop()
+                except Exception:
+                    pass
+                await asyncio.sleep(0.5)
+                if not voice_client.is_playing() and not voice_client.is_paused():
+                    await self._play_next(guild_id)
+                elif state.queue:
+                    await self._send_playback_start_error(
+                        guild_id,
+                        state.queue[0],
+                        "Voice client đang báo còn phát nhưng bot không có bài hiện tại. Bot đã thử dừng nguồn cũ nhưng chưa giải phóng được.",
+                    )
             return
         await self._play_next(guild_id)
 
     async def _enqueue_autoplay(self, guild_id: int) -> bool:
         state = self._get_state(guild_id)
-        previous = state.current
+        previous = state.current or state.last_music_item
         if not state.autoplay or not previous or previous.item_type != "music":
             return False
         try:
@@ -906,9 +1029,11 @@ class BotVoiceCog(commands.Cog):
             state.playback_elapsed = 0.0
             state.playback_started_at = time.monotonic()
             await self._send_now_playing(guild_id, item)
+            self.bot.loop.create_task(self._verify_playback_started(guild_id, item))
             if item.item_type == "music":
                 self._schedule_player_refresh(guild_id)
         except Exception as exc:
+            print(f"[voice] Play failed in guild {guild_id}: {repr(exc)}", file=sys.stderr)
             error_text = str(exc) or repr(exc)
             if isinstance(exc, asyncio.TimeoutError):
                 error_text = "Quá thời gian lấy nguồn phát. YouTube/Spotify đang phản hồi chậm, thử lại hoặc gửi link khác."
@@ -928,10 +1053,13 @@ class BotVoiceCog(commands.Cog):
         state.playback_elapsed = 0.0
 
         if error:
+            print(f"[voice] Playback callback error in guild {guild_id}: {repr(error)}", file=sys.stderr)
             await self._send_to_state_channel(guild_id, create_error_splash("❌ Voice Lỗi", str(error)))
 
         if finished_item and finished_item.item_type == "tts":
             await self._cleanup_item(finished_item)
+        if finished_item and finished_item.item_type == "music":
+            state.last_music_item = finished_item
 
         if state.stop_requested:
             state.current = None
@@ -944,8 +1072,7 @@ class BotVoiceCog(commands.Cog):
         elif state.skip_requested:
             state.current = None
         else:
-            # Giữ bài vừa phát trong state thêm một nhịp để autoplay có context tìm bài tiếp theo.
-            state.current = finished_item
+            state.current = None
 
         await self._play_next(guild_id)
 
@@ -963,7 +1090,10 @@ class BotVoiceCog(commands.Cog):
 
     async def _refresh_player_message(self, guild_id: int, preview_item: AudioItem | None = None):
         state = self._get_state(guild_id)
-        item = state.current or preview_item
+        if preview_item and (not state.current or state.current.item_type != "music"):
+            item = preview_item
+        else:
+            item = state.current
         if not item or item.item_type != "music" or not state.text_channel_id:
             return
         channel = self.bot.get_channel(state.text_channel_id)
@@ -1056,7 +1186,10 @@ class BotVoiceCog(commands.Cog):
             await interaction.response.send_message("❌ Nút này không thuộc server hiện tại.", ephemeral=True)
             return False
         state = self._get_state(guild_id)
-        voice_client = state.voice_client
+        voice_client = self._find_guild_voice_client(interaction.guild) if interaction.guild else None
+        voice_client = voice_client or state.voice_client
+        if voice_client and voice_client.is_connected():
+            state.voice_client = voice_client
         member_channel = getattr(getattr(interaction.user, "voice", None), "channel", None)
         if not voice_client or not voice_client.is_connected() or member_channel != voice_client.channel:
             await interaction.response.send_message(
@@ -1378,7 +1511,9 @@ class BotVoiceCog(commands.Cog):
 
     async def _handle_play_action(self, ctx, action: str, rest: str):
         state = self._get_state(ctx.guild.id)
-        voice_client = ctx.voice_client or state.voice_client
+        voice_client = self._find_guild_voice_client(ctx.guild) or ctx.voice_client or state.voice_client
+        if voice_client and voice_client.is_connected():
+            state.voice_client = voice_client
 
         if action == "settings":
             await self._show_player_settings(ctx, rest)
@@ -1537,7 +1672,7 @@ class BotVoiceCog(commands.Cog):
 
         state = self._get_state(ctx.guild.id)
         state.text_channel_id = ctx.channel.id
-        was_idle = not state.current and not voice_client.is_playing() and not voice_client.is_paused()
+        should_show_preview = state.current is None
 
         try:
             async with ctx.typing():
@@ -1567,7 +1702,7 @@ class BotVoiceCog(commands.Cog):
             return
 
         state.queue.extend(items)
-        if was_idle:
+        if should_show_preview:
             await self._refresh_player_message(ctx.guild.id, preview_item=items[0])
         await self._start_player_if_needed(ctx.guild.id)
         await self._refresh_player_message(ctx.guild.id)
@@ -1595,7 +1730,7 @@ class BotVoiceCog(commands.Cog):
             await self._notify_tts_busy(ctx, active_requester)
             return
 
-        await self._try_react(ctx.message, "🔊")
+        await self._try_react(ctx.message, "✅")
         if not await self._require_ffmpeg(ctx):
             await self._try_react(ctx.message, "❌")
             return
