@@ -3,6 +3,7 @@ from discord.ext import commands
 
 from cogs.role_command_utils import RoleCommandBase
 from services.booking_service import BookingService
+from services.role_permission_service import normalize_permission_key
 from utils import create_error_splash, create_success_splash, create_warning_splash
 
 
@@ -37,6 +38,35 @@ ROLE_PERMISSION_COMMANDS = {
     "perms",
     "myroles",
     "rolescommands",
+}
+
+COMMAND_PATH_ALIASES = {
+    "level": {
+        "setup": "setup",
+        "config": "setup",
+        "setting": "setup",
+        "settings": "setup",
+        "role": "role",
+        "roles": "role",
+        "reward": "role",
+        "rewards": "role",
+        "all": "all",
+        "top": "all",
+        "leaderboard": "all",
+        "lb": "all",
+        "count": "count",
+        "c": "count",
+        "totalcount": "count",
+        "set": "set",
+        "a": "edit",
+        "add": "edit",
+        "d": "edit",
+        "r": "edit",
+        "rm": "edit",
+        "remove": "edit",
+        "e": "edit",
+        "edit": "edit",
+    },
 }
 
 
@@ -148,15 +178,24 @@ class RoleCog(RoleCommandBase):
     def _resolve_command_name(self, raw_command_name: str | None) -> str | None:
         if raw_command_name is None:
             return None
-        command_name = raw_command_name.strip().lower()
+        command_name = normalize_permission_key(raw_command_name)
         if not command_name:
             return None
-        command = self.bot.get_command(command_name)
+
+        parts = command_name.split()
+        root_raw = parts[0]
+        command = self.bot.get_command(root_raw)
         if not command:
             return None
         resolved_name = command.name.lower()
         if resolved_name in ROLE_PERMISSION_COMMANDS:
             return "role"
+        if len(parts) > 1:
+            subcommand = parts[1].lower()
+            mapped_subcommand = COMMAND_PATH_ALIASES.get(resolved_name, {}).get(subcommand)
+            if not mapped_subcommand:
+                return None
+            return f"{resolved_name} {mapped_subcommand}"
         return resolved_name
 
     @staticmethod

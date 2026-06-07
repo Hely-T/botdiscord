@@ -14,7 +14,7 @@ from discord.ext import commands
 
 from services.admin_service import AdminService
 from services.guild_settings_service import GuildSettingsService
-from services.role_permission_service import RolePermissionService
+from services.role_permission_service import RolePermissionService, normalize_permission_key
 from services.settings_service import SettingsService
 from services.user_service import UserService
 from utils import (
@@ -256,7 +256,7 @@ class AdminCommandBase(commands.Cog):
         command_name: str | None = None,
         message: str | None = None,
     ) -> bool:
-        resolved_command = (command_name or getattr(ctx.command, "name", "") or "").lower()
+        resolved_command = normalize_permission_key(command_name or getattr(ctx.command, "name", "") or "")
         if self.can_use_role_or_admin(ctx, resolved_command):
             return True
         detail = message or f"Chỉ bot admin hoặc role có quyền `{resolved_command}` trong DB mới dùng được lệnh này."
@@ -284,11 +284,12 @@ class AdminCommandBase(commands.Cog):
             allowed = False
         else:
             user_roles = [role.id for role in interaction.user.roles if role.name != "@everyone"]
-            allowed = self.role_permissions.user_can_use(interaction.guild.id, user_roles, command_name.lower())
+            allowed = self.role_permissions.user_can_use(interaction.guild.id, user_roles, normalize_permission_key(command_name))
         if allowed:
             return True
 
-        detail = message or f"Chỉ bot admin hoặc role có quyền `{command_name}` trong DB mới dùng được lệnh này."
+        resolved_command = normalize_permission_key(command_name)
+        detail = message or f"Chỉ bot admin hoặc role có quyền `{resolved_command}` trong DB mới dùng được lệnh này."
         if interaction.response.is_done():
             await interaction.followup.send(f"❌ {detail}", ephemeral=True)
         else:
@@ -301,7 +302,7 @@ class AdminCommandBase(commands.Cog):
         if ctx.guild is None:
             return False
         user_roles = [role.id for role in ctx.author.roles if role.name != "@everyone"]
-        return self.role_permissions.user_can_use(ctx.guild.id, user_roles, command_name)
+        return self.role_permissions.user_can_use(ctx.guild.id, user_roles, normalize_permission_key(command_name))
 
     @staticmethod
     def extract_user_id(raw_target: str | None) -> int | None:

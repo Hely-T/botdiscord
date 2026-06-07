@@ -21,6 +21,18 @@ ROLE_PERMISSION_GROUP = {
     "rolescommands",
 }
 
+
+def normalize_permission_key(command_name: str | None) -> str:
+    """Chuẩn hóa command key, hỗ trợ cả subcommand dạng `level setup`."""
+    return " ".join(str(command_name or "").strip().lower().split())
+
+
+def permission_parent_keys(command_name: str) -> list[str]:
+    """Trả về các key cha gần nhất, ví dụ `level setup xp` -> [`level setup`, `level`]."""
+    parts = normalize_permission_key(command_name).split()
+    return [" ".join(parts[:index]) for index in range(len(parts) - 1, 0, -1)]
+
+
 class RolePermissionService:
     """Service quản lý quyền commands theo role"""
     
@@ -51,7 +63,7 @@ class RolePermissionService:
             service.add_command_role(123456, 987654, 'ban', 111111)
             → Role 987654 được dùng lệnh 'ban' trên server 123456
         """
-        normalized_command = command_name.lower()
+        normalized_command = normalize_permission_key(command_name)
         if normalized_command in ROLE_PERMISSION_GROUP:
             normalized_command = "role"
 
@@ -88,7 +100,7 @@ class RolePermissionService:
             service.remove_command_role(123456, 987654, 'ban')
             → Role 987654 không được dùng lệnh 'ban' nữa
         """
-        normalized_command = command_name.lower()
+        normalized_command = normalize_permission_key(command_name)
         if normalized_command in ROLE_PERMISSION_GROUP:
             success = True
             for grouped_command in ROLE_PERMISSION_GROUP:
@@ -118,18 +130,27 @@ class RolePermissionService:
             can_use = service.user_can_use(100, user_roles, 'ban')
             → Nếu role 456 hoặc role nào có quyền 'ban' thì return True
         """
-        normalized_command = command_name.lower()
+        normalized_command = normalize_permission_key(command_name)
         if normalized_command in ROLE_PERMISSION_GROUP:
             return any(
                 self.manager.can_use_command(guild_id, user_roles, grouped_command)
                 for grouped_command in ROLE_PERMISSION_GROUP
             )
 
-        return self.manager.can_use_command(
-            guild_id=guild_id,
-            user_roles=user_roles,
-            command_name=normalized_command
+        command_keys = [normalized_command] + permission_parent_keys(normalized_command)
+        return any(
+            self.manager.can_use_command(
+                guild_id=guild_id,
+                user_roles=user_roles,
+                command_name=command_key,
+            )
+            for command_key in command_keys
         )
+
+    def command_has_permission(self, guild_id: int, command_name: str) -> bool:
+        """Check command key đã được set role trực tiếp trong DB chưa."""
+        normalized_command = normalize_permission_key(command_name)
+        return bool(self.manager.get_roles_for_command(guild_id, normalized_command))
     
     def get_roles_for_command(self, guild_id: int, command_name: str) -> List[Dict]:
         """
@@ -142,7 +163,7 @@ class RolePermissionService:
         Returns:
             List dict [{'role_id': 123, 'role_name': 'Admin'}, ...]
         """
-        normalized_command = command_name.lower()
+        normalized_command = normalize_permission_key(command_name)
         if normalized_command in ROLE_PERMISSION_GROUP:
             roles_by_id = {}
             for grouped_command in ROLE_PERMISSION_GROUP:

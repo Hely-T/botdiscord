@@ -573,12 +573,44 @@ class LevelCog(AdminCommandBase):
             await ctx.send(embed=create_error_splash("❌ Không Tìm Thấy User", f"Không tìm thấy `{raw_member}` trong server."))
         return member
 
+    async def require_level_root_if_locked_ctx(self, ctx: commands.Context) -> bool:
+        """Nếu DB đã set quyền `level`, toàn bộ nhánh level sẽ bị khóa theo quyền đó."""
+        if ctx.guild is None:
+            return False
+        if not self.role_permissions.command_has_permission(ctx.guild.id, "level"):
+            return True
+        return await self.require_role_or_admin_ctx(ctx, "level")
+
+    async def require_level_key_if_locked_ctx(self, ctx: commands.Context, permission_key: str) -> bool:
+        """Các nhánh public chỉ bị khóa khi chính key đó đã được add vào DB."""
+        if ctx.guild is None:
+            return False
+        if not self.role_permissions.command_has_permission(ctx.guild.id, permission_key):
+            return True
+        return await self.require_role_or_admin_ctx(ctx, permission_key)
+
+    async def require_level_root_if_locked_interaction(self, interaction: discord.Interaction) -> bool:
+        """Slash cũng đi theo cùng cơ chế khóa cha của prefix."""
+        if interaction.guild is None:
+            return False
+        if not self.role_permissions.command_has_permission(interaction.guild.id, "level"):
+            return True
+        return await self.require_role_or_admin_interaction(interaction, "level")
+
+    async def require_level_key_if_locked_interaction(self, interaction: discord.Interaction, permission_key: str) -> bool:
+        """Slash public subcommand cũng có thể khóa riêng nếu DB có key tương ứng."""
+        if interaction.guild is None:
+            return False
+        if not self.role_permissions.command_has_permission(interaction.guild.id, permission_key):
+            return True
+        return await self.require_role_or_admin_interaction(interaction, permission_key)
+
     async def send_profile_ctx(self, ctx: commands.Context, member: discord.Member, period: str = "total"):
         embed = self.build_profile_embed(ctx.guild, member, period)
         await ctx.send(embed=embed, view=LevelProfileView(self, member.id, normalize_period(period)))
 
     async def handle_setup_ctx(self, ctx: commands.Context, args: tuple[str, ...]):
-        if not await self.require_role_or_admin_ctx(ctx, "level"):
+        if not await self.require_role_or_admin_ctx(ctx, "level setup"):
             return
         if not args:
             await ctx.send(embed=self.build_settings_embed(ctx.guild))
@@ -673,7 +705,7 @@ class LevelCog(AdminCommandBase):
         await ctx.send(embed=create_success_splash("✅ Đã Set Kênh Level", f"Thông báo level-up sẽ gửi ở {channel.mention}."))
 
     async def handle_reward_ctx(self, ctx: commands.Context, args: tuple[str, ...]):
-        if not await self.require_role_or_admin_ctx(ctx, "level"):
+        if not await self.require_role_or_admin_ctx(ctx, "level role"):
             return
         if not args or args[0].lower() in {"list", "ls", "xem"}:
             rewards = self.service.get_rewards(ctx.guild.id)
@@ -717,7 +749,7 @@ class LevelCog(AdminCommandBase):
         await ctx.send(embed=create_success_splash("✅ Đã Xóa Role Reward", f"Đã xóa reward {target}."))
 
     async def handle_manual_ctx(self, ctx: commands.Context, action: str, args: tuple[str, ...]):
-        if not await self.require_role_or_admin_ctx(ctx, "level"):
+        if not await self.require_role_or_admin_ctx(ctx, "level edit"):
             return
         await self.apply_manual_update_ctx(ctx, action, args)
 
@@ -774,6 +806,9 @@ class LevelCog(AdminCommandBase):
             await ctx.send(embed=create_error_splash("❌ Chỉ Dùng Trong Server", "Level chỉ hoạt động trong server."))
             return
 
+        if not await self.require_level_root_if_locked_ctx(ctx):
+            return
+
         if not args:
             await self.send_profile_ctx(ctx, ctx.author)
             return
@@ -796,6 +831,8 @@ class LevelCog(AdminCommandBase):
             return
 
         if first in {"all", "top", "leaderboard", "lb"}:
+            if not await self.require_level_key_if_locked_ctx(ctx, "level all"):
+                return
             period = "total"
             metric = "xp"
             limit = 10
@@ -811,6 +848,8 @@ class LevelCog(AdminCommandBase):
             return
 
         if first in {"count", "c", "totalcount"}:
+            if not await self.require_level_key_if_locked_ctx(ctx, "level count"):
+                return
             period = normalize_period(args[1] if len(args) >= 2 else "total")
             await ctx.send(embed=self.build_count_embed(ctx.guild, period))
             return
@@ -876,6 +915,20 @@ class LevelCog(AdminCommandBase):
             return
 
         action = (action or "me").strip().lower()
+        if not await self.require_level_root_if_locked_interaction(interaction):
+            return
+
+        permission_key = {
+            "setup": "level setup",
+            "xp": "level setup",
+            "xp-level": "level setup",
+            "reward-add": "level role",
+            "reward-remove": "level role",
+            "rewards": "level role",
+        }.get(action)
+        if permission_key and not await self.require_role_or_admin_interaction(interaction, permission_key):
+            return
+
         if action == "me":
             embed = self.build_profile_embed(interaction.guild, interaction.user, period)
             await interaction.response.send_message(embed=embed, view=LevelProfileView(self, interaction.user.id, period))
@@ -888,16 +941,16 @@ class LevelCog(AdminCommandBase):
             return
 
         if action == "all":
+            if not await self.require_level_key_if_locked_interaction(interaction, "level all"):
+                return
             await interaction.response.send_message(embed=self.build_leaderboard_embed(interaction.guild, period, metric, int(limit)))
             return
 
         if action == "count":
+            if not await self.require_level_key_if_locked_interaction(interaction, "level count"):
+                return
             await interaction.response.send_message(embed=self.build_count_embed(interaction.guild, period))
             return
-
-        if action in {"setup", "xp", "xp-level", "reward-add", "reward-remove"}:
-            if not await self.require_role_or_admin_interaction(interaction, "level"):
-                return
 
         if action == "setup":
             if channel is None:
