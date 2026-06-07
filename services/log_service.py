@@ -8,6 +8,7 @@ from utils import CogDatabase, get_timestamp
 LOG_CHANNEL_FIELDS = {
     "chat": "chat_channel_id",
     "voice": "voice_channel_id",
+    "channel": "channel_channel_id",
     "server": "server_channel_id",
     "member": "member_channel_id",
 }
@@ -25,12 +26,14 @@ class LogService:
             guild_id INTEGER PRIMARY KEY,
             chat_channel_id INTEGER,
             voice_channel_id INTEGER,
+            channel_channel_id INTEGER,
             server_channel_id INTEGER,
             member_channel_id INTEGER,
             voice_announce_channel_id INTEGER,
-            voice_join_template TEXT DEFAULT 'Dạ em chào đại ca {user} ạ',
-            voice_leave_template TEXT DEFAULT '{user} vừa rời voice {channel}.',
+            voice_join_template TEXT DEFAULT '{username} vừa vào kênh {channel_name}.',
+            voice_leave_template TEXT DEFAULT '{username} đã rời kênh {channel_name}.',
             voice_announce_embed INTEGER DEFAULT 0,
+            voice_room_announce INTEGER DEFAULT 0,
             created_at TEXT,
             updated_at TEXT
             """,
@@ -43,12 +46,32 @@ class LogService:
             self.db.execute(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}")
 
     def _ensure_schema(self):
+        self._ensure_column("log_config", "channel_channel_id", "INTEGER")
         self._ensure_column("log_config", "voice_announce_channel_id", "INTEGER")
-        self._ensure_column("log_config", "voice_join_template", "TEXT DEFAULT 'Dạ em chào đại ca {user} ạ'")
-        self._ensure_column("log_config", "voice_leave_template", "TEXT DEFAULT '{user} vừa rời voice {channel}.'")
+        self._ensure_column("log_config", "voice_join_template", "TEXT DEFAULT '{username} vừa vào kênh {channel_name}.'")
+        self._ensure_column("log_config", "voice_leave_template", "TEXT DEFAULT '{username} đã rời kênh {channel_name}.'")
         self._ensure_column("log_config", "voice_announce_embed", "INTEGER DEFAULT 0")
+        self._ensure_column("log_config", "voice_room_announce", "INTEGER DEFAULT 0")
         self._ensure_column("log_config", "created_at", "TEXT")
         self._ensure_column("log_config", "updated_at", "TEXT")
+        self.db.execute(
+            """
+            UPDATE log_config
+            SET voice_join_template = '{username} vừa vào kênh {channel_name}.'
+            WHERE voice_join_template IS NULL
+               OR voice_join_template = ''
+               OR voice_join_template = 'Dạ em chào đại ca {user} ạ'
+            """
+        )
+        self.db.execute(
+            """
+            UPDATE log_config
+            SET voice_leave_template = '{username} đã rời kênh {channel_name}.'
+            WHERE voice_leave_template IS NULL
+               OR voice_leave_template = ''
+               OR voice_leave_template = '{user} vừa rời voice {channel}.'
+            """
+        )
 
     def ensure_config(self, guild_id: int) -> dict:
         config = self.get_config(guild_id)
@@ -124,6 +147,15 @@ class LogService:
         return self.db.update(
             "log_config",
             {"voice_announce_embed": 1 if enabled else 0, "updated_at": get_timestamp()},
+            "guild_id = ?",
+            (guild_id,),
+        )
+
+    def set_voice_room_announce(self, guild_id: int, enabled: bool) -> bool:
+        self.ensure_config(guild_id)
+        return self.db.update(
+            "log_config",
+            {"voice_room_announce": 1 if enabled else 0, "updated_at": get_timestamp()},
             "guild_id = ?",
             (guild_id,),
         )
