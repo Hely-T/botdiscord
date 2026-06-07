@@ -152,8 +152,11 @@ class GiveawayService:
             return False, "Giveaway không tồn tại."
         if giveaway["status"] != "active":
             return False, "Giveaway đã kết thúc."
-        if int(giveaway["ends_at"]) <= int(time.time()):
-            return False, "Giveaway đã hết thời gian."
+
+        return self.sync_participant(giveaway_id, user_id, username)
+
+    def sync_participant(self, giveaway_id: int, user_id: int, username: str) -> tuple[bool, str]:
+        """Dong bo nguoi tham gia tu reaction, khong phu thuoc dong ho VPS."""
 
         existing = self.db.select_one(
             "giveaway_participants",
@@ -161,6 +164,13 @@ class GiveawayService:
             (giveaway_id, user_id),
         )
         if existing:
+            if str(existing.get("username") or "") != str(username):
+                self.db.update(
+                    "giveaway_participants",
+                    {"username": str(username)},
+                    "giveaway_id = ? AND user_id = ?",
+                    (giveaway_id, user_id),
+                )
             return False, "Bạn đã tham gia giveaway này rồi."
 
         self.db.insert(
@@ -210,6 +220,17 @@ class GiveawayService:
             },
             "giveaway_id = ?",
             (giveaway_id,),
+        )
+
+    def update_ends_at(self, giveaway_id: int, ends_at: int):
+        self.db.update(
+            "giveaways",
+            {
+                "ends_at": int(ends_at),
+                "updated_at": get_timestamp(),
+            },
+            "giveaway_id = ?",
+            (int(giveaway_id),),
         )
 
     def update_winners(self, giveaway_id: int, winner_ids: list[int], reroll_count: int | None = None):
