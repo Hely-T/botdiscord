@@ -43,6 +43,10 @@ QUEUE_PAGE_SIZE = 12
 DEFAULT_VOLUME = 0.65
 FFMPEG_BEFORE_OPTIONS = "-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5"
 FFMPEG_OPTIONS = "-vn"
+VOICE_CONNECT_TIMEOUT = 20
+YTDLP_SEARCH_TIMEOUT = 35
+YTDLP_STREAM_TIMEOUT = 45
+TTS_CREATE_TIMEOUT = 25
 WINDOWS_OPUS_NAMES = (
     "libopus-0.x64.dll",
     "libopus-0.x86.dll",
@@ -398,6 +402,13 @@ class BotVoiceCog(commands.Cog):
             return False
         return True
 
+    @staticmethod
+    async def _try_react(message: discord.Message, emoji: str):
+        try:
+            await message.add_reaction(emoji)
+        except (discord.Forbidden, discord.HTTPException):
+            pass
+
     async def _ensure_voice(self, ctx) -> discord.VoiceClient | None:
         if ctx.guild is None:
             await ctx.send(embed=create_error_splash("❌ Chỉ Dùng Trong Server", "Lệnh voice chỉ hoạt động trong server."))
@@ -423,16 +434,26 @@ class BotVoiceCog(commands.Cog):
                             )
                         )
                         return None
-                    await voice_client.move_to(target_channel)
+                    await asyncio.wait_for(voice_client.move_to(target_channel), timeout=VOICE_CONNECT_TIMEOUT)
                 if state.voice_owner_id is None:
                     self._set_voice_owner(state, ctx.author)
             else:
-                voice_client = await target_channel.connect(self_deaf=True)
+                voice_client = await target_channel.connect(
+                    timeout=VOICE_CONNECT_TIMEOUT,
+                    self_deaf=True,
+                )
                 self._set_voice_owner(state, ctx.author)
             state.voice_client = voice_client
             state.text_channel_id = ctx.channel.id
             self._cancel_idle(state)
             return voice_client
+        except asyncio.TimeoutError:
+            await ctx.send(
+                embed=create_error_splash(
+                    "❌ Voice Timeout",
+                    "Discord phản hồi voice quá lâu nên bot chưa vào được phòng. Thử lại sau vài giây hoặc đổi voice channel rồi gọi lại lệnh.",
+                )
+            )
         except discord.ClientException as exc:
             await ctx.send(embed=create_error_splash("❌ Không Join Được Voice", str(exc)))
         except discord.Forbidden:
@@ -597,7 +618,10 @@ class BotVoiceCog(commands.Cog):
             with YoutubeDL(ytdl_options) as ydl:
                 return ydl.extract_info(search_query, download=False)
 
-        info = await self.bot.loop.run_in_executor(None, run_extract)
+        info = await asyncio.wait_for(
+            self.bot.loop.run_in_executor(None, run_extract),
+            timeout=YTDLP_SEARCH_TIMEOUT,
+        )
         if not info:
             return []
 
@@ -629,7 +653,10 @@ class BotVoiceCog(commands.Cog):
             with YoutubeDL(ytdl_options) as ydl:
                 return ydl.extract_info(item.webpage_url or item.query, download=False)
 
-        info = await self.bot.loop.run_in_executor(None, run_extract)
+        info = await asyncio.wait_for(
+            self.bot.loop.run_in_executor(None, run_extract),
+            timeout=YTDLP_STREAM_TIMEOUT,
+        )
         if isinstance(info, dict) and info.get("entries"):
             info = next((entry for entry in info["entries"] if entry), None)
         if not info:
@@ -663,7 +690,18 @@ class BotVoiceCog(commands.Cog):
         def save_tts():
             gTTS(text=text, lang="vi").save(str(output_path))
 
-        await self.bot.loop.run_in_executor(None, save_tts)
+        try:
+            await asyncio.wait_for(
+                self.bot.loop.run_in_executor(None, save_tts),
+                timeout=TTS_CREATE_TIMEOUT,
+            )
+        except Exception:
+            if output_path.exists():
+                try:
+                    output_path.unlink()
+                except OSError:
+                    pass
+            raise
         return AudioItem(
             title=self._short_text(text, 120),
             query=str(output_path),
@@ -798,7 +836,10 @@ class BotVoiceCog(commands.Cog):
             with YoutubeDL(options) as ydl:
                 return ydl.extract_info(search_query, download=False)
 
-        info = await self.bot.loop.run_in_executor(None, run_extract)
+        info = await asyncio.wait_for(
+            self.bot.loop.run_in_executor(None, run_extract),
+            timeout=YTDLP_SEARCH_TIMEOUT,
+        )
         entries = info.get("entries", []) if isinstance(info, dict) else []
         return [
             item
@@ -838,6 +879,7 @@ class BotVoiceCog(commands.Cog):
         try:
             ffmpeg_executable = self._find_ffmpeg() or "ffmpeg"
             if item.item_type == "music":
+                await self._refresh_player_message(guild_id)
                 item = await self._resolve_stream_url(item)
                 history_key = self._autoplay_item_key(item)
                 if history_key:
@@ -868,6 +910,8 @@ class BotVoiceCog(commands.Cog):
                 self._schedule_player_refresh(guild_id)
         except Exception as exc:
             error_text = str(exc) or repr(exc)
+            if isinstance(exc, asyncio.TimeoutError):
+                error_text = "Quá thời gian lấy nguồn phát. YouTube/Spotify đang phản hồi chậm, thử lại hoặc gửi link khác."
             await self._send_to_state_channel(
                 guild_id,
                 create_error_splash("❌ Phát Thất Bại", f"`{item.title}`\n{error_text}"),
@@ -917,9 +961,9 @@ class BotVoiceCog(commands.Cog):
             return
         await self._refresh_player_message(guild_id)
 
-    async def _refresh_player_message(self, guild_id: int):
+    async def _refresh_player_message(self, guild_id: int, preview_item: AudioItem | None = None):
         state = self._get_state(guild_id)
-        item = state.current
+        item = state.current or preview_item
         if not item or item.item_type != "music" or not state.text_channel_id:
             return
         channel = self.bot.get_channel(state.text_channel_id)
@@ -932,7 +976,7 @@ class BotVoiceCog(commands.Cog):
             title=item.title,
             requester=item.requester_name,
             duration=item.duration,
-            elapsed=self._playback_seconds(state),
+            elapsed=self._playback_seconds(state) if state.current else 0,
             thumbnail=item.thumbnail,
             volume=int(state.volume * 100),
             paused=bool(voice_client and voice_client.is_paused()),
@@ -1486,16 +1530,27 @@ class BotVoiceCog(commands.Cog):
         if not await self._require_package(ctx, "yt_dlp", "yt-dlp"):
             return
 
+        await self._try_react(ctx.message, "🎶")
         voice_client = await self._ensure_voice(ctx)
         if not voice_client:
             return
 
         state = self._get_state(ctx.guild.id)
         state.text_channel_id = ctx.channel.id
+        was_idle = not state.current and not voice_client.is_playing() and not voice_client.is_paused()
 
         try:
             async with ctx.typing():
                 items = await self._extract_music_items(query, ctx.author)
+        except asyncio.TimeoutError:
+            await ctx.send(
+                embed=create_error_splash(
+                    "❌ Tìm Nhạc Timeout",
+                    "Nguồn nhạc phản hồi quá lâu. Thử gửi link YouTube trực tiếp hoặc tìm lại bằng tên ngắn hơn.",
+                )
+            )
+            await self._try_react(ctx.message, "❌")
+            return
         except Exception as exc:
             await ctx.send(
                 embed=create_error_splash(
@@ -1503,13 +1558,17 @@ class BotVoiceCog(commands.Cog):
                     f"{exc}\nNếu Spotify URL không chạy, hãy gửi tên bài hoặc link YouTube/YT Music tương ứng.",
                 )
             )
+            await self._try_react(ctx.message, "❌")
             return
 
         if not items:
             await ctx.send(embed=create_error_splash("❌ Không Có Kết Quả", "Không tìm thấy bài/playlist phù hợp."))
+            await self._try_react(ctx.message, "❌")
             return
 
         state.queue.extend(items)
+        if was_idle:
+            await self._refresh_player_message(ctx.guild.id, preview_item=items[0])
         await self._start_player_if_needed(ctx.guild.id)
         await self._refresh_player_message(ctx.guild.id)
 
@@ -1536,25 +1595,40 @@ class BotVoiceCog(commands.Cog):
             await self._notify_tts_busy(ctx, active_requester)
             return
 
+        await self._try_react(ctx.message, "🔊")
         if not await self._require_ffmpeg(ctx):
+            await self._try_react(ctx.message, "❌")
             return
         if not await self._require_package(ctx, "gtts", "gTTS"):
+            await self._try_react(ctx.message, "❌")
             return
 
         voice_client = await self._ensure_voice(ctx)
         if not voice_client:
+            await self._try_react(ctx.message, "❌")
             return
 
         text = text.strip()
         if len(text) > 500:
             await ctx.send(embed=create_error_splash("❌ Nội Dung Quá Dài", "Tạm giới hạn 500 ký tự mỗi lần đọc để tránh kẹt queue."))
+            await self._try_react(ctx.message, "❌")
             return
 
         try:
             async with ctx.typing():
                 item = await self._create_tts_item(ctx, text)
+        except asyncio.TimeoutError:
+            await ctx.send(
+                embed=create_error_splash(
+                    "❌ Tạo Giọng Đọc Timeout",
+                    "Google TTS phản hồi quá lâu. Thử lại sau vài giây hoặc rút ngắn nội dung cần đọc.",
+                )
+            )
+            await self._try_react(ctx.message, "❌")
+            return
         except Exception as exc:
             await ctx.send(embed=create_error_splash("❌ Tạo Giọng Đọc Thất Bại", str(exc)))
+            await self._try_react(ctx.message, "❌")
             return
 
         active_requester = self._active_tts_requester(state)
@@ -1565,10 +1639,6 @@ class BotVoiceCog(commands.Cog):
 
         state.text_channel_id = ctx.channel.id
         state.queue.append(item)
-        try:
-            await ctx.message.add_reaction("🔊")
-        except (discord.Forbidden, discord.HTTPException):
-            pass
         await self._start_player_if_needed(ctx.guild.id)
 
     @commands.command(name="leave", aliases=["l", "disconnect", "dc"])
