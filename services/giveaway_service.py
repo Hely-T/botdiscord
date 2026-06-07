@@ -9,6 +9,7 @@ import json
 import time
 
 from utils import CogDatabase, get_timestamp
+from ui.administrator.emoji import GIVEAWAY_DEFAULT_ENTRY_EMOJI
 
 
 class GiveawayService:
@@ -19,7 +20,7 @@ class GiveawayService:
     def _init_database(self):
         self.db.create_table(
             "giveaways",
-            """
+            f"""
             giveaway_id INTEGER PRIMARY KEY,
             guild_id INTEGER NOT NULL,
             channel_id INTEGER NOT NULL,
@@ -36,7 +37,7 @@ class GiveawayService:
             ended_at INTEGER,
             winner_ids TEXT DEFAULT '[]',
             selected_winner_ids TEXT DEFAULT '[]',
-            entry_emoji TEXT DEFAULT '🎉',
+            entry_emoji TEXT DEFAULT '{GIVEAWAY_DEFAULT_ENTRY_EMOJI}',
             reroll_count INTEGER DEFAULT 0,
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL
@@ -44,9 +45,9 @@ class GiveawayService:
         )
         self.db.create_table(
             "giveaway_settings",
-            """
+            f"""
             guild_id INTEGER PRIMARY KEY,
-            entry_emoji TEXT DEFAULT '🎉',
+            entry_emoji TEXT DEFAULT '{GIVEAWAY_DEFAULT_ENTRY_EMOJI}',
             updated_at TEXT NOT NULL
             """,
         )
@@ -70,7 +71,7 @@ class GiveawayService:
             "quantity_index": "INTEGER DEFAULT 1",
             "template": "TEXT DEFAULT ''",
             "selected_winner_ids": "TEXT DEFAULT '[]'",
-            "entry_emoji": "TEXT DEFAULT '🎉'",
+            "entry_emoji": f"TEXT DEFAULT '{GIVEAWAY_DEFAULT_ENTRY_EMOJI}'",
             "reroll_count": "INTEGER DEFAULT 0",
         }
         for column_name, column_sql in required_columns.items():
@@ -91,7 +92,7 @@ class GiveawayService:
         quantity_total: int = 1,
         quantity_index: int = 1,
         template: str = "",
-        entry_emoji: str = "🎉",
+        entry_emoji: str = GIVEAWAY_DEFAULT_ENTRY_EMOJI,
     ):
         self.db.insert(
             "giveaways",
@@ -112,7 +113,7 @@ class GiveawayService:
                 "ended_at": None,
                 "winner_ids": "[]",
                 "selected_winner_ids": "[]",
-                "entry_emoji": entry_emoji or "🎉",
+                "entry_emoji": entry_emoji or GIVEAWAY_DEFAULT_ENTRY_EMOJI,
                 "reroll_count": 0,
                 "created_at": get_timestamp(),
                 "updated_at": get_timestamp(),
@@ -255,7 +256,7 @@ class GiveawayService:
             "giveaway_settings",
             {
                 "guild_id": int(guild_id),
-                "entry_emoji": "🎉",
+                "entry_emoji": GIVEAWAY_DEFAULT_ENTRY_EMOJI,
                 "updated_at": get_timestamp(),
             },
         )
@@ -263,7 +264,7 @@ class GiveawayService:
 
     def get_entry_emoji(self, guild_id: int) -> str:
         settings = self.get_settings(guild_id)
-        return str(settings.get("entry_emoji") or "🎉")
+        return str(settings.get("entry_emoji") or GIVEAWAY_DEFAULT_ENTRY_EMOJI)
 
     def set_entry_emoji(self, guild_id: int, emoji: str):
         self.get_settings(guild_id)

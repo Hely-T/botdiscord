@@ -62,6 +62,10 @@ def get_unknown_command_suggestion(bot, invoked: str | None) -> str | None:
 
 async def main():
     intents = discord.Intents.default()
+    intents.guilds = True
+    intents.members = True
+    intents.voice_states = True
+    intents.messages = True
     intents.message_content = True
     ssl_context = ssl.create_default_context(cafile=certifi.where())
     connector = aiohttp.TCPConnector(ssl=ssl_context)

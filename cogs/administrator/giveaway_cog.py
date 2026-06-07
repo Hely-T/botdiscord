@@ -21,11 +21,14 @@ from cogs.admin_command_utils import (
     parse_duration,
 )
 from services.giveaway_service import GiveawayService
+from ui.administrator.emoji import (
+    GIVEAWAY_CUSTOM_EMOJI_RE,
+    GIVEAWAY_DEFAULT_ENTRY_EMOJI,
+    giveaway_icon,
+)
 
 
 MAX_GIVEAWAY_QUANTITY = 20
-GIVEAWAY_EMOJI = "🎉"
-CUSTOM_EMOJI_RE = re.compile(r"<a?:[A-Za-z0-9_~]+:(\d+)>")
 
 
 @dataclass
@@ -47,7 +50,7 @@ class GiveawayWinnerSelect(discord.ui.Select):
                 label=str(row["username"])[:100],
                 value=str(row["user_id"]),
                 description=f"ID {row['user_id']}"[:100],
-                emoji=cog.giveaway_entry_emoji(giveaway),
+                emoji=cog.giveaway_entry_emoji_for_ui(giveaway),
             )
             for row in participants[:25]
         ]
@@ -72,7 +75,7 @@ class GiveawayManualSetView(discord.ui.View):
         if participants:
             self.add_item(GiveawayWinnerSelect(cog, giveaway, participants))
 
-    @discord.ui.button(label="Random winner", style=discord.ButtonStyle.primary, emoji="🎲", custom_id="giveaway:manual_random")
+    @discord.ui.button(label="Random winner", style=discord.ButtonStyle.primary, emoji=giveaway_icon("random"), custom_id="giveaway:manual_random")
     async def random_winner(self, interaction: discord.Interaction, button: discord.ui.Button):
         await self.cog._random_winners_interaction(interaction, int(self.giveaway["giveaway_id"]))
 
@@ -239,15 +242,22 @@ class AdministratorGiveawayCog(AdminCommandBase):
 
     @staticmethod
     def _custom_emoji_id(raw: str) -> int | None:
-        match = CUSTOM_EMOJI_RE.fullmatch(str(raw or "").strip())
-        return int(match.group(1)) if match else None
+        match = GIVEAWAY_CUSTOM_EMOJI_RE.fullmatch(str(raw or "").strip())
+        return int(match.group("id")) if match else None
+
+    @staticmethod
+    def _custom_emoji_name(raw: str) -> str | None:
+        match = GIVEAWAY_CUSTOM_EMOJI_RE.fullmatch(str(raw or "").strip())
+        return match.group("name") if match else None
 
     def normalize_entry_emoji(self, guild: discord.Guild | None, raw_emoji: str) -> str:
         raw = str(raw_emoji or "").strip()
         if not raw:
-            return GIVEAWAY_EMOJI
-        if CUSTOM_EMOJI_RE.fullmatch(raw):
+            return GIVEAWAY_DEFAULT_ENTRY_EMOJI
+        if GIVEAWAY_CUSTOM_EMOJI_RE.fullmatch(raw):
             return raw
+        if raw.startswith(":") and raw.endswith(":") and raw.count(":") == 2:
+            raw = raw.strip(":")
         if guild and raw.isdigit():
             emoji = guild.get_emoji(int(raw))
             if emoji:
@@ -259,18 +269,79 @@ class AdministratorGiveawayCog(AdminCommandBase):
                     return str(emoji)
         return raw
 
+    @staticmethod
+    def _emoji_name_candidate(raw_emoji: str) -> str | None:
+        raw = str(raw_emoji or "").strip()
+        if raw.startswith(":") and raw.endswith(":") and raw.count(":") == 2:
+            raw = raw.strip(":")
+        if re.fullmatch(r"[A-Za-z0-9_~]{2,32}", raw):
+            return raw.lower()
+        return None
+
+    async def resolve_entry_emoji_input(self, guild: discord.Guild | None, raw_emoji: str) -> str:
+        raw = str(raw_emoji or "").strip()
+        if not raw:
+            return GIVEAWAY_DEFAULT_ENTRY_EMOJI
+        if GIVEAWAY_CUSTOM_EMOJI_RE.fullmatch(raw):
+            return raw
+
+        if raw.isdigit():
+            emoji = (guild.get_emoji(int(raw)) if guild else None) or self.bot.get_emoji(int(raw))
+            if emoji:
+                return str(emoji)
+            raise ValueError("Không tìm thấy emoji theo ID đó. Hãy dùng emoji trực tiếp hoặc emoji trong server bot đang thấy.")
+
+        name = self._emoji_name_candidate(raw)
+        if name and guild:
+            for emoji in guild.emojis:
+                if emoji.name.lower() == name:
+                    return str(emoji)
+            for emoji in self.bot.emojis:
+                if emoji.name.lower() == name:
+                    return str(emoji)
+            try:
+                fetched_emojis = await guild.fetch_emojis()
+            except discord.HTTPException:
+                fetched_emojis = []
+            for emoji in fetched_emojis:
+                if emoji.name.lower() == name:
+                    return str(emoji)
+            raise ValueError("Không tìm thấy emoji trong server. Hãy gửi emoji trực tiếp dạng `<:tên:id>` hoặc `<a:tên:id>`.")
+
+        return self.normalize_entry_emoji(guild, raw)
+
     def get_entry_emoji(self, guild_id: int) -> str:
         return self.service.get_entry_emoji(guild_id)
 
     def giveaway_entry_emoji(self, giveaway: dict) -> str:
-        return str(giveaway.get("entry_emoji") or self.get_entry_emoji(int(giveaway["guild_id"])) or GIVEAWAY_EMOJI)
+        return str(giveaway.get("entry_emoji") or self.get_entry_emoji(int(giveaway["guild_id"])) or GIVEAWAY_DEFAULT_ENTRY_EMOJI)
+
+    def giveaway_entry_emoji_for_ui(self, giveaway: dict) -> str | discord.PartialEmoji:
+        emoji = self.giveaway_entry_emoji(giveaway)
+        if GIVEAWAY_CUSTOM_EMOJI_RE.fullmatch(emoji):
+            return discord.PartialEmoji.from_str(emoji)
+        return emoji
+
+    def giveaway_entry_emoji_for_reaction(self, giveaway: dict) -> str | discord.PartialEmoji:
+        return self.giveaway_entry_emoji_for_ui(giveaway)
 
     def _emoji_matches(self, payload_emoji: discord.PartialEmoji, expected_emoji: str) -> bool:
-        expected = str(expected_emoji or GIVEAWAY_EMOJI)
+        expected = str(expected_emoji or GIVEAWAY_DEFAULT_ENTRY_EMOJI)
         expected_id = self._custom_emoji_id(expected)
         if expected_id is not None:
             return int(payload_emoji.id or 0) == expected_id
+        expected_name = self._custom_emoji_name(expected)
+        if expected_name:
+            return str(payload_emoji.name or "") == expected_name
         return str(payload_emoji) == expected
+
+    async def _add_entry_reaction(self, message: discord.Message, giveaway: dict) -> bool:
+        try:
+            await message.add_reaction(self.giveaway_entry_emoji_for_reaction(giveaway))
+            return True
+        except (discord.Forbidden, discord.HTTPException) as exc:
+            print(f"❌ Không thêm được emoji giveaway {giveaway.get('giveaway_id')}: {exc}")
+            return False
 
     async def _send_interaction_splash(self, interaction: discord.Interaction, embed: discord.Embed, ephemeral: bool = True):
         if interaction.response.is_done():
@@ -286,7 +357,11 @@ class AdministratorGiveawayCog(AdminCommandBase):
         color = discord.Color.from_rgb(255, 136, 190) if status_text == "Đang mở" else discord.Color.from_rgb(89, 96, 110)
 
         embed = discord.Embed(
-            title="🌸 GIVEAWAY BẮT ĐẦU 🌸" if status_text == "Đang mở" else "🏁 GIVEAWAY ĐÃ KẾT THÚC",
+            title=(
+                f"{giveaway_icon('start')} GIVEAWAY BẮT ĐẦU {giveaway_icon('start')}"
+                if status_text == "Đang mở"
+                else f"{giveaway_icon('ended')} GIVEAWAY ĐÃ KẾT THÚC"
+            ),
             description=(
                 f"## {giveaway['reward']}\n\n"
                 + (
@@ -299,21 +374,21 @@ class AdministratorGiveawayCog(AdminCommandBase):
         )
         if status_text == "Đã kết thúc":
             winners_text = ", ".join(f"<@{user_id}>" for user_id in winner_ids) if winner_ids else "`Không có`"
-            embed.add_field(name="🏆 Người thắng", value=winners_text, inline=True)
+            embed.add_field(name=f"{giveaway_icon('winner')} Người thắng", value=winners_text, inline=False)
         else:
-            embed.add_field(name="⏳ Kết thúc", value=f"<t:{int(giveaway['ends_at'])}:R>", inline=True)
-        embed.add_field(name="👑 Host", value=f"<@{int(giveaway['creator_id'])}>", inline=True)
+            embed.add_field(name=f"{giveaway_icon('time')} Kết thúc", value=f"<t:{int(giveaway['ends_at'])}:R>", inline=False)
+        embed.add_field(name=f"{giveaway_icon('host')} Host", value=f"<@{int(giveaway['creator_id'])}>", inline=False)
         if selected_winner_ids and status_text == "Đang mở":
-            embed.add_field(name="🎯 Winner đã chọn", value=f"`{len(selected_winner_ids)}` người", inline=True)
+            embed.add_field(name=f"{giveaway_icon('selected')} Winner đã chọn", value=f"`{len(selected_winner_ids)}` người", inline=False)
 
         if int(giveaway.get("quantity_total") or 1) > 1:
             embed.add_field(
-                name="🎁 Gói",
+                name=f"{giveaway_icon('package')} Gói",
                 value=f"`{int(giveaway['quantity_index'])}/{int(giveaway['quantity_total'])}`",
-                inline=True,
+                inline=False,
             )
         if giveaway.get("template"):
-            embed.add_field(name="📝 Template", value=str(giveaway["template"])[:1024], inline=False)
+            embed.add_field(name=f"{giveaway_icon('template')} Template", value=str(giveaway["template"])[:1024], inline=False)
 
         embed.set_footer(text=self._local_footer_text())
         return embed
@@ -341,7 +416,7 @@ class AdministratorGiveawayCog(AdminCommandBase):
             try:
                 user = self.bot.get_user(int(user_id)) or await self.bot.fetch_user(int(user_id))
                 await user.send(
-                    f"🎉 Chúc mừng! Bạn đã {action_text} giveaway **{giveaway['reward']}** tại **{guild_name}**.\n"
+                    f"{giveaway_icon('dm')} Chúc mừng! Bạn đã {action_text} giveaway **{giveaway['reward']}** tại **{guild_name}**.\n"
                     "Hãy quay lại server để nhận thưởng nhé."
                 )
             except (discord.Forbidden, discord.NotFound, discord.HTTPException):
@@ -350,7 +425,11 @@ class AdministratorGiveawayCog(AdminCommandBase):
     async def _send_result_message(self, channel, giveaway: dict, winner_ids: list[int], reroll: bool = False, reroll_round: int | None = None):
         if winner_ids:
             winners_text = ", ".join(f"<@{user_id}>" for user_id in winner_ids)
-            prefix = f"🔄 Giveaway đã reroll lần {reroll_round}!" if reroll and reroll_round else "🎉 Giveaway đã kết thúc!"
+            prefix = (
+                f"{giveaway_icon('reroll')} Giveaway đã reroll lần {reroll_round}!"
+                if reroll and reroll_round
+                else f"{giveaway_icon('result')} Giveaway đã kết thúc!"
+            )
             content = (
                 f"{prefix}\n"
                 f"Chúc mừng {winners_text} đã trúng **{giveaway['reward']}**.\n"
@@ -358,7 +437,7 @@ class AdministratorGiveawayCog(AdminCommandBase):
             )
         else:
             content = (
-                f"🎉 Giveaway **{giveaway['reward']}** đã kết thúc.\n"
+                f"{giveaway_icon('result')} Giveaway **{giveaway['reward']}** đã kết thúc.\n"
                 "Không có người tham gia nên không có winner."
             )
         try:
@@ -393,7 +472,7 @@ class AdministratorGiveawayCog(AdminCommandBase):
         winners_count = int(giveaway["winners_count"])
         selected_winner_ids = self.service.decode_selected_winner_ids(giveaway)
         embed = create_info_splash(
-            "🎯 Set Winner Giveaway",
+            f"{giveaway_icon('set')} Set Winner Giveaway",
             (
                 f"**Phần thưởng:** {giveaway['reward']}\n"
                 f"**Số winner cần chọn:** `{winners_count}`\n"
@@ -535,10 +614,7 @@ class AdministratorGiveawayCog(AdminCommandBase):
             ended = giveaway["status"] == "ended"
             await message.edit(embed=self._build_giveaway_embed(giveaway, ended), view=None)
             if not ended:
-                try:
-                    await message.add_reaction(self.giveaway_entry_emoji(giveaway))
-                except (discord.Forbidden, discord.HTTPException):
-                    pass
+                await self._add_entry_reaction(message, giveaway)
 
     async def _create_one_giveaway(
         self,
@@ -550,7 +626,7 @@ class AdministratorGiveawayCog(AdminCommandBase):
     ) -> int:
         ends_at = int(time.time()) + int(payload.duration_seconds)
         placeholder = discord.Embed(
-            title="🌸 GIVEAWAY",
+            title=f"{giveaway_icon('start')} GIVEAWAY",
             description="Đang khởi tạo giveaway...",
             color=discord.Color.from_rgb(255, 136, 190),
         )
@@ -573,10 +649,7 @@ class AdministratorGiveawayCog(AdminCommandBase):
         )
         giveaway = self.service.get_giveaway(giveaway_id)
         await message.edit(embed=self._build_giveaway_embed(giveaway), view=None)
-        try:
-            await message.add_reaction(self.giveaway_entry_emoji(giveaway))
-        except (discord.Forbidden, discord.HTTPException):
-            pass
+        await self._add_entry_reaction(message, giveaway)
         self._schedule_end(giveaway)
         return giveaway_id
 
@@ -703,7 +776,7 @@ class AdministratorGiveawayCog(AdminCommandBase):
         if payload.quantity > 1:
             await ctx.send(
                 embed=create_info_splash(
-                    "🎉 Đã Tạo Giveaway",
+                    f"{giveaway_icon('created')} Đã Tạo Giveaway",
                     f"Đã tạo `{len(giveaway_ids)}` giveaway.\nMuốn end/reroll/set thì chuột phải tin giveaway rồi chọn **Sao chép ID Tin Nhắn**.",
                 )
             )
@@ -714,7 +787,7 @@ class AdministratorGiveawayCog(AdminCommandBase):
             return
         ok, message = await self._end_giveaway(int(giveaway_id_text.strip()))
         embed_factory = create_success_splash if ok else create_error_splash
-        await ctx.send(embed=embed_factory("🎉 End Giveaway", message))
+        await ctx.send(embed=embed_factory(f"{giveaway_icon('result')} End Giveaway", message))
 
     async def _handle_reroll_command(self, ctx, giveaway_id_text: str):
         if not giveaway_id_text or not giveaway_id_text.strip().isdigit():
@@ -722,7 +795,7 @@ class AdministratorGiveawayCog(AdminCommandBase):
             return
         ok, message, _ = await self._reroll_giveaway(int(giveaway_id_text.strip()))
         embed_factory = create_success_splash if ok else create_error_splash
-        await ctx.send(embed=embed_factory("🔄 Reroll Giveaway", message))
+        await ctx.send(embed=embed_factory(f"{giveaway_icon('reroll')} Reroll Giveaway", message))
 
     async def _handle_config_command(self, ctx, content: str, action: str = "config"):
         raw = (content or "").strip()
@@ -735,13 +808,17 @@ class AdministratorGiveawayCog(AdminCommandBase):
             current = self.get_entry_emoji(ctx.guild.id)
             await ctx.send(
                 embed=create_info_splash(
-                    "🎉 Giveaway Emoji",
+                    f"{giveaway_icon('config')} Giveaway Emoji",
                     f"Emoji tham gia hiện tại: {current}\nDùng: `ga config emoji <emoji>` hoặc `ga emoji <emoji>`.",
                 )
             )
             return
 
-        normalized = self.normalize_entry_emoji(ctx.guild, raw)
+        try:
+            normalized = await self.resolve_entry_emoji_input(ctx.guild, raw)
+        except ValueError as exc:
+            await ctx.send(embed=create_error_splash("❌ Emoji Không Hợp Lệ", str(exc)))
+            return
         self.service.set_entry_emoji(ctx.guild.id, normalized)
         await ctx.send(
             embed=create_success_splash(
@@ -822,10 +899,17 @@ class AdministratorGiveawayCog(AdminCommandBase):
                 current = self.get_entry_emoji(interaction.guild.id)
                 await self._send_interaction_splash(
                     interaction,
-                    create_info_splash("🎉 Giveaway Emoji", f"Emoji tham gia hiện tại: {current}"),
+                    create_info_splash(f"{giveaway_icon('config')} Giveaway Emoji", f"Emoji tham gia hiện tại: {current}"),
                 )
                 return
-            normalized = self.normalize_entry_emoji(interaction.guild, emoji)
+            try:
+                normalized = await self.resolve_entry_emoji_input(interaction.guild, emoji)
+            except ValueError as exc:
+                await self._send_interaction_splash(
+                    interaction,
+                    create_error_splash("❌ Emoji Không Hợp Lệ", str(exc)),
+                )
+                return
             self.service.set_entry_emoji(interaction.guild.id, normalized)
             await self._send_interaction_splash(
                 interaction,
@@ -857,11 +941,11 @@ class AdministratorGiveawayCog(AdminCommandBase):
             if action == "end":
                 ok, message = await self._end_giveaway(parsed_id)
                 embed_factory = create_success_splash if ok else create_error_splash
-                await self._send_interaction_splash(interaction, embed_factory("🎉 End Giveaway", message))
+                await self._send_interaction_splash(interaction, embed_factory(f"{giveaway_icon('result')} End Giveaway", message))
                 return
             ok, message, _ = await self._reroll_giveaway(parsed_id)
             embed_factory = create_success_splash if ok else create_error_splash
-            await self._send_interaction_splash(interaction, embed_factory("🔄 Reroll Giveaway", message))
+            await self._send_interaction_splash(interaction, embed_factory(f"{giveaway_icon('reroll')} Reroll Giveaway", message))
             return
 
         if interaction.guild is None or interaction.channel is None:

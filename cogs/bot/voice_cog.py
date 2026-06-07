@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import asyncio
+import ctypes.util
 import importlib.util
 import os
 import random
 import re
 import shutil
+import sys
 import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -29,6 +31,8 @@ QUEUE_PAGE_SIZE = 12
 DEFAULT_VOLUME = 0.65
 FFMPEG_BEFORE_OPTIONS = "-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5"
 FFMPEG_OPTIONS = "-vn"
+WINDOWS_OPUS_NAMES = ("libopus-0.dll", "opus.dll", "libopus.dll")
+POSIX_OPUS_NAMES = ("libopus", "opus")
 
 
 @dataclass
@@ -113,6 +117,9 @@ class BotVoiceCog(commands.Cog):
         self.states: dict[int, GuildAudioState] = {}
         self.tts_dir = Path(tempfile.gettempdir()) / "black_lous_tts"
         self.tts_dir.mkdir(parents=True, exist_ok=True)
+        self._last_opus_error: str | None = None
+        self._dll_directory_handles: list[Any] = []
+        self._ffmpeg_path: str | None = None
 
     def cog_unload(self):
         for state in self.states.values():
@@ -146,8 +153,7 @@ class BotVoiceCog(commands.Cog):
     def _has_package(package_name: str) -> bool:
         return importlib.util.find_spec(package_name) is not None
 
-    @staticmethod
-    def _refresh_voice_dependency_flags() -> tuple[bool, str | None]:
+    def _refresh_voice_dependency_flags(self) -> tuple[bool, str | None]:
         try:
             import nacl.secret  # noqa: F401
             import nacl.utils  # noqa: F401
@@ -168,38 +174,125 @@ class BotVoiceCog(commands.Cog):
         except Exception:
             pass
 
-        if not BotVoiceCog._load_opus_library():
+        if not self._load_opus_library():
             return False, "libopus"
         return True, None
 
     @staticmethod
-    def _load_opus_library() -> bool:
+    def _project_root() -> Path:
+        return Path(__file__).resolve().parents[2]
+
+    def _add_dll_directory(self, directory: Path):
+        if os.name != "nt" or not hasattr(os, "add_dll_directory"):
+            return
+        try:
+            handle = os.add_dll_directory(str(directory))
+            self._dll_directory_handles.append(handle)
+        except (FileNotFoundError, OSError):
+            pass
+
+    def _iter_opus_candidates(self) -> list[str]:
+        candidates: list[str] = []
+        env_path = os.getenv("DISCORD_OPUS_LIBRARY") or os.getenv("OPUS_LIBRARY")
+        if env_path:
+            candidates.append(env_path)
+
+        project_root = self._project_root()
+        python_dir = Path(sys.executable).resolve().parent
+        if os.name == "nt":
+            search_dirs = [
+                project_root,
+                project_root / "bin",
+                project_root / "libs",
+                python_dir,
+                python_dir / "DLLs",
+                Path("C:/ffmpeg/bin"),
+                Path("C:/Program Files/ffmpeg/bin"),
+                Path("C:/Program Files/Opus/bin"),
+            ]
+            for directory in search_dirs:
+                for name in WINDOWS_OPUS_NAMES:
+                    candidates.append(str(directory / name))
+            for name in WINDOWS_OPUS_NAMES:
+                found = shutil.which(name)
+                if found:
+                    candidates.append(found)
+                candidates.append(name)
+        else:
+            candidates.extend(
+                [
+                    "/opt/homebrew/lib/libopus.dylib",
+                    "/opt/homebrew/opt/opus/lib/libopus.dylib",
+                    "/usr/local/lib/libopus.dylib",
+                    "/usr/local/opt/opus/lib/libopus.dylib",
+                    "/usr/lib/x86_64-linux-gnu/libopus.so.0",
+                    "/usr/lib/aarch64-linux-gnu/libopus.so.0",
+                    "/usr/local/lib/libopus.so",
+                ]
+            )
+            candidates.extend(POSIX_OPUS_NAMES)
+
+        found_library = ctypes.util.find_library("opus")
+        if found_library:
+            candidates.append(found_library)
+
+        deduped: list[str] = []
+        seen: set[str] = set()
+        for candidate in candidates:
+            normalized = str(candidate).strip()
+            if normalized and normalized.lower() not in seen:
+                deduped.append(normalized)
+                seen.add(normalized.lower())
+        return deduped
+
+    def _load_opus_library(self) -> bool:
         if discord.opus.is_loaded():
             return True
 
-        candidates = [
-            os.getenv("DISCORD_OPUS_LIBRARY"),
-            "/opt/homebrew/lib/libopus.dylib",
-            "/opt/homebrew/opt/opus/lib/libopus.dylib",
-            "/usr/local/lib/libopus.dylib",
-            "/usr/local/opt/opus/lib/libopus.dylib",
-            "libopus",
-        ]
-        for candidate in [path for path in candidates if path]:
+        errors: list[str] = []
+        for candidate in self._iter_opus_candidates():
             try:
+                candidate_path = Path(candidate)
+                if os.name == "nt" and candidate_path.is_absolute() and candidate_path.parent.exists():
+                    self._add_dll_directory(candidate_path.parent)
                 discord.opus.load_opus(candidate)
-                return discord.opus.is_loaded()
-            except OSError:
+                if discord.opus.is_loaded():
+                    self._last_opus_error = None
+                    return True
+            except OSError as exc:
+                if len(errors) < 6:
+                    errors.append(f"{candidate}: {exc}")
                 continue
+        self._last_opus_error = "\n".join(errors)
         return False
+
+    def _opus_install_hint(self) -> str:
+        if os.name == "nt":
+            detail = (
+                "Không load được `libopus-0.dll` trên Windows.\n"
+                "Cách sửa nhanh: kiểm tra file `C:\\ffmpeg\\bin\\libopus-0.dll` có tồn tại, "
+                "hoặc đặt biến môi trường `DISCORD_OPUS_LIBRARY=C:\\ffmpeg\\bin\\libopus-0.dll` rồi restart bot.\n"
+                "Nếu chưa có file này, cài bản FFmpeg full/shared từ Gyan rồi giải nén vào `C:\\ffmpeg`."
+            )
+            if self._last_opus_error:
+                detail += f"\n\nLần thử gần nhất:\n```text\n{self._short_text(self._last_opus_error, 650)}\n```"
+            return detail
+        if sys.platform == "darwin":
+            return "Không load được `libopus`. Trên macOS dùng `brew install opus`, hoặc set `DISCORD_OPUS_LIBRARY=/opt/homebrew/lib/libopus.dylib`."
+        return "Không load được `libopus`. Trên Linux cài `libopus0`/`opus-tools`, hoặc set `DISCORD_OPUS_LIBRARY=/usr/lib/x86_64-linux-gnu/libopus.so.0`."
+
+    @staticmethod
+    def _pip_install_hint(install_name: str) -> str:
+        executable = Path(sys.executable).name or "python"
+        return f"Cần cài `{install_name}` cho đúng Python đang chạy bot: `{executable} -m pip install {install_name}`."
 
     async def _require_voice_ready(self, ctx) -> bool:
         is_ready, missing_package = self._refresh_voice_dependency_flags()
         if not is_ready:
             if missing_package == "libopus":
-                detail = "Không load được `libopus`. Trên macOS dùng `brew install opus`, hoặc set `DISCORD_OPUS_LIBRARY=/opt/homebrew/lib/libopus.dylib`."
+                detail = self._opus_install_hint()
             else:
-                detail = f"Cần cài `{missing_package}` cho đúng Python đang chạy bot: `python3 -m pip install {missing_package}`."
+                detail = self._pip_install_hint(str(missing_package))
             await ctx.send(
                 embed=create_error_splash(
                     "❌ Thiếu Voice Library",
@@ -209,12 +302,32 @@ class BotVoiceCog(commands.Cog):
             return False
         return True
 
+    def _find_ffmpeg(self) -> str | None:
+        if self._ffmpeg_path and Path(self._ffmpeg_path).exists():
+            return self._ffmpeg_path
+        candidates = [
+            shutil.which("ffmpeg"),
+            str(self._project_root() / "bin" / ("ffmpeg.exe" if os.name == "nt" else "ffmpeg")),
+            str(Path("C:/ffmpeg/bin/ffmpeg.exe")),
+            str(Path("C:/Program Files/ffmpeg/bin/ffmpeg.exe")),
+            str(Path(sys.executable).resolve().parent / "ffmpeg.exe"),
+        ]
+        for candidate in [item for item in candidates if item]:
+            if Path(candidate).exists() or candidate == shutil.which("ffmpeg"):
+                self._ffmpeg_path = str(candidate)
+                return self._ffmpeg_path
+        return None
+
     async def _require_ffmpeg(self, ctx) -> bool:
-        if shutil.which("ffmpeg") is None:
+        if self._find_ffmpeg() is None:
+            if os.name == "nt":
+                detail = "Cần `ffmpeg.exe`. Bot sẽ tự nhận nếu có ở `C:\\ffmpeg\\bin\\ffmpeg.exe`; nếu mới cài xong hãy restart CMD/bot."
+            else:
+                detail = "Cần cài `ffmpeg` để phát nhạc/đọc giọng. Trên macOS dùng: `brew install ffmpeg`."
             await ctx.send(
                 embed=create_error_splash(
                     "❌ Thiếu FFmpeg",
-                    "Cần cài `ffmpeg` để phát nhạc/đọc giọng. Trên macOS dùng: `brew install ffmpeg`.",
+                    detail,
                 )
             )
             return False
@@ -225,7 +338,7 @@ class BotVoiceCog(commands.Cog):
             await ctx.send(
                 embed=create_error_splash(
                     "❌ Thiếu Package",
-                    f"Cần cài `{install_name}`: `.venv/bin/pip install {install_name}`.",
+                    self._pip_install_hint(install_name),
                 )
             )
             return False
@@ -512,15 +625,17 @@ class BotVoiceCog(commands.Cog):
             state.skip_requested = False
 
         try:
+            ffmpeg_executable = self._find_ffmpeg() or "ffmpeg"
             if item.item_type == "music":
                 item = await self._resolve_stream_url(item)
                 source = discord.FFmpegPCMAudio(
                     item.stream_url,
+                    executable=ffmpeg_executable,
                     before_options=FFMPEG_BEFORE_OPTIONS,
                     options=FFMPEG_OPTIONS,
                 )
             else:
-                source = discord.FFmpegPCMAudio(item.local_file, options=FFMPEG_OPTIONS)
+                source = discord.FFmpegPCMAudio(item.local_file, executable=ffmpeg_executable, options=FFMPEG_OPTIONS)
 
             source = discord.PCMVolumeTransformer(source, volume=state.volume)
 
