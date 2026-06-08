@@ -8,13 +8,35 @@ import certifi
 import sys
 from config import DISCORD_TOKEN, COGS_DIR, LOGS_DIR
 from cogs.cog_loader_utils import iter_cog_modules
-from utils import get_prefix
+from services.admin_service import AdminService
+from services.guild_settings_service import GuildSettingsService
+from utils import create_error_splash, get_prefix
 
 # Tạo các thư mục nếu chưa tồn tại
 os.makedirs(LOGS_DIR, exist_ok=True)
 
 if COGS_DIR not in sys.path:
     sys.path.insert(0, COGS_DIR)
+
+
+COMMAND_LOCK_ALLOWED_PREFIX = {
+    "avatar",
+    "av",
+    "ava",
+    "avata",
+    "banner",
+    "bn",
+    "bia",
+    "bìa",
+    "log",
+    "logs",
+}
+COMMAND_LOCK_ALLOWED_SLASH = {"avatar", "banner", "log", "admin"}
+
+
+class CommandsLocked(commands.CheckFailure):
+    """Raised when a guild has command usage locked for non-hardadmins."""
+
 
 # Load cogs từ thư mục cogs và các subfolder catalog
 async def load_cogs(bot):
@@ -27,20 +49,20 @@ async def load_cogs(bot):
 
 
 async def sync_slash_commands(bot):
+    for guild in bot.guilds:
+        try:
+            # Dọn các slash guild cũ để Discord không hiện trùng với slash global.
+            bot.tree.clear_commands(guild=guild)
+            synced = await bot.tree.sync(guild=guild)
+            print(f"✅ Đã xoá slash guild cũ cho {guild.name} ({guild.id}): {len(synced)}")
+        except Exception as e:
+            print(f"❌ Lỗi xoá slash guild cũ cho {guild.name} ({guild.id}): {e}")
+
     try:
         synced = await bot.tree.sync()
         print(f"✅ Đã sync global slash commands: {len(synced)}")
     except Exception as e:
         print(f"❌ Lỗi sync global slash commands: {e}")
-
-    for guild in bot.guilds:
-        try:
-            bot.tree.clear_commands(guild=guild)
-            bot.tree.copy_global_to(guild=guild)
-            synced = await bot.tree.sync(guild=guild)
-            print(f"✅ Đã sync guild slash commands mới cho {guild.name} ({guild.id}): {len(synced)}")
-        except Exception as e:
-            print(f"❌ Lỗi sync guild slash commands cho {guild.name} ({guild.id}): {e}")
 
 
 def prefix_callable(bot, message):
@@ -60,6 +82,18 @@ def get_unknown_command_suggestion(bot, invoked: str | None) -> str | None:
     matches = get_close_matches(invoked, command_names, n=1, cutoff=0.78)
     return matches[0] if matches else None
 
+
+def get_prefix_command_root(ctx) -> str:
+    if ctx.command is not None:
+        return ctx.command.qualified_name.split()[0].lower()
+    return (ctx.invoked_with or "").strip().lower()
+
+
+def get_slash_command_root(interaction: discord.Interaction) -> str:
+    data = interaction.data if isinstance(interaction.data, dict) else {}
+    return str(data.get("name") or getattr(interaction.command, "name", "") or "").strip().lower()
+
+
 async def main():
     intents = discord.Intents.default()
     intents.guilds = True
@@ -75,6 +109,41 @@ async def main():
         connector=connector,
         help_command=None,
     )
+    command_lock_admins = AdminService()
+    command_lock_settings = GuildSettingsService()
+
+    @bot.check
+    async def command_lock_check(ctx):
+        if ctx.guild is None:
+            return True
+        command_root = get_prefix_command_root(ctx)
+        if command_root in COMMAND_LOCK_ALLOWED_PREFIX:
+            return True
+        if not command_lock_settings.are_commands_locked(ctx.guild.id):
+            return True
+        if command_lock_admins.is_hard_admin(ctx.author.id):
+            return True
+        raise CommandsLocked()
+
+    async def command_lock_interaction_check(interaction: discord.Interaction):
+        if interaction.guild is None:
+            return True
+        command_root = get_slash_command_root(interaction)
+        if command_root in COMMAND_LOCK_ALLOWED_SLASH:
+            return True
+        if not command_lock_settings.are_commands_locked(interaction.guild.id):
+            return True
+        if command_lock_admins.is_hard_admin(interaction.user.id):
+            return True
+
+        message = "Bot đang khoá quyền dùng lệnh."
+        if interaction.response.is_done():
+            await interaction.followup.send(embed=create_error_splash(message), ephemeral=True)
+        else:
+            await interaction.response.send_message(embed=create_error_splash(message), ephemeral=True)
+        return False
+
+    bot.tree.interaction_check = command_lock_interaction_check
 
     @bot.event
     async def on_ready():
@@ -90,7 +159,9 @@ async def main():
     @bot.event
     async def on_command_error(ctx, error):
         current_prefix = get_prefix()
-        if isinstance(error, commands.CommandNotFound):
+        if isinstance(error, CommandsLocked):
+            await ctx.send(embed=create_error_splash("Bot đang khoá quyền dùng lệnh."))
+        elif isinstance(error, commands.CommandNotFound):
             suggestion = get_unknown_command_suggestion(bot, ctx.invoked_with)
             if not suggestion:
                 return

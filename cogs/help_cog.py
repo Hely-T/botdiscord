@@ -141,7 +141,8 @@ HELP_CATEGORIES = [
             {"name": "up", "description": "Up responsive profile lên channel chỉ định", "usage": "<key><số> #channel", "aliases": []},
         ],
         "slash_commands": [
-            {"name": "antiraid", "description": "Bật chế độ chống raid", "usage": "", "aliases": []},
+            {"name": "antiraid", "description": "Bật/tắt chống raid", "usage": "mode: on|off", "aliases": []},
+            {"name": "antinuke", "description": "Bật/tắt chống nuke", "usage": "mode: on|off", "aliases": []},
             {"name": "giveaway", "description": "Một slash tổng, chọn create/set/end/reroll/config bên trong", "usage": "action: create|set|end|reroll|config", "aliases": []},
             {"name": "group", "description": "Một slash tổng, chọn join/leave bên trong", "usage": "action: join|leave", "aliases": []},
             {

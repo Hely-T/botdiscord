@@ -19,9 +19,12 @@ class GuildSettingsService:
             """
             guild_id INTEGER PRIMARY KEY,
             anti_raid_enabled INTEGER DEFAULT 0,
+            anti_nuke_enabled INTEGER DEFAULT 0,
+            commands_locked INTEGER DEFAULT 0,
             updated_at TEXT NOT NULL
             """,
         )
+        self._ensure_guild_settings_columns()
         self.db.create_table(
             "guild_system_roles",
             """
@@ -36,6 +39,14 @@ class GuildSettingsService:
             """,
         )
 
+    def _ensure_guild_settings_columns(self):
+        rows = self.db.fetch("PRAGMA table_info(guild_settings)")
+        columns = {row["name"] for row in rows}
+        if "anti_nuke_enabled" not in columns:
+            self.db.execute("ALTER TABLE guild_settings ADD COLUMN anti_nuke_enabled INTEGER DEFAULT 0")
+        if "commands_locked" not in columns:
+            self.db.execute("ALTER TABLE guild_settings ADD COLUMN commands_locked INTEGER DEFAULT 0")
+
     def get_guild_settings(self, guild_id: int) -> dict:
         result = self.db.select_one("guild_settings", "guild_id = ?", (guild_id,))
         if result:
@@ -45,6 +56,8 @@ class GuildSettingsService:
             {
                 "guild_id": guild_id,
                 "anti_raid_enabled": 0,
+                "anti_nuke_enabled": 0,
+                "commands_locked": 0,
                 "updated_at": get_timestamp(),
             },
         )
@@ -54,8 +67,8 @@ class GuildSettingsService:
         settings = self.get_guild_settings(guild_id)
         return bool(settings and int(settings.get("anti_raid_enabled", 0)) == 1)
 
-    def toggle_antiraid(self, guild_id: int) -> bool:
-        enabled = not self.is_antiraid_enabled(guild_id)
+    def set_antiraid(self, guild_id: int, enabled: bool) -> bool:
+        self.get_guild_settings(guild_id)
         self.db.update(
             "guild_settings",
             {
@@ -66,6 +79,48 @@ class GuildSettingsService:
             (guild_id,),
         )
         return enabled
+
+    def toggle_antiraid(self, guild_id: int) -> bool:
+        enabled = not self.is_antiraid_enabled(guild_id)
+        return self.set_antiraid(guild_id, enabled)
+
+    def is_antinuke_enabled(self, guild_id: int) -> bool:
+        settings = self.get_guild_settings(guild_id)
+        return bool(settings and int(settings.get("anti_nuke_enabled", 0)) == 1)
+
+    def set_antinuke(self, guild_id: int, enabled: bool) -> bool:
+        self.get_guild_settings(guild_id)
+        self.db.update(
+            "guild_settings",
+            {
+                "anti_nuke_enabled": 1 if enabled else 0,
+                "updated_at": get_timestamp(),
+            },
+            "guild_id = ?",
+            (guild_id,),
+        )
+        return enabled
+
+    def toggle_antinuke(self, guild_id: int) -> bool:
+        enabled = not self.is_antinuke_enabled(guild_id)
+        return self.set_antinuke(guild_id, enabled)
+
+    def are_commands_locked(self, guild_id: int) -> bool:
+        settings = self.get_guild_settings(guild_id)
+        return bool(settings and int(settings.get("commands_locked", 0)) == 1)
+
+    def set_commands_locked(self, guild_id: int, locked: bool) -> bool:
+        self.get_guild_settings(guild_id)
+        self.db.update(
+            "guild_settings",
+            {
+                "commands_locked": 1 if locked else 0,
+                "updated_at": get_timestamp(),
+            },
+            "guild_id = ?",
+            (guild_id,),
+        )
+        return locked
 
     @staticmethod
     def normalize_role_key(role_key: str) -> str:
