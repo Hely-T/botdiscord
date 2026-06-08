@@ -47,6 +47,32 @@ Trong docs dùng `{prefix}` để đại diện cho prefix hiện tại.
   - Chuyển cash cho member trong server.
   - Có thể đảo tham số: `{prefix}give <money> @user`.
   - Ví dụ: `{prefix}give @Yang 10k`.
+- `{prefix}naptien <money>`
+  - Tạo QR nạp cash theo số tiền.
+  - Ví dụ: `{prefix}naptien 100k`.
+- `{prefix}naptien reload [id|code]`
+  - Reload số dư/kiểm tra lại giao dịch đang chờ.
+  - Có thể dùng nút **Reload số dư / Đã chuyển tiền** dưới QR.
+- `{prefix}naptien config username|password|account|name|bank|decor|auto <value>`
+  - Cài thông tin ACB/VietQR trực tiếp trong Discord.
+  - Quyền: bot admin hoặc role có quyền `naptien`.
+- `/naptien amount:<money>`
+  - Slash command tạo QR nạp cash.
+- `{prefix}donate <money>`
+  - Tạo QR donate theo số tiền, cộng cash và cộng tổng donate khi giao dịch thành công.
+  - Ví dụ: `{prefix}donate 50k`.
+- `{prefix}donate reload [id|code]`
+  - Reload số dư/kiểm tra lại giao dịch donate đang chờ.
+- `{prefix}donate config channel #channel`
+  - Set channel gửi lời cảm ơn donate.
+  - Dùng `off` để tắt channel cảm ơn.
+- `{prefix}donate config thanks <template>`
+  - Set nội dung cảm ơn donate.
+  - Placeholder: `{user}`, `{amount}`, `{code}`.
+- `{prefix}donate config decor <url|off>`
+  - Set ảnh decorate card QR donate.
+- `/donate amount:<money>`
+  - Slash command tạo QR donate.
 - `{prefix}topusers [limit]`
   - Xem top user theo points.
 
@@ -309,6 +335,23 @@ Placeholder auto response:
   - Quản lý emoji.
 - `/antiraid`
   - Bật/tắt chống raid trong server.
+
+### Log system
+
+- `{prefix}log chat #channel`
+  - Gửi log xóa/sửa tin nhắn của toàn server về channel đã chọn.
+- `{prefix}log voice #channel`
+  - Gửi log vào/rời/chuyển voice của toàn server.
+- `{prefix}log server #channel`
+  - Gửi log thay đổi server, role, avatar/user update và cấu hình server.
+- `{prefix}log join #channel`
+  - Gửi log member join/leave server.
+- `{prefix}log cash #channel`
+  - Gửi log nạp tiền, donate, give, cộng/trừ/set cash.
+- `{prefix}log <loại> off`
+  - Tắt một loại log.
+- `{prefix}log voice announce <message|off>`
+  - Tuỳ chỉnh thông báo khi user vào/rời voice channel.
 
 ### Ticket
 

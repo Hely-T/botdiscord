@@ -5,15 +5,16 @@ Bot Discord viết bằng `discord.py`, được tổ chức theo hướng catal
 ## Tính năng chính
 
 - Help menu theo category: User, Booking, Role Management, Administrator.
-- Quản lý user: profile, cash, points, time, give, top users.
+- Quản lý user: profile, cash, nạp tiền, donate, points, time, give, top users.
 - Booking: xem/tính lương, ghi nhận giờ book, tiền nạp, top book/top nạp/top quà.
 - Economy: mọi giá trị tiền dùng đơn vị VNĐ, hỗ trợ nhập nhanh `100k`, `1m`, `1b`, `100,000`.
+- Bank/VietQR: tạo QR nạp cash hoặc donate, reload số dư, auto check ACB và gửi log cash.
 - Role permission: cấp quyền dùng command theo Discord role trong database, hỗ trợ nhiều role và nhiều command cùng lúc.
 - Admin bot: hard admin từ `.env`, admin mềm trong database.
 - Responsive profile và auto response: `ar`, `form`, `res`, `up`.
 - Ticket: panel, manager, claim, transcript, archive và quyền staff qua role DB.
 - Operator: pull/status/reload/load/unload/cogs/prefix.
-- Slash command theo nhóm: `/antiraid`, `/giveaway`, `/group`, `/level`, `/ticket`.
+- Slash command theo nhóm: `/antiraid`, `/giveaway`, `/group`, `/level`, `/naptien`, `/donate`, `/ticket`.
 
 ## Cách chạy
 
@@ -33,7 +34,32 @@ BOT_PREFIX=b
 APP_NAME=Discord Bot
 SUPPORT_SERVER_URL=https://discord.com
 PROFILE_HOUR_RATE_VND=0
+ACB_USERNAME=
+ACB_PASSWORD=
+ACB_ACCOUNT_NUMBER=
+ACB_ACCOUNT_NAME=
+ACB_CLIENT_ID=
+ACB_BANK_CODE=ACB
+NAPTIEN_DECOR_URL=
+DONATE_DECOR_URL=
+DONATE_THANK_TEMPLATE=Cảm ơn {user} đã donate {amount} VNĐ!
 ```
+
+Các thông tin ACB cũng có thể cài trực tiếp trong Discord bằng lệnh quản trị:
+
+```text
+bnaptien config username <tài_khoản_acb>
+bnaptien config password <mật_khẩu_acb>
+bnaptien config account <số_tài_khoản>
+bnaptien config name <tên_chủ_tài_khoản>
+bnaptien config bank ACB
+bnaptien config auto on
+bdonate config channel #kenh-cam-on
+bdonate config thanks Cảm ơn {user} đã donate {amount} VNĐ!
+blog cash #log-cash
+```
+
+Nếu chưa cấu hình `log cash`, bot sẽ tự tìm kênh `log_cash`, `log-cash` hoặc `cash-log` để gửi log tiền.
 
 ## Cấu trúc dự án
 
@@ -81,6 +107,10 @@ Ví dụ:
 - `cogs/administrator/ban_cog.py`: `ban`, `unban`, `kick`.
 - `cogs/role/role_cog.py`: `addrole`, `removerole`, `setrole`, `perms`, `myroles`, `rolescommands`.
 - `cogs/administrator/ticket_cog.py`: toàn bộ command Ticket; UI nằm trong `ui/ticket/`, DB nằm trong `services/ticket_service.py`.
+- `cogs/user/naptien_cog.py`: tạo QR nạp cash, reload số dư và auto check giao dịch.
+- `cogs/user/donate_cog.py`: tạo QR donate, cộng cash/donate và gửi lời cảm ơn.
+- `ui/user/payment_ui.py`: card QR, embed nạp tiền/donate và giao diện thanh toán.
+- `services/bank_service.py`: cấu hình ACB, pending payment, match giao dịch và trạng thái thanh toán.
 
 ## Quy chuẩn cho team và AI
 

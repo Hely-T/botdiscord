@@ -224,8 +224,53 @@ Trước khi tạo DB mới phải kiểm tra dữ liệu đã có nguồn chung
 - Prefix: `bot_settings.db` qua `SettingsService`.
 - Role hệ thống: `guild_settings.db` qua `GuildSettingsService`.
 - Ticket: `ticket_system.db` qua `TicketService`.
+- Bank/nạp tiền/donate: `bank_payments.db` qua `BankPaymentService`.
+- Log cash/chat/voice/server/member: `log_system.db` qua `LogService`.
 
 Không nhân đôi dữ liệu. Ví dụ Ticket không tạo bảng staff role riêng vì quyền staff đã có trong `command_role.db`.
+
+### Bank, nạp tiền và donate
+
+Luồng bank dùng chung:
+
+```text
+cogs/user/naptien_cog.py hoặc cogs/user/donate_cog.py
+        ↓
+services/bank_service.py
+        ↓
+database/bank_payments.db
+        ↓
+services/user_service.py cộng cash vào users.db
+        ↓
+cogs/cash_log_utils.py gửi log cash qua LogService
+```
+
+Quy tắc:
+
+- `naptien` và `donate` là hai cog riêng trong catalog `user` vì người dùng gọi trực tiếp.
+- Cấu hình ACB nằm trong `BankPaymentService`, không đọc `.env` rải rác trong cog.
+- `.env` chỉ là giá trị mặc định; admin có thể đổi bằng command Discord.
+- QR/card/embed nằm trong `ui/user/payment_ui.py`.
+- Button reload số dư dùng callback trong `cogs/user/payment_common.py`.
+- Giao dịch thành công phải cộng vào `UserService` để toàn server dùng chung cash.
+- Donate cộng thêm `total_donate` để profile/top sau này có thể đọc cùng nguồn.
+- Log nạp, donate, chuyển, cộng/trừ cash gửi về channel `log cash` qua `LogService`.
+- Nếu chưa set `log cash`, helper log tiền tự tìm kênh `log_cash`, `log-cash` hoặc `cash-log`.
+- Không tạo DB cash riêng cho bank và không cộng tiền bằng SQL trực tiếp trong cog.
+
+Các biến cấu hình hỗ trợ:
+
+```text
+ACB_USERNAME
+ACB_PASSWORD
+ACB_ACCOUNT_NUMBER
+ACB_ACCOUNT_NAME
+ACB_CLIENT_ID
+ACB_BANK_CODE
+NAPTIEN_DECOR_URL
+DONATE_DECOR_URL
+DONATE_THANK_TEMPLATE
+```
 
 Khi dữ liệu phải liên kết:
 

@@ -2,7 +2,7 @@
 
 ## Phiên bản hiện tại
 
-`v0.7-dev`
+`v1.7-dev`
 
 Trạng thái: đang phát triển, đã chuẩn hóa catalog cog, service/database, role permission và UI theo feature.
 
@@ -10,7 +10,7 @@ Trạng thái: đang phát triển, đã chuẩn hóa catalog cog, service/datab
 
 - Recursive cog loader cho `cogs/` và subfolder catalog.
 - Help menu theo category.
-- User commands: `profile`, `cash`, `points`, `time`, `give`, `topusers`.
+- User commands: `profile`, `cash`, `naptien`, `donate`, `points`, `time`, `give`, `topusers`.
 - Booking commands: `luong`, `star`, `tinhluong`, `topbook`, `topnap`, `topgift`.
 - Role commands: `addrole`, `removerole`, `setrole`, `perms`, `myroles`, `rolescommands`.
 - Administrator commands theo nhóm:
@@ -20,8 +20,10 @@ Trạng thái: đang phát triển, đã chuẩn hóa catalog cog, service/datab
   - Responsive: `ar`, `form`, `res`, `up`.
   - Moderation: `ban`, `unban`, `kick`, `role`, `mute`, `unmute`.
   - Operator: `gitpull`, `gitstatus`, `reload`, `load`, `unload`, `cogs`, `prefix`.
-  - Slash: `/antiraid`.
-- Database tự tạo cho users, booking, role permission, admin, settings, guild settings và responsive.
+  - Slash: `/antiraid`, `/giveaway`, `/group`, `/level`, `/naptien`, `/donate`, `/ticket`.
+- Bank/VietQR: tạo QR nạp tiền/donate, reload số dư, auto check ACB, cộng cash và gửi log cash.
+- Log system có `chat`, `voice`, `server`, `join` và `cash`.
+- Database tự tạo cho users, booking, role permission, admin, settings, guild settings, responsive, bank payments và log system.
 - Định dạng tiền VNĐ thống nhất.
 - Ticket dùng một cog tại `cogs/administrator/ticket_cog.py`.
 - Ticket dùng `TicketService` và `ticket_system.db`.
@@ -48,6 +50,9 @@ Nên test thêm:
 - `{prefix}cash`, `{prefix}points`, `{prefix}time` hiện dữ liệu của bạn.
 - `{prefix}luong` hiện bảng lương ở kênh hiện tại.
 - `{prefix}give @user 10k` chuyển được nếu đủ cash.
+- `{prefix}naptien 10k` tạo QR, bấm reload số dư hoặc `{prefix}naptien reload`.
+- `{prefix}donate 10k` tạo QR donate, gửi cảm ơn nếu đã set channel.
+- `{prefix}log cash #log-cash` nhận log tiền, nạp, donate và give. Nếu chưa set, bot tự tìm kênh `log_cash`, `log-cash` hoặc `cash-log`.
 - `{prefix}setrole @Booking booking` nhận role booking.
 - `{prefix}tinhluong` gửi DM.
 - `{prefix}ar a`, `{prefix}form`, `{prefix}res`, `{prefix}up` hoạt động đúng.
@@ -67,9 +72,9 @@ Nên test thêm:
 
 - Không commit `.env`, database `.db`, logs, `__pycache__`.
 - Commit theo nhóm:
-  - `v0.x: cập nhật ...`
-  - `v0.x: thêm ...`
-  - `v0.x: sửa ...`
+  - `v1.x: cập nhật ...`
+  - `v1.x: thêm ...`
+  - `v1.x: sửa ...`
 - Push sau khi compile/load cogs không lỗi.
 
 ## Việc sắp tới
