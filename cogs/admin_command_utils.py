@@ -454,3 +454,14 @@ class AdminCommandBase(commands.Cog):
                 )
 
         await ctx.send(embed=embed)
+        if field == "cash":
+            from cogs.cash_log_utils import send_cash_log
+
+            await send_cash_log(
+                ctx.guild,
+                title=f"✅ {action_label} Thành Công",
+                actor=ctx.author,
+                target=member,
+                amount=int(amount),
+                action=f"admin {field} {action_label.lower()}",
+            )

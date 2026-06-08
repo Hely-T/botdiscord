@@ -11,6 +11,7 @@ LOG_CATEGORY_LABELS = {
     "channel": "Channel",
     "server": "Server",
     "member": "Member Join/Leave",
+    "cash": "Cash",
 }
 
 LOG_CATEGORY_EMOJIS = {
@@ -19,6 +20,7 @@ LOG_CATEGORY_EMOJIS = {
     "channel": "🗂️",
     "server": "🧩",
     "member": "👥",
+    "cash": "💸",
 }
 
 LOG_COLORS = {
@@ -27,6 +29,7 @@ LOG_COLORS = {
     "channel": discord.Color.from_rgb(14, 165, 233),
     "server": discord.Color.from_rgb(168, 85, 247),
     "member": discord.Color.from_rgb(251, 191, 36),
+    "cash": discord.Color.from_rgb(45, 212, 191),
     "danger": discord.Color.from_rgb(239, 68, 68),
 }
 
@@ -60,7 +63,7 @@ def truncate_text(value: str | None, limit: int = 950) -> str:
 def build_log_settings_embed(guild: discord.Guild, config: dict | None) -> discord.Embed:
     embed = discord.Embed(
         title="🧾 Log System",
-        description="Theo dõi toàn bộ chat, voice, channel, server và member join/leave.",
+        description="Theo dõi toàn bộ chat, voice, channel, server, member join/leave và cash.",
         color=discord.Color.from_rgb(59, 130, 246),
     )
     embed.set_author(name=guild.name, icon_url=guild.icon.url if guild.icon else None)
@@ -72,6 +75,7 @@ def build_log_settings_embed(guild: discord.Guild, config: dict | None) -> disco
             "channel": "channel_channel_id",
             "server": "server_channel_id",
             "member": "member_channel_id",
+            "cash": "cash_channel_id",
         }[category]
         channel_id = config.get(field_name)
         value = f"<#{int(channel_id)}>" if channel_id else "`Chưa set`"

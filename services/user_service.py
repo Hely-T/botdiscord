@@ -184,6 +184,24 @@ class UserService:
     def set_cash(self, user_id: int, amount: int):
         self._set_numeric_field(user_id, 'cash', amount)
 
+    def add_total_money(self, user_id: int, amount: int):
+        self._update_numeric_field(user_id, 'total_money', amount)
+
+    def remove_total_money(self, user_id: int, amount: int):
+        self._update_numeric_field(user_id, 'total_money', -amount)
+
+    def set_total_money(self, user_id: int, amount: int):
+        self._set_numeric_field(user_id, 'total_money', amount)
+
+    def add_total_donate(self, user_id: int, amount: int):
+        self._update_numeric_field(user_id, 'total_donate', amount)
+
+    def remove_total_donate(self, user_id: int, amount: int):
+        self._update_numeric_field(user_id, 'total_donate', -amount)
+
+    def set_total_donate(self, user_id: int, amount: int):
+        self._set_numeric_field(user_id, 'total_donate', amount)
+
     def transfer_cash(self, from_user_id: int, from_username: str, to_user_id: int, to_username: str, amount: int):
         if amount <= 0:
             raise ValueError("Số tiền phải lớn hơn 0")
@@ -266,7 +284,7 @@ class UserService:
         self._set_numeric_field(user_id, 'total_hours', hours)
 
     def get_users_by_stat(self, field_name: str, limit: int = 25) -> list:
-        allowed_fields = {"cash", "luong", "star", "points", "total_hours"}
+        allowed_fields = {"cash", "luong", "star", "points", "total_hours", "total_donate", "total_money"}
         if field_name not in allowed_fields:
             raise ValueError("Trường thống kê không hợp lệ")
         safe_limit = max(1, min(int(limit), 100))

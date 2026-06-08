@@ -45,6 +45,12 @@ CATEGORY_ALIASES = {
     "member": "member",
     "members": "member",
     "mem": "member",
+    "cash": "cash",
+    "money": "cash",
+    "bank": "cash",
+    "naptien": "cash",
+    "nap": "cash",
+    "donate": "cash",
     "all": "all",
 }
 
@@ -54,6 +60,7 @@ CATEGORY_CHOICES = [
     app_commands.Choice(name="channel", value="channel"),
     app_commands.Choice(name="server", value="server"),
     app_commands.Choice(name="join/leave", value="member"),
+    app_commands.Choice(name="cash", value="cash"),
     app_commands.Choice(name="all", value="all"),
 ]
 
@@ -319,11 +326,11 @@ class LogCog(AdminCommandBase):
 
         if first in {"off", "disable", "tat", "tắt"}:
             if len(tokens) < 2:
-                await ctx.send(embed=create_error_splash("❌ Thiếu Loại Log", "Dùng: `log off chat|voice|channel|server|join|all`."))
+                await ctx.send(embed=create_error_splash("❌ Thiếu Loại Log", "Dùng: `log off chat|voice|channel|server|join|cash|all`."))
                 return
             category = CATEGORY_ALIASES.get(tokens[1].lower())
             if not category:
-                await ctx.send(embed=create_error_splash("❌ Loại Log Không Hợp Lệ", "Chọn: chat, voice, channel, server, join/leave hoặc all."))
+                await ctx.send(embed=create_error_splash("❌ Loại Log Không Hợp Lệ", "Chọn: chat, voice, channel, server, join/leave, cash hoặc all."))
                 return
             await self._set_category_channel(ctx.guild, category, None)
             await ctx.send(embed=create_success_splash("✅ Đã Tắt Log", f"Đã tắt log `{category}`."))
@@ -340,7 +347,7 @@ class LogCog(AdminCommandBase):
             await ctx.send(
                 embed=create_error_splash(
                     "❌ Sai Cú Pháp",
-                    "Dùng: `log chat|voice|channel|server|join #channel`, `log off <loại>`, `log voice room on`.",
+                    "Dùng: `log chat|voice|channel|server|join|cash #channel`, `log off <loại>`, `log voice room on`.",
                 )
             )
             return

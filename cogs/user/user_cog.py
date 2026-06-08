@@ -5,6 +5,7 @@ from discord.ext import commands
 
 from config import PROFILE_HOUR_RATE_VND
 from cogs.admin_command_utils import create_error_splash, create_success_splash, format_hours, format_vnd, parse_vnd_amount, parse_vnd_amount_or_zero
+from cogs.cash_log_utils import send_cash_log
 from cogs.user_command_utils import UserCommandBase
 from models.constants import ERROR_MESSAGE
 
@@ -67,6 +68,14 @@ class UserCog(UserCommandBase):
             return
 
         await ctx.send(embed=create_success_splash(title, detail))
+        await send_cash_log(
+            ctx.guild,
+            title=title,
+            actor=ctx.author,
+            target=member,
+            amount=amount,
+            action=f"cash {action}",
+        )
 
     @staticmethod
     def _parse_int_amount(raw_amount: str, allow_zero: bool = False, label: str = "Số lượng") -> int:
@@ -383,6 +392,14 @@ class UserCog(UserCommandBase):
                     "✅ Give Thành Công",
                     f"Đã chuyển `{format_vnd(amount)} VNĐ` từ {ctx.author.mention} đến {target.mention}.",
                 )
+            )
+            await send_cash_log(
+                ctx.guild,
+                title="✅ Give Thành Công",
+                actor=ctx.author,
+                target=target,
+                amount=amount,
+                action="give",
             )
         except Exception as e:
             await ctx.send(f"{ERROR_MESSAGE} {str(e)}")

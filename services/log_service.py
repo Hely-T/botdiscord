@@ -11,6 +11,7 @@ LOG_CHANNEL_FIELDS = {
     "channel": "channel_channel_id",
     "server": "server_channel_id",
     "member": "member_channel_id",
+    "cash": "cash_channel_id",
 }
 
 
@@ -29,6 +30,7 @@ class LogService:
             channel_channel_id INTEGER,
             server_channel_id INTEGER,
             member_channel_id INTEGER,
+            cash_channel_id INTEGER,
             voice_announce_channel_id INTEGER,
             voice_join_template TEXT DEFAULT '{username} vừa vào kênh {channel_name}.',
             voice_leave_template TEXT DEFAULT '{username} đã rời kênh {channel_name}.',
@@ -47,6 +49,7 @@ class LogService:
 
     def _ensure_schema(self):
         self._ensure_column("log_config", "channel_channel_id", "INTEGER")
+        self._ensure_column("log_config", "cash_channel_id", "INTEGER")
         self._ensure_column("log_config", "voice_announce_channel_id", "INTEGER")
         self._ensure_column("log_config", "voice_join_template", "TEXT DEFAULT '{username} vừa vào kênh {channel_name}.'")
         self._ensure_column("log_config", "voice_leave_template", "TEXT DEFAULT '{username} đã rời kênh {channel_name}.'")
