@@ -1,8 +1,10 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime
 
 import discord
+
+from utils import append_discord_timestamp, discord_timestamp_text
 
 
 LOG_CATEGORY_LABELS = {
@@ -35,14 +37,11 @@ LOG_COLORS = {
 
 
 def local_time_text(dt: datetime | None = None) -> str:
-    value = dt or datetime.now().astimezone()
-    return f"Hôm nay lúc {value.strftime('%H:%M')}"
+    return discord_timestamp_text(dt, "f")
 
 
 def discord_time(dt: datetime | None = None) -> str:
-    value = dt or datetime.now(timezone.utc)
-    timestamp = int(value.timestamp())
-    return f"<t:{timestamp}:F>"
+    return discord_timestamp_text(dt, "f")
 
 
 def avatar_url(user: discord.abc.User | discord.Member | None) -> str | None:
@@ -104,8 +103,8 @@ def build_log_settings_embed(guild: discord.Guild, config: dict | None) -> disco
         value="`Bật`" if int(config.get("voice_announce_embed") or 0) else "`Tắt`",
         inline=True,
     )
-    embed.set_footer(text=f"Log • {local_time_text()}")
-    return embed
+    embed.set_footer(text="Log")
+    return append_discord_timestamp(embed)
 
 
 def build_basic_log_embed(
@@ -121,5 +120,13 @@ def build_basic_log_embed(
     )
     if user:
         embed.set_author(name=getattr(user, "display_name", str(user)), icon_url=avatar_url(user))
-    embed.set_footer(text=local_time_text())
-    return embed
+    timestamp = discord_timestamp_text(style="f")
+    if embed.description:
+        lines = str(embed.description).rstrip().splitlines()
+        for index in range(len(lines) - 1, -1, -1):
+            if "ID:**" in lines[index] or "ID:" in lines[index]:
+                if "<t:" not in lines[index]:
+                    lines[index] = f"{lines[index]} • {timestamp}"
+                embed.description = "\n".join(lines)
+                return embed
+    return append_discord_timestamp(embed)

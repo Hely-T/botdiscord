@@ -1,7 +1,6 @@
 import io
 import re
 import unicodedata
-from datetime import datetime
 
 import aiohttp
 import discord
@@ -16,7 +15,7 @@ from cogs.admin_command_utils import (
     parse_color,
 )
 from services.responsive_service import ResponsiveService
-from utils import get_prefix
+from utils import append_discord_timestamp, get_prefix
 
 
 FORM_TEMPLATE = (
@@ -465,7 +464,7 @@ class AdministratorResponsiveCog(AdminCommandBase):
             embed.set_image(url=profile["image_url"])
         if profile.get("thumbnail_url"):
             embed.set_thumbnail(url=profile["thumbnail_url"])
-        embed.set_footer(text=f"Hôm nay lúc {datetime.now().strftime('%H:%M')}")
+        append_discord_timestamp(embed)
         return embed
 
     async def _profile_payload(self, profile: dict, member: discord.Member | None = None) -> tuple[discord.Embed, list[discord.File]]:

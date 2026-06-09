@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 import re
-from datetime import datetime
 
 import discord
 from discord.ext import commands
 
 from cogs.admin_command_utils import format_vnd, parse_vnd_amount
 from services.note_service import NoteService
+from utils import append_discord_timestamp
 
 
 class NoteCog(commands.Cog):
@@ -97,10 +97,9 @@ class NoteCog(commands.Cog):
             for index, note in enumerate(notes[:50], 1)
         ]
         embed.description = "\n".join(lines)
-        footer_text = f"Hôm nay lúc {datetime.now().strftime('%H:%M')}"
         if len(notes) > 50:
-            footer_text = f"Đang hiện 50/{len(notes)} note • {footer_text}"
-        embed.set_footer(text=footer_text)
+            embed.set_footer(text=f"Đang hiện 50/{len(notes)} note")
+        append_discord_timestamp(embed)
         return embed
 
     @commands.command(name="note")

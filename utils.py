@@ -1,7 +1,7 @@
 import sqlite3
 import os
 from typing import List, Dict, Any, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 from config import DATABASE_DIR
 
 # Tạo folder database nếu chưa tồn tại
@@ -212,6 +212,39 @@ class CogDatabase:
 def get_timestamp() -> str:
     """Lấy timestamp hiện tại"""
     return datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
+
+def discord_timestamp_text(dt: datetime | None = None, style: str = "f") -> str:
+    """Tạo timestamp Discord để mỗi user thấy đúng timezone của họ."""
+    value = dt or datetime.now(timezone.utc)
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return f"<t:{int(value.timestamp())}:{style}>"
+
+
+def append_discord_timestamp(embed, dt: datetime | None = None, style: str = "f"):
+    """Đặt thời gian Discord ở dòng cuối embed thay vì tự format local time."""
+    stamp = discord_timestamp_text(dt, style)
+    footer_text = getattr(getattr(embed, "footer", None), "text", None)
+    if footer_text:
+        if hasattr(embed, "remove_footer"):
+            embed.remove_footer()
+        else:
+            embed.set_footer(text=None)
+        if getattr(embed, "fields", None):
+            embed.add_field(name="\u200b", value=footer_text, inline=False)
+        elif embed.description:
+            embed.description = f"{str(embed.description).rstrip()}\n\n{footer_text}"
+        else:
+            embed.description = footer_text
+
+    if getattr(embed, "fields", None):
+        embed.add_field(name="\u200b", value=stamp, inline=False)
+    elif embed.description:
+        embed.description = f"{str(embed.description).rstrip()}\n\n{stamp}"
+    else:
+        embed.description = stamp
+    return embed
 
 
 def log_to_file(message: str, filename: str = 'bot.log'):

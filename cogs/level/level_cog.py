@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from datetime import datetime
-
 import discord
 from discord import app_commands
 from discord.ext import commands
@@ -15,6 +13,7 @@ from cogs.admin_command_utils import (
     parse_duration,
 )
 from services.level_service import LevelService
+from utils import append_discord_timestamp
 
 
 PERIOD_ALIASES = {
@@ -481,7 +480,8 @@ class LevelCog(AdminCommandBase):
         embed.add_field(name=f"🧾 **XP {period_label.lower()}**", value=f"`{format_xp(stats['total_xp'])}`", inline=True)
         embed.add_field(name="💬 **Tin nhắn**", value=f"`{int(stats['messages']):,}`", inline=True)
         embed.add_field(name="🎙️ **Voice**", value=f"`{format_duration_seconds(int(stats['voice_seconds']))}`", inline=True)
-        embed.set_footer(text=f"XP mode: {mode_label} • Hôm nay lúc {datetime.now().strftime('%H:%M')}")
+        embed.set_footer(text=f"XP mode: {mode_label}")
+        append_discord_timestamp(embed)
         return embed
 
     def build_leaderboard_embed(self, guild: discord.Guild, period: str, metric: str, limit: int) -> discord.Embed:
@@ -496,6 +496,7 @@ class LevelCog(AdminCommandBase):
         )
         if not rows:
             embed.description = "Chưa có dữ liệu level trong kỳ này."
+            append_discord_timestamp(embed)
             return embed
 
         lines = []
@@ -511,7 +512,8 @@ class LevelCog(AdminCommandBase):
                 score_text = format_xp(int(row["score"] or 0))
             lines.append(f"**#{index}** {user_text} - `{score_text}`")
         embed.add_field(name="Bảng xếp hạng", value="\n".join(lines), inline=False)
-        embed.set_footer(text=f"{len(rows)} user • {datetime.now().strftime('%d/%m/%Y %H:%M')}")
+        embed.set_footer(text=f"{len(rows)} user")
+        append_discord_timestamp(embed)
         return embed
 
     def build_count_embed(self, guild: discord.Guild, period: str) -> discord.Embed:
@@ -526,7 +528,7 @@ class LevelCog(AdminCommandBase):
         embed.add_field(name="✨ **Tổng XP**", value=f"`{format_xp(count['total_xp'])}`", inline=True)
         embed.add_field(name="💬 **Tin nhắn**", value=f"`{count['messages']:,}`", inline=True)
         embed.add_field(name="🎙️ **Voice**", value=f"`{format_duration_seconds(count['voice_seconds'])}`", inline=True)
-        embed.set_footer(text=f"Hôm nay lúc {datetime.now().strftime('%H:%M')}")
+        append_discord_timestamp(embed)
         return embed
 
     def build_settings_embed(self, guild: discord.Guild) -> discord.Embed:

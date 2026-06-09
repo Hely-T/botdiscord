@@ -4,7 +4,7 @@ import discord
 
 from cogs.admin_command_utils import format_vnd
 from services.log_service import LogService
-from ui.administrator.log_ui import build_basic_log_embed, local_time_text, truncate_text
+from ui.administrator.log_ui import build_basic_log_embed, truncate_text
 
 
 async def send_cash_log(
@@ -45,8 +45,6 @@ async def send_cash_log(
         lines.append(f"**Mã GD ngân hàng:** `{transaction_id}`")
     if note:
         lines.append(f"**Ghi chú:** {truncate_text(note, 450)}")
-    lines.append(f"**Thời gian:** {local_time_text()}")
-
     embed = build_basic_log_embed(title, "\n".join(lines), "cash", target or actor)
     try:
         await channel.send(embed=embed)

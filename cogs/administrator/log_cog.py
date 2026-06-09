@@ -18,7 +18,6 @@ from ui.administrator.log_ui import (
     LOG_CATEGORY_LABELS,
     build_basic_log_embed,
     build_log_settings_embed,
-    local_time_text,
     truncate_text,
 )
 
@@ -472,7 +471,7 @@ class LogCog(AdminCommandBase):
         description = (
             f"{truncate_text(message.content, 900)}\n\n"
             f"**Message ID:** `{message.id}`{actor_text}{reason_text}{attachment_text}\n"
-            f"**ID:** `{message.author.id}` • {local_time_text()}"
+            f"**ID:** `{message.author.id}`"
         )
         embed = build_basic_log_embed(title, description, "chat", message.author)
         await self._send_log(message.guild, "chat", embed=embed)
@@ -490,7 +489,7 @@ class LogCog(AdminCommandBase):
         reason_text = f"\n**Lý do:** {reason}" if reason else ""
         embed = build_basic_log_embed(
             f"Bulk message deleted in {channel.mention}",
-            f"Đã xoá `{len(messages)}` tin nhắn.{actor_text}{reason_text}\n**Kênh:** {channel.mention} • {local_time_text()}",
+            f"Đã xoá `{len(messages)}` tin nhắn.{actor_text}{reason_text}\n**Kênh:** {channel.mention}",
             "chat",
             actor,
         )
@@ -505,7 +504,7 @@ class LogCog(AdminCommandBase):
         description = (
             f"**Before:** {truncate_text(before.content, 500)}\n"
             f"**After:** {truncate_text(after.content, 500)}\n\n"
-            f"**ID:** `{before.author.id}` • {local_time_text()}"
+            f"**ID:** `{before.author.id}`"
         )
         embed = build_basic_log_embed(f"Message edited in {before.channel.mention}", description, "chat", before.author)
         await self._send_log(before.guild, "chat", embed=embed)
@@ -515,19 +514,19 @@ class LogCog(AdminCommandBase):
         if member.bot or before.channel == after.channel:
             return
         if before.channel is None and after.channel is not None:
-            description = f"{member.mention} vừa vào {after.channel.mention}.\n**ID:** `{member.id}` • {local_time_text()}"
+            description = f"{member.mention} vừa vào {after.channel.mention}.\n**ID:** `{member.id}`"
             await self._send_log(member.guild, "voice", embed=build_basic_log_embed("Voice joined", description, "voice", member))
             await self._send_voice_announce(member, "join", after.channel)
             await self._send_voice_room_announce(member, "join", after.channel)
             return
         if before.channel is not None and after.channel is None:
-            description = f"{member.mention} vừa rời {before.channel.mention}.\n**ID:** `{member.id}` • {local_time_text()}"
+            description = f"{member.mention} vừa rời {before.channel.mention}.\n**ID:** `{member.id}`"
             await self._send_log(member.guild, "voice", embed=build_basic_log_embed("Voice left", description, "voice", member))
             await self._send_voice_announce(member, "leave", before.channel)
             await self._send_voice_room_announce(member, "leave", before.channel)
             return
         if before.channel is not None and after.channel is not None:
-            description = f"{member.mention} chuyển từ {before.channel.mention} sang {after.channel.mention}.\n**ID:** `{member.id}` • {local_time_text()}"
+            description = f"{member.mention} chuyển từ {before.channel.mention} sang {after.channel.mention}.\n**ID:** `{member.id}`"
             await self._send_log(member.guild, "voice", embed=build_basic_log_embed("Voice moved", description, "voice", member))
             await self._send_voice_room_announce(member, "leave", before.channel)
             await self._send_voice_announce(member, "join", after.channel)
@@ -537,7 +536,7 @@ class LogCog(AdminCommandBase):
     async def on_member_join(self, member: discord.Member):
         age = self._age_text(member.created_at)
         warning = "\n⚠️ **NEW ACCOUNT** ⚠️" if (datetime.now(timezone.utc) - member.created_at).days < 7 else ""
-        description = f"{member.mention} người thứ `{member.guild.member_count}` vào server\nAccount tạo `{age}` trước{warning}\n**ID:** `{member.id}` • {local_time_text()}"
+        description = f"{member.mention} người thứ `{member.guild.member_count}` vào server\nAccount tạo `{age}` trước{warning}\n**ID:** `{member.id}`"
         await self._send_log(member.guild, "member", embed=build_basic_log_embed("Member joined", description, "member", member))
 
     @commands.Cog.listener()
@@ -550,7 +549,7 @@ class LogCog(AdminCommandBase):
             title = "Member left"
             extra = ""
         reason_text = f"\n**Lý do:** {reason}" if reason else ""
-        description = f"{member.mention}\n**ID:** `{member.id}` • {local_time_text()}{extra}{reason_text}"
+        description = f"{member.mention}\n**ID:** `{member.id}`{extra}{reason_text}"
         await self._send_log(member.guild, "member", embed=build_basic_log_embed(title, description, "member", member))
 
     @commands.Cog.listener()
@@ -571,10 +570,10 @@ class LogCog(AdminCommandBase):
                     lines.append(f"**Người chỉnh:** {actor.mention}")
                 if reason:
                     lines.append(f"**Lý do:** {reason}")
-                lines.append(f"**ID:** `{after.id}` • {local_time_text()}")
+                lines.append(f"**ID:** `{after.id}`")
                 await self._send_log(after.guild, "server", embed=build_basic_log_embed("Member role update", "\n".join(lines), "server", after))
         if before.nick != after.nick:
-            description = f"**Before:** `{before.nick or before.name}`\n**After:** `{after.nick or after.name}`\n**ID:** `{after.id}` • {local_time_text()}"
+            description = f"**Before:** `{before.nick or before.name}`\n**After:** `{after.nick or after.name}`\n**ID:** `{after.id}`"
             await self._send_log(after.guild, "server", embed=build_basic_log_embed("Nickname update", description, "server", after))
         if before.guild_avatar != after.guild_avatar:
             embed = build_basic_log_embed(
@@ -583,7 +582,7 @@ class LogCog(AdminCommandBase):
                     f"{after.mention}\n"
                     f"**Avatar cũ:** {self._asset_link(before.guild_avatar)}\n"
                     f"**Avatar mới:** {self._asset_link(after.guild_avatar)}\n"
-                    f"**ID:** `{after.id}` • {local_time_text()}"
+                    f"**ID:** `{after.id}`"
                 ),
                 "server",
                 after,
@@ -605,7 +604,7 @@ class LogCog(AdminCommandBase):
                     f"{member.mention}\n"
                     f"**Avatar cũ:** {self._asset_link(before.avatar)}\n"
                     f"**Avatar mới:** {self._asset_link(after.avatar)}\n"
-                    f"**ID:** `{after.id}` • {local_time_text()}"
+                    f"**ID:** `{after.id}`"
                 ),
                 "server",
                 member,
@@ -616,7 +615,7 @@ class LogCog(AdminCommandBase):
     @commands.Cog.listener()
     async def on_guild_role_create(self, role: discord.Role):
         actor, reason = await self._find_audit_actor(role.guild, discord.AuditLogAction.role_create, target_id=role.id)
-        description = f"**Name:** {role.name}\n**Color:** {role.color}\n**Position:** `{role.position}`\n**Role ID:** `{role.id}` • {local_time_text()}"
+        description = f"**Name:** {role.name}\n**Color:** {role.color}\n**Position:** `{role.position}`\n**Role ID:** `{role.id}`"
         if actor:
             description += f"\n**Người tạo:** {actor.mention}"
         if reason:
@@ -626,7 +625,7 @@ class LogCog(AdminCommandBase):
     @commands.Cog.listener()
     async def on_guild_role_delete(self, role: discord.Role):
         actor, reason = await self._find_audit_actor(role.guild, discord.AuditLogAction.role_delete, target_id=role.id)
-        description = f"**Name:** {role.name}\n**Color:** {role.color}\n**Mentionable:** `{role.mentionable}`\n**Displayed separately:** `{role.hoist}`\n**Position:** `{role.position}`\n**Role ID:** `{role.id}` • {local_time_text()}"
+        description = f"**Name:** {role.name}\n**Color:** {role.color}\n**Mentionable:** `{role.mentionable}`\n**Displayed separately:** `{role.hoist}`\n**Position:** `{role.position}`\n**Role ID:** `{role.id}`"
         if actor:
             description += f"\n**Người xoá:** {actor.mention}"
         if reason:
@@ -651,13 +650,13 @@ class LogCog(AdminCommandBase):
             changes.append(f"**Người chỉnh:** {actor.mention}")
         if reason:
             changes.append(f"**Lý do:** {reason}")
-        changes.append(f"**Role ID:** `{after.id}` • {local_time_text()}")
+        changes.append(f"**Role ID:** `{after.id}`")
         await self._send_log(after.guild, "server", embed=build_basic_log_embed(f'Role "{after.name}" updated', "\n".join(changes), "server", actor))
 
     @commands.Cog.listener()
     async def on_guild_channel_create(self, channel: discord.abc.GuildChannel):
         actor, reason = await self._find_audit_actor(channel.guild, discord.AuditLogAction.channel_create, target_id=channel.id)
-        description = f"**Channel:** {channel.mention if hasattr(channel, 'mention') else channel.name}\n**ID:** `{channel.id}` • {local_time_text()}"
+        description = f"**Channel:** {channel.mention if hasattr(channel, 'mention') else channel.name}\n**ID:** `{channel.id}`"
         if actor:
             description += f"\n**Người tạo:** {actor.mention}"
         if reason:
@@ -667,7 +666,7 @@ class LogCog(AdminCommandBase):
     @commands.Cog.listener()
     async def on_guild_channel_delete(self, channel: discord.abc.GuildChannel):
         actor, reason = await self._find_audit_actor(channel.guild, discord.AuditLogAction.channel_delete, target_id=channel.id)
-        description = f"**Name:** `{channel.name}`\n**ID:** `{channel.id}` • {local_time_text()}"
+        description = f"**Name:** `{channel.name}`\n**ID:** `{channel.id}`"
         if actor:
             description += f"\n**Người xoá:** {actor.mention}"
         if reason:
@@ -688,7 +687,7 @@ class LogCog(AdminCommandBase):
             changes.append(f"**Người chỉnh:** {actor.mention}")
         if reason:
             changes.append(f"**Lý do:** {reason}")
-        changes.append(f"**ID:** `{after.id}` • {local_time_text()}")
+        changes.append(f"**ID:** `{after.id}`")
         await self._send_log(after.guild, "channel", embed=build_basic_log_embed("Channel updated", "\n".join(changes), "channel", actor))
 
     @commands.Cog.listener()
@@ -697,7 +696,7 @@ class LogCog(AdminCommandBase):
             f"**Thread:** {thread.mention}\n"
             f"**Kênh:** {thread.parent.mention if thread.parent else '`Không rõ`'}\n"
             f"**Chủ thread:** {self._member_tag(thread.owner)}\n"
-            f"**ID:** `{thread.id}` • {local_time_text()}"
+            f"**ID:** `{thread.id}`"
         )
         await self._send_log(
             thread.guild,
@@ -710,7 +709,7 @@ class LogCog(AdminCommandBase):
         description = (
             f"**Name:** `{thread.name}`\n"
             f"**Kênh:** {thread.parent.mention if thread.parent else '`Không rõ`'}\n"
-            f"**ID:** `{thread.id}` • {local_time_text()}"
+            f"**ID:** `{thread.id}`"
         )
         await self._send_log(
             thread.guild,
@@ -731,7 +730,7 @@ class LogCog(AdminCommandBase):
             changes.append(f"**Slowmode:** `{before.slowmode_delay}s` → `{after.slowmode_delay}s`")
         if not changes:
             return
-        changes.append(f"**ID:** `{after.id}` • {local_time_text()}")
+        changes.append(f"**ID:** `{after.id}`")
         await self._send_log(
             after.guild,
             "channel",
@@ -754,7 +753,7 @@ class LogCog(AdminCommandBase):
             changes.append(f"**Người chỉnh:** {actor.mention}")
         if reason:
             changes.append(f"**Lý do:** {reason}")
-        changes.append(f"**Guild ID:** `{after.id}` • {local_time_text()}")
+        changes.append(f"**Guild ID:** `{after.id}`")
         await self._send_log(after, "server", embed=build_basic_log_embed("Server updated", "\n".join(changes), "server", actor))
 
 

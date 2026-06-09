@@ -5,7 +5,6 @@ import random
 import re
 import shlex
 from dataclasses import dataclass
-from datetime import datetime
 
 import discord
 from discord import app_commands
@@ -20,6 +19,7 @@ from cogs.admin_command_utils import (
     parse_duration,
 )
 from services.giveaway_service import GiveawayService
+from utils import append_discord_timestamp
 from ui.administrator.emoji import (
     GIVEAWAY_CUSTOM_EMOJI_RE,
     GIVEAWAY_DEFAULT_ENTRY_EMOJI,
@@ -233,11 +233,6 @@ class AdministratorGiveawayCog(AdminCommandBase):
         return payload
 
     @staticmethod
-    def _local_footer_text() -> str:
-        now = datetime.now().astimezone()
-        return f"Giveaway • {now.strftime('%d/%m/%Y %H:%M')}"
-
-    @staticmethod
     def _custom_emoji_id(raw: str) -> int | None:
         match = GIVEAWAY_CUSTOM_EMOJI_RE.fullmatch(str(raw or "").strip())
         return int(match.group("id")) if match else None
@@ -441,7 +436,7 @@ class AdministratorGiveawayCog(AdminCommandBase):
         host_avatar_url = self._giveaway_host_avatar_url(giveaway)
         if host_avatar_url:
             embed.set_thumbnail(url=host_avatar_url)
-        embed.set_footer(text=self._local_footer_text())
+        append_discord_timestamp(embed)
         return embed
 
     def _build_result_embed(self, giveaway: dict, winner_ids: list[int], title: str) -> discord.Embed:
