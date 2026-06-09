@@ -170,10 +170,10 @@ class PaymentReloadView(discord.ui.View):
         self.payment_id = int(payment_id)
         self.user_id = int(user_id)
 
-    @discord.ui.button(label="Reload số dư / Đã chuyển tiền", emoji="🔄", style=discord.ButtonStyle.success)
+    @discord.ui.button(label="Tôi đã chuyển tiền", emoji="✅", style=discord.ButtonStyle.success)
     async def reload_payment(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user.id != self.user_id and not self.cog.admins.is_admin(interaction.user.id):
-            await interaction.response.send_message("❌ Chỉ người tạo QR hoặc bot admin mới reload payment này.", ephemeral=True)
+            await interaction.response.send_message("❌ Chỉ người tạo QR hoặc bot admin mới kiểm tra giao dịch này.", ephemeral=True)
             return
         await interaction.response.defer(ephemeral=True, thinking=True)
         await self.cog.check_and_finalize_payment(interaction, self.payment_id)

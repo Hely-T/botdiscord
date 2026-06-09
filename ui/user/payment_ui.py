@@ -7,6 +7,7 @@ import requests
 from PIL import Image, ImageDraw, ImageFont, ImageOps
 
 from cogs.admin_command_utils import format_vnd
+from utils import append_discord_timestamp
 
 
 CARD_SIZE = (980, 620)
@@ -129,7 +130,7 @@ def build_payment_embed(payment: dict, settings: dict, kind: str, has_card: bool
     color = discord.Color.from_rgb(255, 127, 169) if is_donate else discord.Color.from_rgb(96, 165, 250)
     embed = discord.Embed(
         title=title,
-        description="Quét QR hoặc chuyển khoản đúng nội dung bên dưới, sau đó bấm **Reload số dư / Đã chuyển tiền**.",
+        description="Quét QR hoặc chuyển khoản đúng nội dung bên dưới, sau đó bấm **Tôi đã chuyển tiền** để bot kiểm tra.",
         color=color,
     )
     embed.add_field(name="Số tiền", value=f"`{format_vnd(int(payment['amount']))} VNĐ`", inline=True)
@@ -144,6 +145,26 @@ def build_payment_embed(payment: dict, settings: dict, kind: str, has_card: bool
     else:
         embed.add_field(name="QR", value=f"[Mở QR]({payment['qr_url']})", inline=False)
         embed.set_image(url=payment["qr_url"])
+    return embed
+
+
+def build_bank_balance_embed(result: dict, settings: dict) -> discord.Embed:
+    account_number = result.get("account_number") or settings.get("account_number") or "Chưa set"
+    account_name = result.get("account_name") or settings.get("account_name") or "ACB"
+    balance = int(result.get("balance") or 0)
+    embed = discord.Embed(
+        title="🏦 Số Dư Tài Khoản Ngân Hàng",
+        description=f"`{format_vnd(balance)} VNĐ`",
+        color=discord.Color.green(),
+    )
+    embed.add_field(name="Ngân hàng", value=f"`{settings.get('bank_code') or 'ACB'}`", inline=True)
+    embed.add_field(name="Số tài khoản", value=f"`{account_number}`", inline=True)
+    embed.add_field(name="Chủ tài khoản", value=f"`{account_name}`", inline=False)
+    if result.get("source"):
+        embed.add_field(name="Nguồn", value=f"`{result['source']}`", inline=False)
+    if result.get("updated_at"):
+        embed.set_footer(text="Cập nhật số dư ngân hàng")
+    append_discord_timestamp(embed)
     return embed
 
 

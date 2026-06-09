@@ -10,10 +10,11 @@ from cogs.admin_command_utils import create_error_splash, create_success_splash,
 from cogs.user.payment_common import PaymentReloadView, finalize_paid_payment
 from cogs.user_command_utils import UserCommandBase
 from services.bank_service import BankPaymentService
-from ui.user.payment_ui import build_config_status_embed, build_payment_embed, render_payment_card
+from ui.user.payment_ui import build_bank_balance_embed, build_config_status_embed, build_payment_embed, render_payment_card
 
 
-CHECK_WORDS = {"reload", "check", "sodu", "sốdư", "số-dư", "balance", "kiemtra", "kiểmtra", "kt"}
+CHECK_WORDS = {"check", "kiemtra", "kiểmtra", "kt", "xacnhan", "xácnhận"}
+BALANCE_WORDS = {"reload", "sodu", "sốdư", "số-dư", "balance", "bank", "bankbalance"}
 CONFIG_WORDS = {"config", "cfg", "setup", "cauhinh", "cấuhình", "cấu-hình"}
 
 
@@ -91,7 +92,7 @@ class NapTienCog(UserCommandBase):
         self.bank.mark_message(int(payment["id"]), message.channel.id, message.id)
         return payment
 
-    async def _resolve_payment_for_reload(self, guild_id: int, user_id: int, raw: str | None) -> dict | None:
+    async def _resolve_payment_for_check(self, guild_id: int, user_id: int, raw: str | None) -> dict | None:
         if raw:
             raw = raw.strip()
             payment = self.bank.get_payment(int(raw)) if raw.isdigit() else self.bank.get_payment_by_code(raw)
@@ -99,22 +100,22 @@ class NapTienCog(UserCommandBase):
         pending = self.bank.get_user_pending_payments(guild_id, user_id, limit=1)
         return pending[0] if pending else None
 
-    async def _reload_payment(self, target, raw: str | None = None):
+    async def _check_payment(self, target, raw: str | None = None):
         guild = target.guild
         user = target.author if isinstance(target, commands.Context) else target.user
         if guild is None:
-            await target.send(embed=create_error_splash("❌ Chỉ Dùng Trong Server", "Reload số dư chỉ hoạt động trong server."))
+            await target.send(embed=create_error_splash("❌ Chỉ Dùng Trong Server", "Kiểm tra giao dịch chỉ hoạt động trong server."))
             return
 
-        payment = await self._resolve_payment_for_reload(guild.id, user.id, raw)
+        payment = await self._resolve_payment_for_check(guild.id, user.id, raw)
         if not payment:
-            await target.send(embed=create_error_splash("❌ Không Có Payment", "Bạn chưa có QR pending để reload số dư."))
+            await target.send(embed=create_error_splash("❌ Không Có Payment", "Bạn chưa có QR pending để kiểm tra."))
             return
         if int(payment["guild_id"]) != guild.id:
             await target.send(embed=create_error_splash("❌ Sai Server", "Payment này không thuộc server hiện tại."))
             return
         if int(payment["user_id"]) != user.id and not self.admins.is_admin(user.id):
-            await target.send(embed=create_error_splash("❌ Quyền Bị Từ Chối", "Bạn không thể reload payment của người khác."))
+            await target.send(embed=create_error_splash("❌ Quyền Bị Từ Chối", "Bạn không thể kiểm tra payment của người khác."))
             return
 
         result = await self.bank.check_payment_online(guild.id, payment["code"], int(payment["amount"]))
@@ -131,6 +132,27 @@ class NapTienCog(UserCommandBase):
             return
         detail = result.get("error") or "Chưa thấy giao dịch khớp số tiền và nội dung chuyển khoản."
         await target.send(embed=create_error_splash("❌ Chưa Nhận Được Tiền", detail))
+
+    async def _show_bank_balance(self, ctx: commands.Context):
+        if ctx.guild is None:
+            await ctx.send(embed=create_error_splash("❌ Chỉ Dùng Trong Server", "Reload số dư ngân hàng chỉ hoạt động trong server."))
+            return
+        if not await self.require_admin_ctx(ctx, "Chỉ bot admin mới được reload số dư tài khoản ngân hàng."):
+            return
+        if not self.bank.is_configured(ctx.guild.id):
+            await ctx.send(
+                embed=create_error_splash(
+                    "❌ Chưa Cấu Hình ACB",
+                    "Cần cấu hình `username`, `password` và `account` trước khi xem số dư.",
+                )
+            )
+            return
+        result = await self.bank.get_bank_balance_online(ctx.guild.id)
+        if not result.get("matched"):
+            await ctx.send(embed=create_error_splash("❌ Không Lấy Được Số Dư", result.get("error") or "ACB không trả về số dư."))
+            return
+        settings = self.bank.get_settings(ctx.guild.id) or {}
+        await ctx.send(embed=build_bank_balance_embed(result, settings))
 
     async def check_and_finalize_payment(self, interaction: discord.Interaction, payment_id: int):
         payment = self.bank.get_payment(payment_id)
@@ -179,15 +201,18 @@ class NapTienCog(UserCommandBase):
             await ctx.send(embed=create_error_splash("❌ Chỉ Dùng Trong Server", "Lệnh nạp tiền chỉ hoạt động trong server."))
             return
         if not args:
-            await ctx.send(embed=create_error_splash("❌ Thiếu Số Tiền", "Dùng: `naptien 100k` hoặc `naptien reload`."))
+            await ctx.send(embed=create_error_splash("❌ Thiếu Số Tiền", "Dùng: `naptien 100k`, `naptien check` hoặc `naptien reload`."))
             return
 
         first = args[0].lower()
         if first in CONFIG_WORDS:
             await self._handle_config(ctx, args[1:])
             return
+        if first in BALANCE_WORDS:
+            await self._show_bank_balance(ctx)
+            return
         if first in CHECK_WORDS:
-            await self._reload_payment(ctx, args[1] if len(args) > 1 else None)
+            await self._check_payment(ctx, args[1] if len(args) > 1 else None)
             return
         await self._send_payment(ctx, " ".join(args), kind="naptien")
 

@@ -50,9 +50,11 @@ Trong docs dùng `{prefix}` để đại diện cho prefix hiện tại.
 - `{prefix}naptien <money>`
   - Tạo QR nạp cash theo số tiền.
   - Ví dụ: `{prefix}naptien 100k`.
-- `{prefix}naptien reload [id|code]`
-  - Reload số dư/kiểm tra lại giao dịch đang chờ.
-  - Có thể dùng nút **Reload số dư / Đã chuyển tiền** dưới QR.
+- `{prefix}naptien check [id|code]`
+  - Kiểm tra lại giao dịch đang chờ.
+  - Có thể dùng nút **Tôi đã chuyển tiền** dưới QR.
+- `{prefix}naptien reload|sodu|balance`
+  - Admin-only: hiển thị số dư tài khoản ngân hàng ACB.
 - `{prefix}naptien config username|password|account|name|bank|decor|auto <value>`
   - Cài thông tin ACB/VietQR trực tiếp trong Discord.
   - Quyền: bot admin hoặc role có quyền `naptien`.
@@ -61,8 +63,10 @@ Trong docs dùng `{prefix}` để đại diện cho prefix hiện tại.
 - `{prefix}donate <money>`
   - Tạo QR donate theo số tiền, cộng cash và cộng tổng donate khi giao dịch thành công.
   - Ví dụ: `{prefix}donate 50k`.
-- `{prefix}donate reload [id|code]`
-  - Reload số dư/kiểm tra lại giao dịch donate đang chờ.
+- `{prefix}donate check [id|code]`
+  - Kiểm tra lại giao dịch donate đang chờ.
+- `{prefix}donate reload|sodu|balance`
+  - Admin-only: hiển thị số dư tài khoản ngân hàng ACB.
 - `{prefix}donate config channel #channel`
   - Set channel gửi lời cảm ơn donate.
   - Dùng `off` để tắt channel cảm ơn.

@@ -251,7 +251,7 @@ Quy tắc:
 - Cấu hình ACB nằm trong `BankPaymentService`, không đọc `.env` rải rác trong cog.
 - `.env` chỉ là giá trị mặc định; admin có thể đổi bằng command Discord.
 - QR/card/embed nằm trong `ui/user/payment_ui.py`.
-- Button reload số dư dùng callback trong `cogs/user/payment_common.py`.
+- Button xác nhận chuyển tiền dùng callback trong `cogs/user/payment_common.py`; reload số dư ngân hàng là luồng admin-only trong cog nạp/donate.
 - Giao dịch thành công phải cộng vào `UserService` để toàn server dùng chung cash.
 - Donate cộng thêm `total_donate` để profile/top sau này có thể đọc cùng nguồn.
 - Log nạp, donate, chuyển, cộng/trừ cash gửi về channel `log cash` qua `LogService`.

@@ -28,4 +28,4 @@ Team member hoặc AI phải đọc `ARCHITECTURE.md` trước khi tạo cog, se
 - `v0.3`: thêm booking, role permission, admin DB và economy.
 - `v0.4`: thêm responsive profile, auto response, cash/give và cập nhật help.
 - `v0.7`: chuẩn hóa cog/service/UI, Ticket dùng quyền role DB chung.
-- `v1.7`: thêm nạp tiền/donate ACB, reload số dư, QR UI và log cash.
+- `v1.7`: thêm nạp tiền/donate ACB, kiểm tra giao dịch, admin xem số dư ACB, QR UI và log cash.

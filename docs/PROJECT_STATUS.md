@@ -21,7 +21,7 @@ Trạng thái: đang phát triển, đã chuẩn hóa catalog cog, service/datab
   - Moderation: `ban`, `unban`, `kick`, `role`, `mute`, `unmute`.
   - Operator: `gitpull`, `gitstatus`, `reload`, `load`, `unload`, `cogs`, `prefix`.
   - Slash: `/antiraid`, `/giveaway`, `/group`, `/level`, `/naptien`, `/donate`, `/ticket`.
-- Bank/VietQR: tạo QR nạp tiền/donate, reload số dư, auto check ACB, cộng cash và gửi log cash.
+- Bank/VietQR: tạo QR nạp tiền/donate, kiểm tra giao dịch, admin reload số dư ACB, auto check ACB, cộng cash và gửi log cash.
 - Log system có `chat`, `voice`, `server`, `join` và `cash`.
 - Database tự tạo cho users, booking, role permission, admin, settings, guild settings, responsive, bank payments và log system.
 - Định dạng tiền VNĐ thống nhất.
@@ -50,7 +50,8 @@ Nên test thêm:
 - `{prefix}cash`, `{prefix}points`, `{prefix}time` hiện dữ liệu của bạn.
 - `{prefix}luong` hiện bảng lương ở kênh hiện tại.
 - `{prefix}give @user 10k` chuyển được nếu đủ cash.
-- `{prefix}naptien 10k` tạo QR, bấm reload số dư hoặc `{prefix}naptien reload`.
+- `{prefix}naptien 10k` tạo QR, bấm **Tôi đã chuyển tiền** hoặc `{prefix}naptien check`.
+- `{prefix}naptien reload` admin-only để xem số dư tài khoản ngân hàng ACB.
 - `{prefix}donate 10k` tạo QR donate, gửi cảm ơn nếu đã set channel.
 - `{prefix}log cash #log-cash` nhận log tiền, nạp, donate và give. Nếu chưa set, bot tự tìm kênh `log_cash`, `log-cash` hoặc `cash-log`.
 - `{prefix}setrole @Booking booking` nhận role booking.

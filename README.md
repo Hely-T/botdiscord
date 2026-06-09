@@ -8,7 +8,7 @@ Bot Discord viết bằng `discord.py`, được tổ chức theo hướng catal
 - Quản lý user: profile, cash, nạp tiền, donate, points, time, give, top users.
 - Booking: xem/tính lương, ghi nhận giờ book, tiền nạp, top book/top nạp/top quà.
 - Economy: mọi giá trị tiền dùng đơn vị VNĐ, hỗ trợ nhập nhanh `100k`, `1m`, `1b`, `100,000`.
-- Bank/VietQR: tạo QR nạp cash hoặc donate, reload số dư, auto check ACB và gửi log cash.
+- Bank/VietQR: tạo QR nạp cash hoặc donate, kiểm tra giao dịch, admin reload số dư ACB và gửi log cash.
 - Role permission: cấp quyền dùng command theo Discord role trong database, hỗ trợ nhiều role và nhiều command cùng lúc.
 - Admin bot: hard admin từ `.env`, admin mềm trong database.
 - Responsive profile và auto response: `ar`, `form`, `res`, `up`.
@@ -107,7 +107,7 @@ Ví dụ:
 - `cogs/administrator/ban_cog.py`: `ban`, `unban`, `kick`.
 - `cogs/role/role_cog.py`: `addrole`, `removerole`, `setrole`, `perms`, `myroles`, `rolescommands`.
 - `cogs/administrator/ticket_cog.py`: toàn bộ command Ticket; UI nằm trong `ui/ticket/`, DB nằm trong `services/ticket_service.py`.
-- `cogs/user/naptien_cog.py`: tạo QR nạp cash, reload số dư và auto check giao dịch.
+- `cogs/user/naptien_cog.py`: tạo QR nạp cash, kiểm tra giao dịch, admin xem số dư ACB và auto check giao dịch.
 - `cogs/user/donate_cog.py`: tạo QR donate, cộng cash/donate và gửi lời cảm ơn.
 - `ui/user/payment_ui.py`: card QR, embed nạp tiền/donate và giao diện thanh toán.
 - `services/bank_service.py`: cấu hình ACB, pending payment, match giao dịch và trạng thái thanh toán.

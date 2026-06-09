@@ -30,6 +30,32 @@ DEFAULT_ACB_CLIENT_ID = "iuSuHYVufIUuNIREV0FB9EoLn9kHsDbm"
 class BankPaymentService:
     """Quản lý cấu hình ngân hàng, QR pending và kiểm tra giao dịch ACB."""
 
+    ACCOUNT_ENDPOINTS = (
+        "/mb/legacy/ss/cs/bankservice/transfers/list/account-payment",
+        "/mb/legacy/ss/cs/bankservice/account/list",
+        "/mb/legacy/ss/cs/account/list",
+    )
+    BALANCE_KEYS = (
+        "availableBalance",
+        "available_balance",
+        "availBalance",
+        "currentBalance",
+        "current_balance",
+        "accountBalance",
+        "account_balance",
+        "ledgerBalance",
+        "ledger_balance",
+        "closingBalance",
+        "closing_balance",
+        "postBalance",
+        "post_balance",
+        "runningBalance",
+        "running_balance",
+        "balance",
+    )
+    ACCOUNT_NUMBER_KEYS = ("accountNumber", "account_number", "accountNo", "account_no", "account", "number")
+    ACCOUNT_NAME_KEYS = ("accountName", "account_name", "ownerName", "owner_name", "customerName", "name")
+
     SETTING_KEYS = {
         "username": "username",
         "user": "username",
@@ -397,6 +423,156 @@ class BankPaymentService:
             return None, str(exc)
 
     @staticmethod
+    def _auth_headers(token: str) -> dict[str, str]:
+        return {
+            "Host": "apiapp.acb.com.vn",
+            "x-conversation-id": str(uuid.uuid4()),
+            "Authorization": f"bearer {token}",
+            "Cache-Control": "no-cache",
+            "Accept-Language": "vi",
+            "x-request-id": str(uuid.uuid4()),
+            "apikey": "null",
+            "User-Agent": "ACB-MBA/5 CFNetwork/1333.0.4 Darwin/21.5.0",
+            "x-app-version": "3.25.0",
+            "Accept": "application/json, text/plain, */*",
+        }
+
+    @classmethod
+    def _request_json(cls, endpoint: str, token: str) -> tuple[dict | list | None, str | None]:
+        try:
+            response = requests.get(
+                f"{ACB_API_URL}{endpoint}",
+                headers=cls._auth_headers(token),
+                verify=False,
+                timeout=15,
+            )
+            try:
+                data = response.json()
+            except ValueError:
+                return None, f"{response.status_code}: {response.text[:300]}"
+            if response.status_code >= 400:
+                return data, f"{response.status_code}: {str(data)[:300]}"
+            return data, None
+        except Exception as exc:
+            return None, str(exc)
+
+    @staticmethod
+    def _walk_dicts(value: Any) -> list[dict]:
+        found: list[dict] = []
+        if isinstance(value, dict):
+            found.append(value)
+            for child in value.values():
+                found.extend(BankPaymentService._walk_dicts(child))
+        elif isinstance(value, list):
+            for child in value:
+                found.extend(BankPaymentService._walk_dicts(child))
+        return found
+
+    @staticmethod
+    def _digits(value: Any) -> str:
+        return re.sub(r"\D", "", str(value or ""))
+
+    @staticmethod
+    def _amount_to_int_optional(value: Any) -> int | None:
+        if value is None or value == "":
+            return None
+        if isinstance(value, (int, float)):
+            return int(value)
+        cleaned = re.sub(r"[^\d.,-]", "", str(value))
+        if not cleaned or cleaned in {"-", ".", ",", "-.", "-,"}:
+            return None
+        if "," in cleaned and "." in cleaned:
+            if cleaned.rfind(",") > cleaned.rfind("."):
+                cleaned = cleaned.replace(".", "").replace(",", ".")
+            else:
+                cleaned = cleaned.replace(",", "")
+        elif "," in cleaned:
+            parts = cleaned.split(",")
+            cleaned = cleaned.replace(",", "") if len(parts[-1]) == 3 else cleaned.replace(",", ".")
+        elif "." in cleaned:
+            parts = cleaned.split(".")
+            if len(parts) > 1 and len(parts[-1]) == 3:
+                cleaned = cleaned.replace(".", "")
+        try:
+            return int(float(cleaned))
+        except ValueError:
+            return None
+
+    @classmethod
+    def _record_account_number(cls, record: dict) -> str:
+        for key in cls.ACCOUNT_NUMBER_KEYS:
+            value = record.get(key)
+            if value:
+                return str(value)
+        return ""
+
+    @classmethod
+    def _record_account_name(cls, record: dict) -> str:
+        for key in cls.ACCOUNT_NAME_KEYS:
+            value = record.get(key)
+            if value:
+                return str(value)
+        return ""
+
+    @classmethod
+    def _record_balance(cls, record: dict) -> int | None:
+        for key in cls.BALANCE_KEYS:
+            if key in record:
+                amount = cls._amount_to_int_optional(record.get(key))
+                if amount is not None:
+                    return amount
+        return None
+
+    @classmethod
+    def _record_matches_account(cls, record: dict, account_number: str) -> bool:
+        expected = cls._digits(account_number)
+        if not expected:
+            return False
+        for key in cls.ACCOUNT_NUMBER_KEYS:
+            value = cls._digits(record.get(key))
+            if value and (value == expected or value.endswith(expected) or expected.endswith(value)):
+                return True
+        return False
+
+    @classmethod
+    def _extract_balance_from_response(cls, result: Any, account_number: str) -> dict | None:
+        records = cls._walk_dicts(result)
+        account_records = [record for record in records if cls._record_matches_account(record, account_number)]
+        candidates = account_records or records
+        for record in candidates:
+            balance = cls._record_balance(record)
+            if balance is None:
+                continue
+            return {
+                "balance": balance,
+                "account_number": cls._record_account_number(record) or account_number,
+                "account_name": cls._record_account_name(record),
+            }
+        return None
+
+    @classmethod
+    def _balance_lookup(cls, settings: dict, token: str) -> dict:
+        last_error = None
+        for endpoint in cls.ACCOUNT_ENDPOINTS:
+            result, error = cls._request_json(endpoint, token)
+            extracted = cls._extract_balance_from_response(result, str(settings.get("account_number") or ""))
+            if extracted:
+                extracted.update({"matched": True, "source": endpoint, "token": token})
+                return extracted
+            last_error = error or "ACB không trả về balance trong endpoint tài khoản."
+
+        history, history_error = cls._history_request(settings, token, days=1)
+        extracted = cls._extract_balance_from_response(history, str(settings.get("account_number") or ""))
+        if extracted:
+            extracted.update({"matched": True, "source": "transaction-history", "token": token})
+            return extracted
+        return {
+            "matched": False,
+            "token": token,
+            "error": history_error or last_error or "ACB không trả về thông tin số dư tài khoản.",
+        }
+
+    @staticmethod
     def _extract_transactions(result: Any) -> list[dict]:
         if isinstance(result, list):
             return [item for item in result if isinstance(item, dict)]
@@ -514,6 +690,27 @@ class BankPaymentService:
             "error": None if matched is not None else None,
         }
 
+    @classmethod
+    def _balance_with_settings(cls, settings: dict, token: str | None) -> dict:
+        if not all(settings.get(key) for key in ("username", "password", "account_number")):
+            return {"matched": False, "error": "Chưa cấu hình ACB username/password/account_number."}
+
+        active_token = token
+        if not active_token:
+            active_token, login_error = cls._login_request(settings)
+            if not active_token:
+                return {"matched": False, "error": f"Không đăng nhập được ACB: {login_error}"}
+
+        result = cls._balance_lookup(settings, active_token)
+        if result.get("matched"):
+            return result
+
+        refreshed_token, login_error = cls._login_request(settings)
+        if not refreshed_token:
+            result["error"] = f"Không refresh được ACB: {login_error or result.get('error')}"
+            return result
+        return cls._balance_lookup(settings, refreshed_token)
+
     async def check_payment_online(self, guild_id: int, code: str, amount: int) -> dict:
         import asyncio
 
@@ -522,4 +719,18 @@ class BankPaymentService:
         result = await asyncio.to_thread(self._check_with_settings, settings, token, code, amount)
         if result.get("token"):
             self.save_token(guild_id, result["token"])
+        return result
+
+    async def get_bank_balance_online(self, guild_id: int) -> dict:
+        import asyncio
+
+        settings = self.get_settings(guild_id) or {}
+        token = self.get_token(guild_id)
+        result = await asyncio.to_thread(self._balance_with_settings, settings, token)
+        if result.get("token"):
+            self.save_token(guild_id, result["token"])
+        if result.get("matched"):
+            result.setdefault("account_number", settings.get("account_number") or "")
+            result.setdefault("account_name", settings.get("account_name") or "")
+            result["updated_at"] = get_timestamp()
         return result
