@@ -1,5 +1,3 @@
-from datetime import datetime
-
 import discord
 from discord.ext import commands
 
@@ -8,6 +6,7 @@ from cogs.admin_command_utils import create_error_splash, create_success_splash,
 from cogs.cash_log_utils import send_cash_log
 from cogs.user_command_utils import UserCommandBase
 from models.constants import ERROR_MESSAGE
+from utils import append_discord_timestamp
 
 
 class UserCog(UserCommandBase):
@@ -25,10 +24,10 @@ class UserCog(UserCommandBase):
     }
 
     def _can_manage_stat(self, ctx, command_name: str) -> bool:
-        if ctx.guild is None:
-            return False
         if self.admins.is_admin(ctx.author.id):
             return True
+        if ctx.guild is None:
+            return False
         user_role_ids = [role.id for role in ctx.author.roles if role.name != "@everyone"]
         return self.role_permissions.user_can_use(ctx.guild.id, user_role_ids, command_name)
 
@@ -36,21 +35,96 @@ class UserCog(UserCommandBase):
         return self._can_manage_stat(ctx, command_name) or self.can_view_other_profile(ctx)
 
     async def _resolve_member_arg(self, ctx, raw_member: str) -> discord.Member | None:
+        if ctx.guild is None:
+            await ctx.send(embed=create_error_splash("❌ Chỉ Dùng Trong Server", "Hãy dùng lệnh này trong server hoặc dùng ID/user trong DM nếu lệnh hỗ trợ."))
+            return None
+
         try:
             return await commands.MemberConverter().convert(ctx, raw_member)
         except Exception:
-            await ctx.send(embed=create_error_splash("❌ Không Tìm Thấy User", f"Không tìm thấy `{raw_member}` trong server."))
-            return None
+            pass
 
-    async def _apply_cash_action(self, ctx, action: str, member: discord.Member, raw_amount: str):
+        cleaned = str(raw_member).strip()
+        user_id = None
+        mention = cleaned.strip("<@!>")
+        if mention.isdigit():
+            user_id = int(mention)
+
+        if user_id is not None:
+            member = ctx.guild.get_member(user_id)
+            if member:
+                return member
+            try:
+                return await ctx.guild.fetch_member(user_id)
+            except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+                pass
+
+        lowered = cleaned.casefold()
+        try:
+            matches = await ctx.guild.query_members(query=cleaned, limit=10)
+            exact_matches = [
+                member for member in matches
+                if lowered in {
+                    member.name.casefold(),
+                    member.display_name.casefold(),
+                    str(member).casefold(),
+                }
+            ]
+            if exact_matches:
+                return exact_matches[0]
+            if len(matches) == 1:
+                return matches[0]
+        except (discord.Forbidden, discord.HTTPException):
+            pass
+
+        for member in ctx.guild.members:
+            if lowered in {
+                member.name.casefold(),
+                member.display_name.casefold(),
+                str(member).casefold(),
+            }:
+                return member
+
+        await ctx.send(embed=create_error_splash("❌ Không Tìm Thấy User", f"Không tìm thấy `{raw_member}` trong server."))
+        return None
+
+    @staticmethod
+    def _display_name_for_user(user) -> str:
+        return (
+            getattr(user, "display_name", None)
+            or getattr(user, "global_name", None)
+            or getattr(user, "name", None)
+            or str(getattr(user, "id", "unknown"))
+        )
+
+    async def _resolve_cash_target(self, ctx, raw_user: str):
+        if ctx.guild is not None:
+            return await self._resolve_member_arg(ctx, raw_user)
+
+        try:
+            return await commands.UserConverter().convert(ctx, raw_user)
+        except Exception:
+            pass
+
+        cleaned = str(raw_user).strip().strip("<@!>")
+        if cleaned.isdigit():
+            try:
+                return await self.bot.fetch_user(int(cleaned))
+            except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+                pass
+
+        await ctx.send(embed=create_error_splash("❌ Không Tìm Thấy User", f"Không tìm thấy `{raw_user}`."))
+        return None
+
+    async def _apply_cash_action(self, ctx, action: str, member, raw_amount: str):
         if not self._can_manage_stat(ctx, "cash"):
             await ctx.send(embed=create_error_splash("❌ Quyền Bị Từ Chối", "Chỉ bot admin hoặc role có quyền `cash` trong DB mới quản trị cash."))
             return
 
         try:
             amount = parse_vnd_amount_or_zero(raw_amount) if action == "edit" else parse_vnd_amount(raw_amount)
-            if action in {"add", "edit"}:
-                self.service.get_or_create_user(member.id, member.display_name)
+            display_name = self._display_name_for_user(member)
+            self.service.touch_user(member.id, display_name)
             if action == "add":
                 self.service.add_cash(member.id, amount)
                 title = "✅ Cộng Cash Thành Công"
@@ -187,7 +261,7 @@ class UserCog(UserCommandBase):
             embed.add_field(name="• Tổng Giờ", value=f"`{hours_value} ({money_from_hours} VNĐ)`", inline=False)
             embed.add_field(name="• Tổng Donate", value=f"`{format_vnd(user.total_donate)} VNĐ`", inline=False)
             embed.add_field(name="💰 Tổng Tiền", value=f"`{format_vnd(user.total_money)} VNĐ`", inline=False)
-            embed.set_footer(text=f"Hôm nay lúc {datetime.now().strftime('%H:%M')}")
+            append_discord_timestamp(embed)
             await ctx.send(embed=embed)
         except Exception as e:
             await ctx.send(f"{ERROR_MESSAGE} {str(e)}")
@@ -195,17 +269,16 @@ class UserCog(UserCommandBase):
     @commands.command(name="cash")
     async def cash(self, ctx, *args):
         try:
-            if ctx.guild is None:
-                await ctx.send(embed=create_error_splash("❌ Chỉ Dùng Trong Server", "Lệnh `cash` chỉ hoạt động trong server."))
-                return
-
             if args:
                 action = self.STAT_ACTIONS.get(args[0].lower())
                 if action:
                     if len(args) != 3:
                         await ctx.send(embed=create_error_splash("❌ Sai Cú Pháp", "Dùng: `cash a/add @user <money>`, `cash r/rm/remove/d/delete @user <money>` hoặc `cash e/edit @user <money>`."))
                         return
-                    member = await self._resolve_member_arg(ctx, args[1])
+                    if ctx.guild is None and not self.admins.is_admin(ctx.author.id):
+                        await ctx.send(embed=create_error_splash("❌ Quyền Bị Từ Chối", "Chỉ bot admin mới được quản trị cash trong DMs."))
+                        return
+                    member = await self._resolve_cash_target(ctx, args[1])
                     if not member:
                         return
                     await self._apply_cash_action(ctx, action, member, args[2])
@@ -221,7 +294,7 @@ class UserCog(UserCommandBase):
                     )
                     return
 
-                member = await self._resolve_member_arg(ctx, args[0])
+                member = await self._resolve_cash_target(ctx, args[0])
                 if not member:
                     return
             else:
@@ -233,7 +306,7 @@ class UserCog(UserCommandBase):
                 await ctx.send("❌ Bạn chỉ được xem cash người khác khi là admin bot **hoặc** role của bạn có quyền dùng lệnh `cash`.")
                 return
 
-            user = self.service.get_or_create_user(member.id, member.display_name)
+            user = self.service.touch_user(member.id, self._display_name_for_user(member))
             avatar_url = member.display_avatar.url
             is_self = member.id == ctx.author.id
             balance_text = (
@@ -249,7 +322,7 @@ class UserCog(UserCommandBase):
             )
             embed.set_author(name=member.display_name, icon_url=avatar_url)
             embed.set_thumbnail(url=avatar_url)
-            embed.set_footer(text=f"Hôm nay lúc {datetime.now().strftime('%H:%M')}")
+            append_discord_timestamp(embed)
             await ctx.send(embed=embed)
         except Exception as e:
             await ctx.send(f"{ERROR_MESSAGE} {str(e)}")
@@ -297,7 +370,7 @@ class UserCog(UserCommandBase):
             )
             embed.set_author(name=member.display_name, icon_url=member.display_avatar.url)
             embed.set_thumbnail(url=member.display_avatar.url)
-            embed.set_footer(text=f"Hôm nay lúc {datetime.now().strftime('%H:%M')}")
+            append_discord_timestamp(embed)
             await ctx.send(embed=embed)
         except Exception as e:
             await ctx.send(f"{ERROR_MESSAGE} {str(e)}")
@@ -345,7 +418,7 @@ class UserCog(UserCommandBase):
             )
             embed.set_author(name=member.display_name, icon_url=member.display_avatar.url)
             embed.set_thumbnail(url=member.display_avatar.url)
-            embed.set_footer(text=f"Hôm nay lúc {datetime.now().strftime('%H:%M')}")
+            append_discord_timestamp(embed)
             await ctx.send(embed=embed)
         except Exception as e:
             await ctx.send(f"{ERROR_MESSAGE} {str(e)}")
@@ -403,6 +476,31 @@ class UserCog(UserCommandBase):
             )
         except Exception as e:
             await ctx.send(f"{ERROR_MESSAGE} {str(e)}")
+
+    @commands.Cog.listener()
+    async def on_member_join(self, member: discord.Member):
+        if member.bot:
+            return
+        self.service.touch_user(member.id, member.display_name)
+
+    @commands.Cog.listener()
+    async def on_message(self, message: discord.Message):
+        if message.guild is None or message.author.bot:
+            return
+        self.service.touch_user(message.author.id, self._display_name_for_user(message.author))
+
+    @commands.Cog.listener()
+    async def on_command(self, ctx: commands.Context):
+        if ctx.guild is None or ctx.author.bot:
+            return
+        self.service.touch_user(ctx.author.id, self._display_name_for_user(ctx.author))
+
+    @commands.Cog.listener()
+    async def on_voice_state_update(self, member: discord.Member, before: discord.VoiceState, after: discord.VoiceState):
+        if member.bot or member.guild is None:
+            return
+        if before.channel != after.channel and after.channel is not None:
+            self.service.touch_user(member.id, member.display_name)
 
     @commands.command(name="topusers")
     async def top_users(self, ctx, limit: int = 10):

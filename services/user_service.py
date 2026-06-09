@@ -72,6 +72,23 @@ class UserService:
             self.create_user(user)
         
         return user
+
+    def touch_user(self, user_id: int, username: str) -> User:
+        """Tạo user nếu chưa có, hoặc cập nhật username mới nhất."""
+        safe_username = str(username or user_id).strip() or str(user_id)
+        user = self.get_user(user_id)
+        if not user:
+            return self.get_or_create_user(user_id, safe_username)
+
+        if user.username != safe_username:
+            self.db.update(
+                'users',
+                {'username': safe_username, 'updated_at': get_timestamp()},
+                'user_id = ?',
+                (user_id,)
+            )
+            user.username = safe_username
+        return user
     
     def get_user(self, user_id: int) -> User:
         """Lấy user từ database"""
