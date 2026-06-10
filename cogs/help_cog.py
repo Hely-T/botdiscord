@@ -40,7 +40,7 @@ HELP_CATEGORIES = [
             {"name": "cash", "description": "Xem số dư hoặc quản trị cash", "usage": "[@user|all] | a|r|e @user amount", "aliases": []},
             {"name": "avatar", "description": "Xem avatar user bằng mention, ID hoặc chính bạn", "usage": "[@user|id]", "aliases": ["av", "ava", "avata"]},
             {"name": "banner", "description": "Xem banner/bìa user hoặc bìa server", "usage": "[@user|id]", "aliases": ["bn", "bia", "bìa"]},
-            {"name": "donate", "description": "Tạo QR donate, kiểm tra giao dịch và admin xem số dư ACB", "usage": "<amount> | check [id|code] | reload|sodu|balance | config ...", "aliases": ["dn"]},
+            {"name": "donate", "description": "Tạo QR donate, kiểm tra giao dịch và bảng xếp hạng", "usage": "<amount> | check [id|code] | top | reset | config ...", "aliases": ["dn", "dnt"]},
             {"name": "give", "description": "Chuyển cash cho user khác", "usage": "@user amount hoặc amount @user", "aliases": []},
             {"name": "math", "description": "Tính toán nhanh với số có dấu phẩy hoặc dấu chấm", "usage": "<biểu thức>", "aliases": ["calc", "tinh", "tính"]},
             {"name": "naptien", "description": "Tạo QR nạp cash, kiểm tra giao dịch và admin xem số dư ACB", "usage": "<amount> | check [id|code] | reload|sodu|balance | config ...", "aliases": ["nap"]},
@@ -98,6 +98,9 @@ HELP_CATEGORIES = [
             {"name": "bookconfig", "description": "Xem cấu hình giá booking", "usage": "", "aliases": ["bookingconfig", "giabook"]},
             {"name": "cogs", "description": "Liệt kê các cog đang load", "usage": "", "aliases": []},
             {"name": "color", "description": "Đổi màu role", "usage": "@role <hex|name>", "aliases": []},
+            {"name": "command", "description": "Bật hoặc tắt command theo từng channel", "usage": "enable|disable <command>", "aliases": ["cmd"]},
+            {"name": "enable", "description": "Bật lại command trong channel hiện tại", "usage": "<command>", "aliases": []},
+            {"name": "disable", "description": "Tắt command trong channel hiện tại", "usage": "<command>", "aliases": []},
             {"name": "emoji", "description": "Quản lý emoji", "usage": "a|r|list ...", "aliases": []},
             {"name": "form", "description": "Gửi mẫu form booking để booking tự điền", "usage": "[key]", "aliases": ["form<key>"]},
             {"name": "giveaway", "description": "Tạo giveaway và cấu hình emoji tham gia", "usage": "<time> <winners> <reward> [quantity] | config emoji <emoji>", "aliases": ["ga"]},
@@ -145,7 +148,8 @@ HELP_CATEGORIES = [
         "slash_commands": [
             {"name": "antiraid", "description": "Bật/tắt chống raid", "usage": "mode: on|off", "aliases": []},
             {"name": "antinuke", "description": "Bật/tắt chống nuke", "usage": "mode: on|off", "aliases": []},
-            {"name": "giveaway", "description": "Một slash tổng, chọn create/set/end/reroll/config bên trong", "usage": "action: create|set|end|reroll|config", "aliases": []},
+            {"name": "giveaway", "description": "Một slash tổng để tạo/end/reroll/config giveaway", "usage": "action: create|end|reroll|config", "aliases": []},
+            {"name": "command", "description": "Bật hoặc tắt command trong channel hiện tại", "usage": "action: enable|disable command_name:<lệnh>", "aliases": []},
             {"name": "group", "description": "Một slash tổng, chọn join/leave bên trong", "usage": "action: join|leave", "aliases": []},
             {
                 "name": "log",
@@ -564,7 +568,6 @@ class HelpView:
                 name="Slash",
                 value=(
                     "`/giveaway action:create reward:<nội dung> duration:<10m|1h|1d> winners:<số> quantity:<số lượng ga>`\n"
-                    "`/giveaway action:set giveaway_id:<ID>` để chọn winner thủ công.\n"
                     "`/giveaway action:end giveaway_id:<ID>` hoặc `action:reroll` để end/reroll.\n"
                     "`/giveaway action:config emoji:<emoji>` để đổi emoji tham gia."
                 ),

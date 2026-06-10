@@ -42,7 +42,7 @@ Cog không được:
 - Kết nối SQLite trực tiếp.
 - Tự tạo một database quyền riêng.
 - Chứa hàng loạt class `View`, `Select`, `Modal` hoặc mẫu embed.
-- Tách mỗi command liên quan thành một file riêng.
+- Tách các command cùng một nghiệp vụ thành nhiều file riêng.
 - Để service hoặc UI import trực tiếp class cog, gây vòng phụ thuộc.
 
 ### Service
@@ -252,11 +252,23 @@ Quy tắc:
 - `.env` chỉ là giá trị mặc định; admin có thể đổi bằng command Discord.
 - QR/card/embed nằm trong `ui/user/payment_ui.py`.
 - Button xác nhận chuyển tiền dùng callback trong `cogs/user/payment_common.py`; reload số dư ngân hàng là luồng admin-only trong cog nạp/donate.
+- `naptien_cog.py` duy trì vòng quét giao dịch đang chờ mỗi 5 giây. Button chỉ yêu cầu kiểm tra ngay, không tự cộng tiền khi ngân hàng chưa ghi nhận giao dịch.
 - Giao dịch thành công phải cộng vào `UserService` để toàn server dùng chung cash.
 - Donate cộng thêm `total_donate` để profile/top sau này có thể đọc cùng nguồn.
+- Bảng xếp hạng donate theo tháng nằm trong `bank_payments.db`; reset chỉ xóa dữ liệu bảng tháng, không trừ cash và không xóa tổng donate của user.
+- Kênh cảm ơn và kênh bảng xếp hạng donate là hai cấu hình độc lập. Nạp tiền không dùng bảng xếp hạng hoặc thông báo cảm ơn.
+- Ảnh nền được đặt riêng tại `ui/user/assets/naptien/` và `ui/user/assets/donate/`; không nhúng file ảnh vào cog.
 - Log nạp, donate, chuyển, cộng/trừ cash gửi về channel `log cash` qua `LogService`.
 - Nếu chưa set `log cash`, helper log tiền tự tìm kênh `log_cash`, `log-cash` hoặc `cash-log`.
 - Không tạo DB cash riêng cho bank và không cộng tiền bằng SQL trực tiếp trong cog.
+
+### Khóa command theo channel
+
+- Cấu hình nằm trong `command_toggle.db` qua `ChannelCommandToggleService`.
+- Command quản trị nằm chung trong `cogs/administrator/command_cog.py`.
+- Có thể khóa command gốc hoặc command con, ví dụ `giveaway` hoặc `level setup`.
+- Hard admin luôn được bỏ qua khóa channel để có thể sửa cấu hình.
+- Khóa command không được chặn listener nền như log, thông báo join/leave, level tracking hoặc auto response.
 
 Các biến cấu hình hỗ trợ:
 

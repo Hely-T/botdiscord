@@ -53,6 +53,7 @@ Trong docs dùng `{prefix}` để đại diện cho prefix hiện tại.
 - `{prefix}naptien check [id|code]`
   - Kiểm tra lại giao dịch đang chờ.
   - Có thể dùng nút **Tôi đã chuyển tiền** dưới QR.
+  - Bot cũng tự kiểm tra các giao dịch đang chờ mỗi 5 giây.
 - `{prefix}naptien reload|sodu|balance`
   - Admin-only: hiển thị số dư tài khoản ngân hàng ACB.
 - `{prefix}naptien config username|password|account|name|bank|decor|auto <value>`
@@ -60,7 +61,7 @@ Trong docs dùng `{prefix}` để đại diện cho prefix hiện tại.
   - Quyền: bot admin hoặc role có quyền `naptien`.
 - `/naptien amount:<money>`
   - Slash command tạo QR nạp cash.
-- `{prefix}donate <money>`
+- `{prefix}donate|dnt <money>`
   - Tạo QR donate theo số tiền, cộng cash và cộng tổng donate khi giao dịch thành công.
   - Ví dụ: `{prefix}donate 50k`.
 - `{prefix}donate check [id|code]`
@@ -70,11 +71,18 @@ Trong docs dùng `{prefix}` để đại diện cho prefix hiện tại.
 - `{prefix}donate config channel #channel`
   - Set channel gửi lời cảm ơn donate.
   - Dùng `off` để tắt channel cảm ơn.
+- `{prefix}donate config leaderboard #channel`
+  - Set kênh bảng xếp hạng donate tháng, tối đa 50 người và 10 người mỗi trang.
 - `{prefix}donate config thanks <template>`
   - Set nội dung cảm ơn donate.
   - Placeholder: `{user}`, `{amount}`, `{code}`.
 - `{prefix}donate config decor <url|off>`
   - Set ảnh decorate card QR donate.
+- `{prefix}donate top`
+  - Xem bảng xếp hạng donate tháng hiện tại.
+- `{prefix}donate reset`
+  - Admin-only: gửi bảng hiện tại vào DM admin rồi reset bảng tháng về trống.
+  - Không trừ cash và không xóa tổng donate tích lũy của user.
 - `/donate amount:<money>`
   - Slash command tạo QR donate.
 - `{prefix}topusers [limit]`
@@ -236,6 +244,18 @@ Trong docs dùng `{prefix}` để đại diện cho prefix hiện tại.
 - `{prefix}rmadmin @user`
   - Xóa admin bot khỏi DB.
   - Alias: `{prefix}xoaadmin`.
+
+### Bật/tắt command theo channel
+
+- `{prefix}disable <command>`
+  - Khóa command trong channel hiện tại, ví dụ `{prefix}disable ga` hoặc `{prefix}disable level setup`.
+- `{prefix}enable <command>`
+  - Bật lại command trong channel hiện tại.
+- `{prefix}command disable|enable <command>`
+  - Cú pháp tổng, alias `{prefix}cmd`.
+- `/command action:<enable|disable> command:<tên_lệnh>`
+  - Slash command quản lý khóa lệnh theo channel.
+  - Hard admin bỏ qua khóa; listener nền như log và level tracking vẫn hoạt động.
 
 ### Economy
 
