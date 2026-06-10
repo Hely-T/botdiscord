@@ -7,7 +7,7 @@ from cogs.admin_command_utils import create_error_splash, create_success_splash,
 from cogs.cash_log_utils import send_cash_log
 from services.bank_service import BankPaymentService
 from services.user_service import UserService
-from ui.user.payment_ui import build_paid_embed
+from ui.user.payment_ui import build_donate_leaderboard_embed, build_paid_embed
 
 
 async def send_interaction_notice(
@@ -21,6 +21,81 @@ async def send_interaction_notice(
         await interaction.followup.send(content=content, embed=embed, ephemeral=ephemeral)
     else:
         await interaction.response.send_message(content=content, embed=embed, ephemeral=ephemeral)
+
+
+class DonateLeaderboardView(discord.ui.View):
+    def __init__(
+        self,
+        bot: commands.Bot,
+        bank: BankPaymentService,
+        guild_id: int,
+        *,
+        page: int = 0,
+        timeout: float | None = None,
+    ):
+        super().__init__(timeout=timeout)
+        self.bot = bot
+        self.bank = bank
+        self.guild_id = int(guild_id)
+        self.page = max(0, int(page))
+
+    async def _render(self, interaction: discord.Interaction, page: int) -> None:
+        rows = self.bank.get_donate_leaderboard(self.guild_id, limit=50)
+        total_pages = max(1, (len(rows) + 9) // 10)
+        self.page = max(0, min(page, total_pages - 1))
+        guild = self.bot.get_guild(self.guild_id)
+        await interaction.response.edit_message(
+            embed=build_donate_leaderboard_embed(rows, guild, page=self.page),
+            view=DonateLeaderboardView(self.bot, self.bank, self.guild_id, page=self.page),
+        )
+
+    @discord.ui.button(
+        label="Lùi",
+        emoji="◀️",
+        style=discord.ButtonStyle.secondary,
+        custom_id="donate_leaderboard:previous",
+    )
+    async def previous_page(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self._render(interaction, self.page - 1)
+
+    @discord.ui.button(
+        label="Tiếp",
+        emoji="▶️",
+        style=discord.ButtonStyle.secondary,
+        custom_id="donate_leaderboard:next",
+    )
+    async def next_page(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self._render(interaction, self.page + 1)
+
+
+async def refresh_donate_leaderboard(bot: commands.Bot, bank: BankPaymentService, guild: discord.Guild | None) -> None:
+    if not guild:
+        return
+    settings = bank.get_settings(guild.id) or {}
+    channel_id = settings.get("donate_leaderboard_channel_id")
+    if not channel_id:
+        return
+    channel = guild.get_channel(int(channel_id))
+    if not isinstance(channel, discord.TextChannel):
+        return
+
+    rows = bank.get_donate_leaderboard(guild.id, limit=50)
+    embed = build_donate_leaderboard_embed(rows, guild, page=0)
+    view = DonateLeaderboardView(bot, bank, guild.id, page=0)
+    message_id = settings.get("donate_leaderboard_message_id")
+    if message_id:
+        try:
+            message = await channel.fetch_message(int(message_id))
+            await message.edit(embed=embed, view=view)
+            return
+        except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+            bank.set_donate_leaderboard_message(guild.id, None)
+
+    try:
+        message = await channel.send(embed=embed, view=view)
+        bank.set_donate_leaderboard_message(guild.id, message.id)
+    except (discord.Forbidden, discord.HTTPException):
+        pass
 
 
 async def _resolve_payment_user(bot: commands.Bot, guild: discord.Guild | None, payment: dict):
@@ -85,9 +160,13 @@ async def finalize_paid_payment(
     users.add_total_money(int(paid["user_id"]), int(paid["amount"]))
     if paid.get("kind") == "donate":
         users.add_total_donate(int(paid["user_id"]), int(paid["amount"]))
+        bank.add_donate_leaderboard(int(paid["guild_id"]), int(paid["user_id"]), username, int(paid["amount"]))
 
     await _edit_payment_message(bot, paid, user)
+    await _send_payment_success_dm(paid, user, guild)
     await _send_donate_thanks(bot, bank, paid, user)
+    if paid.get("kind") == "donate":
+        await refresh_donate_leaderboard(bot, bank, guild)
 
     tx_id = bank._transaction_id(transaction or {}) if transaction else paid.get("bank_transaction_id")
     tx_note = bank._transaction_text(transaction or {}) if transaction else paid.get("bank_description")
@@ -112,6 +191,19 @@ async def finalize_paid_payment(
             ),
         )
     return paid
+
+
+async def _send_payment_success_dm(payment: dict, user, guild: discord.Guild | None) -> None:
+    if not user or not guild:
+        return
+    action = "donate" if payment.get("kind") == "donate" else "nạp tiền"
+    try:
+        await user.send(
+            f"✅ Bạn đã {action} thành công `{format_vnd(int(payment['amount']))} VNĐ` "
+            f"trong **{guild.name}**."
+        )
+    except (discord.Forbidden, discord.HTTPException):
+        pass
 
 
 async def _edit_payment_message(bot: commands.Bot, payment: dict, user) -> None:

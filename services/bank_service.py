@@ -76,6 +76,21 @@ class BankPaymentService:
         "decor_naptien": "deposit_decor_url",
         "donate_decor": "donate_decor_url",
         "decor_donate": "donate_decor_url",
+        "donate_channel": "donate_channel_id",
+        "thank_channel": "donate_channel_id",
+        "thanks_channel": "donate_channel_id",
+        "leaderboard": "donate_leaderboard_channel_id",
+        "leaderboard_channel": "donate_leaderboard_channel_id",
+        "donate_leaderboard": "donate_leaderboard_channel_id",
+        "top": "donate_leaderboard_channel_id",
+        "topdonate": "donate_leaderboard_channel_id",
+        "top_donate": "donate_leaderboard_channel_id",
+        "bxh": "donate_leaderboard_channel_id",
+        "rank": "donate_leaderboard_channel_id",
+        "ranking": "donate_leaderboard_channel_id",
+        "leaderboard_message": "donate_leaderboard_message_id",
+        "leaderboard_message_id": "donate_leaderboard_message_id",
+        "top_message": "donate_leaderboard_message_id",
         "auto": "auto_check_enabled",
     }
 
@@ -97,6 +112,8 @@ class BankPaymentService:
             deposit_decor_url TEXT,
             donate_decor_url TEXT,
             donate_channel_id INTEGER,
+            donate_leaderboard_channel_id INTEGER,
+            donate_leaderboard_message_id INTEGER,
             donate_thank_template TEXT DEFAULT 'Cảm ơn {user} đã donate {amount} VNĐ cho {server}!',
             auto_check_enabled INTEGER DEFAULT 1,
             created_at TEXT,
@@ -132,6 +149,18 @@ class BankPaymentService:
             paid_at TEXT
             """,
         )
+        self.db.create_table(
+            "donate_leaderboard",
+            """
+            guild_id INTEGER NOT NULL,
+            user_id INTEGER NOT NULL,
+            username TEXT NOT NULL,
+            amount INTEGER DEFAULT 0,
+            donate_count INTEGER DEFAULT 0,
+            updated_at TEXT,
+            PRIMARY KEY (guild_id, user_id)
+            """,
+        )
         self._ensure_schema()
 
     def _ensure_column(self, table: str, column: str, ddl: str) -> None:
@@ -146,6 +175,8 @@ class BankPaymentService:
         self._ensure_column("bank_settings", "deposit_decor_url", "TEXT")
         self._ensure_column("bank_settings", "donate_decor_url", "TEXT")
         self._ensure_column("bank_settings", "donate_channel_id", "INTEGER")
+        self._ensure_column("bank_settings", "donate_leaderboard_channel_id", "INTEGER")
+        self._ensure_column("bank_settings", "donate_leaderboard_message_id", "INTEGER")
         self._ensure_column(
             "bank_settings",
             "donate_thank_template",
@@ -188,6 +219,8 @@ class BankPaymentService:
             "deposit_decor_url": os.getenv("NAPTIEN_DECOR_URL", ""),
             "donate_decor_url": os.getenv("DONATE_DECOR_URL", ""),
             "donate_channel_id": None,
+            "donate_leaderboard_channel_id": None,
+            "donate_leaderboard_message_id": None,
             "donate_thank_template": os.getenv(
                 "DONATE_THANK_TEMPLATE",
                 "Cảm ơn {user} đã donate {amount} VNĐ cho {server}!",
@@ -224,12 +257,21 @@ class BankPaymentService:
                 value = 1 if value else 0
         if isinstance(value, str) and value.strip().lower() in {"off", "none", "null", "xoa", "xoá"}:
             value = None
+        if resolved in {"donate_channel_id", "donate_leaderboard_channel_id", "donate_leaderboard_message_id"}:
+            value = self._extract_id(value) if value is not None else None
         return self.db.update(
             "bank_settings",
             {resolved: value, "updated_at": get_timestamp()},
             "guild_id = ?",
             (guild_id,),
         )
+
+    @staticmethod
+    def _extract_id(value: Any) -> int | None:
+        if value is None:
+            return None
+        digits = re.sub(r"\D", "", str(value))
+        return int(digits) if digits else None
 
     def set_donate_channel(self, guild_id: int, channel_id: int | None) -> bool:
         self.ensure_settings(guild_id)
@@ -240,6 +282,38 @@ class BankPaymentService:
             (guild_id,),
         )
 
+    def set_donate_leaderboard_channel(self, guild_id: int, channel_id: int | None) -> bool:
+        self.ensure_settings(guild_id)
+        return self.db.update(
+            "bank_settings",
+            {
+                "donate_leaderboard_channel_id": channel_id,
+                "donate_leaderboard_message_id": None,
+                "updated_at": get_timestamp(),
+            },
+            "guild_id = ?",
+            (guild_id,),
+        )
+
+    def set_donate_leaderboard_message(self, guild_id: int, message_id: int | None) -> bool:
+        self.ensure_settings(guild_id)
+        return self.db.update(
+            "bank_settings",
+            {"donate_leaderboard_message_id": message_id, "updated_at": get_timestamp()},
+            "guild_id = ?",
+            (guild_id,),
+        )
+
+    def get_donate_leaderboard_messages(self) -> list[dict]:
+        return self.db.fetch(
+            """
+            SELECT guild_id, donate_leaderboard_channel_id, donate_leaderboard_message_id
+            FROM bank_settings
+            WHERE donate_leaderboard_channel_id IS NOT NULL
+              AND donate_leaderboard_message_id IS NOT NULL
+            """
+        )
+
     def set_donate_template(self, guild_id: int, template: str) -> bool:
         self.ensure_settings(guild_id)
         return self.db.update(
@@ -248,6 +322,40 @@ class BankPaymentService:
             "guild_id = ?",
             (guild_id,),
         )
+
+    def add_donate_leaderboard(self, guild_id: int, user_id: int, username: str, amount: int) -> None:
+        now = get_timestamp()
+        cursor = self.db.conn.cursor()
+        cursor.execute(
+            """
+            INSERT INTO donate_leaderboard
+                (guild_id, user_id, username, amount, donate_count, updated_at)
+            VALUES (?, ?, ?, ?, 1, ?)
+            ON CONFLICT(guild_id, user_id) DO UPDATE SET
+                username = excluded.username,
+                amount = amount + excluded.amount,
+                donate_count = donate_count + 1,
+                updated_at = excluded.updated_at
+            """,
+            (guild_id, user_id, username, int(amount), now),
+        )
+        self.db.conn.commit()
+
+    def get_donate_leaderboard(self, guild_id: int, limit: int = 50) -> list[dict]:
+        return self.db.fetch(
+            """
+            SELECT * FROM donate_leaderboard
+            WHERE guild_id = ?
+            ORDER BY amount DESC, donate_count DESC, updated_at ASC
+            LIMIT ?
+            """,
+            (guild_id, max(1, min(int(limit), 50))),
+        )
+
+    def reset_donate_leaderboard(self, guild_id: int) -> list[dict]:
+        rows = self.get_donate_leaderboard(guild_id, limit=50)
+        self.db.delete("donate_leaderboard", "guild_id = ?", (guild_id,))
+        return rows
 
     def get_token(self, guild_id: int) -> str | None:
         row = self.db.select_one("bank_tokens", "guild_id = ?", (guild_id,))

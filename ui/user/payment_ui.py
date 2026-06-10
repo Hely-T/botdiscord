@@ -194,4 +194,54 @@ def build_config_status_embed(settings: dict) -> discord.Embed:
     embed.add_field(name="Auto check", value="`Bật`" if int(settings.get("auto_check_enabled") or 0) else "`Tắt`", inline=True)
     donate_channel = settings.get("donate_channel_id")
     embed.add_field(name="Kênh cảm ơn donate", value=f"<#{int(donate_channel)}>" if donate_channel else "`Chưa set`", inline=True)
+    leaderboard_channel = settings.get("donate_leaderboard_channel_id")
+    embed.add_field(
+        name="Kênh BXH donate",
+        value=f"<#{int(leaderboard_channel)}>" if leaderboard_channel else "`Chưa set`",
+        inline=True,
+    )
+    leaderboard_message = settings.get("donate_leaderboard_message_id")
+    embed.add_field(
+        name="Tin nhắn BXH",
+        value=f"`{leaderboard_message}`" if leaderboard_message else "`Chưa tạo`",
+        inline=True,
+    )
+    return embed
+
+
+def build_donate_leaderboard_embed(
+    rows: list[dict],
+    guild: discord.Guild | None,
+    *,
+    page: int = 0,
+    per_page: int = 10,
+) -> discord.Embed:
+    rows = rows[:50]
+    total_pages = max(1, (len(rows) + per_page - 1) // per_page)
+    page = max(0, min(page, total_pages - 1))
+    start = page * per_page
+    page_rows = rows[start : start + per_page]
+    total_amount = sum(int(row.get("amount") or 0) for row in rows)
+
+    embed = discord.Embed(
+        title="💝 Bảng Xếp Hạng Donate",
+        color=discord.Color.from_rgb(255, 127, 169),
+    )
+    if guild and guild.icon:
+        embed.set_thumbnail(url=guild.icon.url)
+
+    if not page_rows:
+        embed.description = "Chưa có ai donate trong bảng tháng này."
+    else:
+        lines = []
+        for index, row in enumerate(page_rows, start=start + 1):
+            amount = format_vnd(int(row.get("amount") or 0))
+            count = int(row.get("donate_count") or 0)
+            lines.append(f"**#{index}** <@{int(row['user_id'])}> - `{amount} VNĐ` · `{count}` lần")
+        embed.description = "\n".join(lines)
+
+    embed.add_field(name="Tổng người", value=f"`{len(rows)}`", inline=True)
+    embed.add_field(name="Tổng donate", value=f"`{format_vnd(total_amount)} VNĐ`", inline=True)
+    embed.add_field(name="Trang", value=f"`{page + 1}/{total_pages}`", inline=True)
+    append_discord_timestamp(embed, style="f")
     return embed

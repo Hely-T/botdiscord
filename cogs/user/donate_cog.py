@@ -6,22 +6,56 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from cogs.admin_command_utils import create_error_splash, create_success_splash, parse_vnd_amount
-from cogs.user.payment_common import PaymentReloadView, finalize_paid_payment
+from cogs.admin_command_utils import create_error_splash, create_success_splash, format_vnd, parse_vnd_amount
+from cogs.user.payment_common import (
+    DonateLeaderboardView,
+    PaymentReloadView,
+    finalize_paid_payment,
+    refresh_donate_leaderboard,
+)
 from cogs.user_command_utils import UserCommandBase
 from services.bank_service import BankPaymentService
-from ui.user.payment_ui import build_bank_balance_embed, build_config_status_embed, build_payment_embed, render_payment_card
+from ui.user.payment_ui import (
+    build_bank_balance_embed,
+    build_config_status_embed,
+    build_donate_leaderboard_embed,
+    build_payment_embed,
+    render_payment_card,
+)
 
 
 CHECK_WORDS = {"check", "kiemtra", "kiểmtra", "kt", "xacnhan", "xácnhận"}
 BALANCE_WORDS = {"reload", "sodu", "sốdư", "số-dư", "balance", "bank", "bankbalance"}
 CONFIG_WORDS = {"config", "cfg", "setup", "cauhinh", "cấuhình", "cấu-hình"}
+TOP_WORDS = {"top", "bxh", "rank", "leaderboard", "bangxephang", "bảngxếphạng"}
+RESET_WORDS = {"reset", "rs", "clear", "monthlyreset", "resetmonth", "resetthang", "resettháng"}
 
 
 class DonateCog(UserCommandBase):
     def __init__(self, bot: commands.Bot):
         super().__init__(bot)
         self.bank = BankPaymentService()
+        self._restore_views_task = bot.loop.create_task(self._restore_leaderboard_views())
+
+    def cog_unload(self):
+        if self._restore_views_task and not self._restore_views_task.done():
+            self._restore_views_task.cancel()
+
+    async def _restore_leaderboard_views(self) -> None:
+        try:
+            await self.bot.wait_until_ready()
+            for row in self.bank.get_donate_leaderboard_messages():
+                self.bot.add_view(
+                    DonateLeaderboardView(
+                        self.bot,
+                        self.bank,
+                        int(row["guild_id"]),
+                        timeout=None,
+                    ),
+                    message_id=int(row["donate_leaderboard_message_id"]),
+                )
+        except asyncio.CancelledError:
+            return
 
     async def _send_payment(self, target, amount_text: str):
         guild = target.guild
@@ -126,6 +160,66 @@ class DonateCog(UserCommandBase):
         settings = self.bank.get_settings(ctx.guild.id) or {}
         await ctx.send(embed=build_bank_balance_embed(result, settings))
 
+    async def _show_donate_leaderboard(self, ctx: commands.Context):
+        if ctx.guild is None:
+            await ctx.send(embed=create_error_splash("❌ Chỉ Dùng Trong Server", "Bảng donate chỉ hoạt động trong server."))
+            return
+        rows = self.bank.get_donate_leaderboard(ctx.guild.id, limit=50)
+        await ctx.send(
+            embed=build_donate_leaderboard_embed(rows, ctx.guild, page=0),
+            view=DonateLeaderboardView(self.bot, self.bank, ctx.guild.id, page=0),
+        )
+
+    async def _reset_donate_leaderboard(self, ctx: commands.Context):
+        if ctx.guild is None:
+            await ctx.send(embed=create_error_splash("❌ Chỉ Dùng Trong Server", "Reset donate chỉ hoạt động trong server."))
+            return
+        if not await self.require_admin_ctx(ctx, "Chỉ bot admin mới được reset bảng donate."):
+            return
+
+        rows = self.bank.reset_donate_leaderboard(ctx.guild.id)
+        total = sum(int(row.get("amount") or 0) for row in rows)
+        lines = [
+            f"📊 Bảng donate trước khi reset của {ctx.guild.name}",
+            f"Tổng người: {len(rows)}",
+            f"Tổng tiền: {format_vnd(total)} VNĐ",
+            "",
+        ]
+        if rows:
+            for index, row in enumerate(rows, start=1):
+                lines.append(
+                    f"#{index} {row.get('username') or row['user_id']} ({row['user_id']}) - "
+                    f"{format_vnd(int(row.get('amount') or 0))} VNĐ · {int(row.get('donate_count') or 0)} lần"
+                )
+        else:
+            lines.append("Chưa có dữ liệu donate để reset.")
+
+        chunks: list[str] = []
+        current: list[str] = []
+        for line in lines:
+            candidate = "\n".join([*current, line])
+            if current and len(candidate) > 1900:
+                chunks.append("\n".join(current))
+                current = [line]
+            else:
+                current.append(line)
+        if current:
+            chunks.append("\n".join(current))
+
+        try:
+            for chunk in chunks:
+                await ctx.author.send(chunk)
+        except (discord.Forbidden, discord.HTTPException):
+            pass
+
+        await refresh_donate_leaderboard(self.bot, self.bank, ctx.guild)
+        await ctx.send(
+            embed=create_success_splash(
+                "✅ Đã Reset BXH Donate",
+                f"Đã gửi chi tiết `{len(rows)}` người về DMs admin. Bảng hiển thị tháng này đã về trắng.",
+            )
+        )
+
     async def check_and_finalize_payment(self, interaction: discord.Interaction, payment_id: int):
         payment = self.bank.get_payment(payment_id)
         if not payment:
@@ -168,6 +262,21 @@ class DonateCog(UserCommandBase):
             await ctx.send(embed=create_success_splash("✅ Đã Set Kênh Cảm Ơn", f"Donate sẽ cảm ơn tại {channel.mention}."))
             return
 
+        if key in {"leaderboard", "top", "rank", "bxh", "leaderboardchannel", "topchannel", "rankchannel"}:
+            if not value or value.lower() in {"off", "none", "xoa", "xoá"}:
+                self.bank.set_donate_leaderboard_channel(ctx.guild.id, None)
+                await ctx.send(embed=create_success_splash("✅ Đã Tắt BXH Donate", "Donate vẫn cộng cash nhưng không cập nhật bảng xếp hạng."))
+                return
+            try:
+                channel = await commands.TextChannelConverter().convert(ctx, value)
+            except commands.BadArgument:
+                await ctx.send(embed=create_error_splash("❌ Không Tìm Thấy Kênh", "Dùng: `donate config leaderboard #channel`."))
+                return
+            self.bank.set_donate_leaderboard_channel(ctx.guild.id, channel.id)
+            await refresh_donate_leaderboard(self.bot, self.bank, ctx.guild)
+            await ctx.send(embed=create_success_splash("✅ Đã Set BXH Donate", f"Bảng xếp hạng donate sẽ cập nhật tại {channel.mention}."))
+            return
+
         if key in {"thank", "thanks", "template", "thanks_template", "camon", "cảmơn"}:
             if not value:
                 await ctx.send(
@@ -196,7 +305,7 @@ class DonateCog(UserCommandBase):
         shown = "`Đã set`" if key in {"password", "pass"} else f"`{value}`"
         await ctx.send(embed=create_success_splash("✅ Đã Cập Nhật Donate Config", f"`{key}` = {shown}"))
 
-    @commands.command(name="donate", aliases=["dn"])
+    @commands.command(name="donate", aliases=["dn", "dnt"])
     async def donate(self, ctx: commands.Context, *args):
         if ctx.guild is None:
             await ctx.send(embed=create_error_splash("❌ Chỉ Dùng Trong Server", "Lệnh donate chỉ hoạt động trong server."))
@@ -208,6 +317,12 @@ class DonateCog(UserCommandBase):
         first = args[0].lower()
         if first in CONFIG_WORDS:
             await self._handle_config(ctx, args[1:])
+            return
+        if first in TOP_WORDS:
+            await self._show_donate_leaderboard(ctx)
+            return
+        if first in RESET_WORDS:
+            await self._reset_donate_leaderboard(ctx)
             return
         if first in BALANCE_WORDS:
             await self._show_bank_balance(ctx)

@@ -34,7 +34,7 @@ class NapTienCog(UserCommandBase):
                 await self._check_pending_payments()
             except Exception as exc:
                 print(f"❌ Lỗi auto check ACB: {exc}")
-            await asyncio.sleep(60)
+            await asyncio.sleep(5)
 
     async def _check_pending_payments(self):
         for payment in self.bank.get_pending_payments(limit=80):
