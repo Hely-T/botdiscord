@@ -18,6 +18,9 @@ Trong docs dùng `{prefix}` để đại diện cho prefix hiện tại.
 - `{prefix}random <số lớn nhất>`
   - Chọn số ngẫu nhiên từ 1 đến số đã nhập.
   - Alias: `{prefix}rand`, `{prefix}rd`.
+- `{prefix}mrandom set <user_id> <số>`
+  - Chỉ hard admin dùng trong DM để chỉ định minh bạch kết quả random kế tiếp của user.
+  - Kết quả được ghi rõ là đã chỉ định và thiết lập tự xóa sau một lần dùng.
 - `{prefix}pick <mục 1, mục 2, mục 3>`
   - Chọn ngẫu nhiên một mục, hỗ trợ danh sách phân cách bằng dấu phẩy hoặc khoảng trắng.
   - Alias: `{prefix}choose`, `{prefix}chon`, `{prefix}chọn`.
