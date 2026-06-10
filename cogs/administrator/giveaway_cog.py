@@ -367,35 +367,50 @@ class AdministratorGiveawayCog(AdminCommandBase):
         host = host or self.bot.get_user(creator_id)
         return str(host.display_avatar.url) if host else None
 
-    def _build_giveaway_embed(self, giveaway: dict, ended: bool = False) -> discord.Embed:
+    def _winner_mentions(self, giveaway: dict) -> str:
         winner_ids = self.service.decode_winner_ids(giveaway)
+        return ", ".join(f"<@{user_id}>" for user_id in winner_ids) if winner_ids else "`Không có`"
+
+    def _giveaway_content(self, giveaway: dict, ended: bool = False) -> str:
+        status_ended = ended or giveaway["status"] == "ended"
+        title_key = "title_ended" if status_ended else "title_start"
+        reward = str(giveaway["reward"])
+        return self._theme_value(
+            giveaway,
+            title_key,
+            start=self._theme_icon(giveaway, "start"),
+            ended=self._theme_icon(giveaway, "ended"),
+            reward=reward,
+            emoji=self.giveaway_entry_emoji(giveaway),
+            host=f"<@{int(giveaway['creator_id'])}>",
+            winners=self._winner_mentions(giveaway),
+            time=f"<t:{int(giveaway['ends_at'])}:R>",
+        )
+
+    def _build_giveaway_embed(self, giveaway: dict, ended: bool = False) -> discord.Embed:
         selected_winner_ids = self.service.decode_selected_winner_ids(giveaway)
         entry_emoji = self.giveaway_entry_emoji(giveaway)
         status_text = "Đã kết thúc" if ended or giveaway["status"] == "ended" else "Đang mở"
         color = discord.Color.from_rgb(255, 136, 190) if status_text == "Đang mở" else discord.Color.from_rgb(89, 96, 110)
-        start_icon = self._theme_icon(giveaway, "start")
-        ended_icon = self._theme_icon(giveaway, "ended")
         reward = str(giveaway["reward"])
-        title_key = "title_start" if status_text == "Đang mở" else "title_ended"
         description_key = "text_join" if status_text == "Đang mở" else "text_ended"
         host_mention = f"<@{int(giveaway['creator_id'])}>"
-        description_lines = [
-            f"## {reward}",
-            "",
-            self._theme_value(
-                giveaway,
-                description_key,
-                emoji=entry_emoji,
-                reward=reward,
-                host=host_mention,
-            ),
-        ]
+        description_lines = [f"## {reward}", ""]
+        status_description = self._theme_value(
+            giveaway,
+            description_key,
+            emoji=entry_emoji,
+            reward=reward,
+            host=host_mention,
+            winners=self._winner_mentions(giveaway),
+        ).strip()
+        if status_description:
+            description_lines.append(status_description)
 
         if status_text == "Đã kết thúc":
-            winners_text = ", ".join(f"<@{user_id}>" for user_id in winner_ids) if winner_ids else "`Không có`"
             description_lines.extend(
                 [
-                    f"{self._theme_icon(giveaway, 'winner')} **{self._theme_value(giveaway, 'label_winner')}:** {winners_text}",
+                    f"{self._theme_icon(giveaway, 'winner')} **{self._theme_value(giveaway, 'label_winner')}:** {self._winner_mentions(giveaway)}",
                     f"{self._theme_icon(giveaway, 'host')} **{self._theme_value(giveaway, 'label_host')}:** {host_mention}",
                 ]
             )
@@ -415,10 +430,16 @@ class AdministratorGiveawayCog(AdminCommandBase):
                 )
 
         embed = discord.Embed(
-            title=self._theme_value(giveaway, title_key, start=start_icon, ended=ended_icon, reward=reward),
             description="\n".join(description_lines),
             color=color,
         )
+
+        guild = self.bot.get_guild(int(giveaway["guild_id"]))
+        if guild:
+            embed.set_author(
+                name=guild.name,
+                icon_url=str(guild.icon.url) if guild.icon else None,
+            )
 
         if int(giveaway.get("quantity_total") or 1) > 1:
             embed.add_field(
@@ -529,7 +550,11 @@ class AdministratorGiveawayCog(AdminCommandBase):
         updated = self.service.get_giveaway(giveaway_id)
         message = await self._fetch_giveaway_message(updated)
         if message:
-            await message.edit(embed=self._build_giveaway_embed(updated, ended=True), view=None)
+            await message.edit(
+                content=self._giveaway_content(updated, ended=True),
+                embed=self._build_giveaway_embed(updated, ended=True),
+                view=None,
+            )
             await self._send_result_message(message.channel, updated, winner_ids, reroll=reroll)
         await self._send_winner_dms(updated, winner_ids, reroll=reroll)
         return True, "Đã chọn winner và kết thúc giveaway."
@@ -752,7 +777,11 @@ class AdministratorGiveawayCog(AdminCommandBase):
                 if int(giveaway["ends_at"]) != discord_ends_at:
                     self.service.update_ends_at(giveaway_id, discord_ends_at)
                     giveaway["ends_at"] = discord_ends_at
-            edited_message = await message.edit(embed=self._build_giveaway_embed(giveaway, ended), view=None)
+            edited_message = await message.edit(
+                content=self._giveaway_content(giveaway, ended),
+                embed=self._build_giveaway_embed(giveaway, ended),
+                view=None,
+            )
             discord_now = edited_message.edited_at or edited_message.created_at
             remaining_seconds = int(giveaway["ends_at"]) - int(discord_now.timestamp())
             if not ended and remaining_seconds <= 0:
@@ -797,7 +826,11 @@ class AdministratorGiveawayCog(AdminCommandBase):
             entry_emoji=self.get_entry_emoji(guild_id),
         )
         giveaway = self.service.get_giveaway(giveaway_id)
-        await message.edit(embed=self._build_giveaway_embed(giveaway), view=None)
+        await message.edit(
+            content=self._giveaway_content(giveaway),
+            embed=self._build_giveaway_embed(giveaway),
+            view=None,
+        )
         await self._add_entry_reaction(message, giveaway)
         self._schedule_end(giveaway, delay_seconds=payload.duration_seconds)
         return giveaway_id
@@ -872,6 +905,7 @@ class AdministratorGiveawayCog(AdminCommandBase):
             updated = self.service.get_giveaway(giveaway_id)
             if giveaway_message:
                 await giveaway_message.edit(
+                    content=self._giveaway_content(updated, ended=True),
                     embed=self._build_giveaway_embed(updated, ended=True),
                     view=None,
                 )
@@ -897,7 +931,11 @@ class AdministratorGiveawayCog(AdminCommandBase):
 
         message = giveaway_message or await self._fetch_giveaway_message(updated)
         if message:
-            await message.edit(embed=self._build_giveaway_embed(updated, ended=True), view=None)
+            await message.edit(
+                content=self._giveaway_content(updated, ended=True),
+                embed=self._build_giveaway_embed(updated, ended=True),
+                view=None,
+            )
             await self._send_result_message(message.channel, updated, winner_ids)
         await self._send_winner_dms(updated, winner_ids)
         return True, "Giveaway đã kết thúc." if automatic else "Đã end giveaway."
@@ -919,7 +957,11 @@ class AdministratorGiveawayCog(AdminCommandBase):
 
         message = giveaway_message or await self._fetch_giveaway_message(updated)
         if message:
-            await message.edit(embed=self._build_giveaway_embed(updated, ended=True), view=None)
+            await message.edit(
+                content=self._giveaway_content(updated, ended=True),
+                embed=self._build_giveaway_embed(updated, ended=True),
+                view=None,
+            )
             await self._send_result_message(message.channel, updated, winner_ids, reroll=True, reroll_round=reroll_round)
         await self._send_winner_dms(updated, winner_ids, reroll=True, reroll_round=reroll_round)
         return True, f"Đã reroll giveaway lần {reroll_round}.", winner_ids
@@ -990,11 +1032,16 @@ class AdministratorGiveawayCog(AdminCommandBase):
         lines = [
             f"Emoji tham gia: {current}",
             "`ga config emoji <emoji>` đổi emoji react tham gia.",
+            "`ga config start <emoji>` đổi emoji tiêu đề bắt đầu.",
+            "`ga config ended <emoji>` đổi emoji tiêu đề kết thúc.",
             "`ga config host <emoji>` đổi emoji host.",
             "`ga config winner <emoji>` đổi emoji người thắng.",
             "`ga config time <emoji>` đổi emoji thời gian.",
+            "`ga config title_start <nội dung>` đổi tiêu đề bắt đầu.",
+            "`ga config title_ended <nội dung>` đổi tiêu đề kết thúc.",
             "`ga config join_text <nội dung>` đổi câu tham gia.",
             "`ga config ended_text <nội dung>` đổi câu kết thúc.",
+            "`ga config time_text <text>` đổi chữ Đếm ngược.",
             "`ga config host_text <text>` đổi chữ Host.",
             "`ga config winner_text <text>` đổi chữ Người thắng.",
             "`ga config <key> reset` để về mặc định.",
@@ -1082,7 +1129,7 @@ class AdministratorGiveawayCog(AdminCommandBase):
             return
         await self._handle_reroll_command(ctx, giveaway_id or "")
 
-    @app_commands.command(name="giveaway", description="Tạo, set, end hoặc reroll giveaway")
+    @app_commands.command(name="giveaway", description="Tạo, kết thúc, reroll hoặc cấu hình giveaway")
     @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
     @app_commands.allowed_installs(guilds=True, users=True)
     @app_commands.choices(
@@ -1103,7 +1150,7 @@ class AdministratorGiveawayCog(AdminCommandBase):
         template="Template riêng nếu có",
         giveaway_id="ID giveaway/message ID khi set/end/reroll",
         emoji="Emoji tham gia khi action là config",
-        config_key="Key config: emoji, host, winner, time, join_text, ended_text...",
+        config_key="Key config: emoji, title_start, title_ended, join_text, host_text...",
         config_value="Giá trị config mới; nhập reset để về mặc định",
     )
     async def slash_giveaway(
