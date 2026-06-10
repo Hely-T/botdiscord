@@ -1,7 +1,7 @@
 import sqlite3
 import os
 from typing import List, Dict, Any, Optional
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from config import DATABASE_DIR
 
 # Tạo folder database nếu chưa tồn tại
@@ -222,28 +222,33 @@ def discord_timestamp_text(dt: datetime | None = None, style: str = "f") -> str:
     return f"<t:{int(value.timestamp())}:{style}>"
 
 
-def append_discord_timestamp(embed, dt: datetime | None = None, style: str = "f"):
-    """Đặt thời gian Discord ở dòng cuối embed thay vì tự format local time."""
-    stamp = discord_timestamp_text(dt, style)
-    footer_text = getattr(getattr(embed, "footer", None), "text", None)
-    if footer_text:
-        if hasattr(embed, "remove_footer"):
-            embed.remove_footer()
-        else:
-            embed.set_footer(text=None)
-        if getattr(embed, "fields", None):
-            embed.add_field(name="\u200b", value=footer_text, inline=False)
-        elif embed.description:
-            embed.description = f"{str(embed.description).rstrip()}\n\n{footer_text}"
-        else:
-            embed.description = footer_text
+VIETNAM_TIMEZONE = timezone(timedelta(hours=7))
 
-    if getattr(embed, "fields", None):
-        embed.add_field(name="\u200b", value=stamp, inline=False)
-    elif embed.description:
-        embed.description = f"{str(embed.description).rstrip()}\n\n{stamp}"
+
+def vietnamese_footer_time(dt: datetime | None = None) -> str:
+    """Format embed footer time consistently in Vietnam time."""
+    value = dt or datetime.now(timezone.utc)
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    local_value = value.astimezone(VIETNAM_TIMEZONE)
+    today = datetime.now(VIETNAM_TIMEZONE).date()
+    if local_value.date() == today:
+        day_label = "Hôm nay"
+    elif local_value.date() == today - timedelta(days=1):
+        day_label = "Hôm qua"
     else:
-        embed.description = stamp
+        day_label = local_value.strftime("%d/%m/%Y")
+    return f"{day_label} • {local_value:%H:%M} • {local_value:%d/%m/%Y}"
+
+
+def append_discord_timestamp(embed, dt: datetime | None = None, style: str = "f"):
+    """Put a consistent Vietnam-time label in the embed's small footer."""
+    del style  # Kept for backwards compatibility with existing callers.
+    stamp = vietnamese_footer_time(dt)
+    footer_text = getattr(getattr(embed, "footer", None), "text", None)
+    footer_icon = getattr(getattr(embed, "footer", None), "icon_url", None)
+    text = f"{footer_text}\n{stamp}" if footer_text else stamp
+    embed.set_footer(text=text, icon_url=footer_icon or None)
     return embed
 
 

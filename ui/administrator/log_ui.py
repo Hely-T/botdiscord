@@ -120,13 +120,4 @@ def build_basic_log_embed(
     )
     if user:
         embed.set_author(name=getattr(user, "display_name", str(user)), icon_url=avatar_url(user))
-    timestamp = discord_timestamp_text(style="f")
-    if embed.description:
-        lines = str(embed.description).rstrip().splitlines()
-        for index in range(len(lines) - 1, -1, -1):
-            if "ID:**" in lines[index] or "ID:" in lines[index]:
-                if "<t:" not in lines[index]:
-                    lines[index] = f"{lines[index]} • {timestamp}"
-                embed.description = "\n".join(lines)
-                return embed
     return append_discord_timestamp(embed)
