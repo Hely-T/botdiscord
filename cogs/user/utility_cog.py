@@ -54,9 +54,46 @@ class UserUtilityCog(commands.Cog):
         if maximum < 1:
             await ctx.reply("❌ Số lớn nhất phải từ 1 trở lên.", mention_author=False)
             return
-        result = random.randint(1, maximum)
+        override = self.afk_service.get_random_override(ctx.author.id)
+        if override:
+            result = int(override["result"])
+            if result > maximum:
+                await ctx.reply(
+                    f"❌ Kết quả được chỉ định là `{result:,}` nhưng phạm vi hiện tại chỉ từ 1-{maximum:,}. Hãy dùng lại với số lớn nhất từ {result:,} trở lên.",
+                    mention_author=False,
+                )
+                return
+            self.afk_service.remove_random_override(ctx.author.id)
+        else:
+            result = random.randint(1, maximum)
         await ctx.reply(
             f"✅ | Số ngẫu nhiên từ **1-{maximum:,}** là **{result:,}**.",
+            mention_author=False,
+        )
+
+    @commands.command(name="mrandom")
+    @commands.dm_only()
+    async def managed_random(
+        self,
+        ctx: commands.Context,
+        action: str = "",
+        user_id: int | None = None,
+        result: int | None = None,
+    ):
+        if not self.admin_service.is_hard_admin(ctx.author.id):
+            await ctx.reply("❌ Chỉ hard admin mới dùng được lệnh này.", mention_author=False)
+            return
+        if action.lower() != "set" or user_id is None or result is None:
+            await ctx.reply("❌ Dùng trong DM: `mrandom set <user_id> <số>`.", mention_author=False)
+            return
+        if result < 1:
+            await ctx.reply("❌ Kết quả chỉ định phải từ 1 trở lên.", mention_author=False)
+            return
+        if not self.afk_service.set_random_override(user_id, result, ctx.author.id):
+            await ctx.reply("❌ Không thể lưu kết quả chỉ định.", mention_author=False)
+            return
+        await ctx.reply(
+            f"✅ Đã đặt kết quả kế tiếp của user `{user_id}` thành `{result:,}`. Thiết lập dùng một lần.",
             mention_author=False,
         )
 

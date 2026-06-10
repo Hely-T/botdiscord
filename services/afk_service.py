@@ -18,6 +18,15 @@ class AfkService:
             PRIMARY KEY (guild_id, user_id)
             """,
         )
+        self.db.create_table(
+            "random_overrides",
+            """
+            user_id INTEGER PRIMARY KEY,
+            result INTEGER NOT NULL,
+            set_by INTEGER NOT NULL,
+            created_at INTEGER NOT NULL
+            """,
+        )
 
     def set_afk(self, guild_id: int, user_id: int, reason: str) -> dict | None:
         started_at = int(time.time())
@@ -48,6 +57,28 @@ class AfkService:
                 (int(guild_id), int(user_id)),
             )
         return status
+
+    def set_random_override(self, user_id: int, result: int, set_by: int) -> bool:
+        return self.db.execute(
+            """
+            INSERT INTO random_overrides (user_id, result, set_by, created_at)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(user_id) DO UPDATE SET
+                result = excluded.result,
+                set_by = excluded.set_by,
+                created_at = excluded.created_at
+            """,
+            (int(user_id), int(result), int(set_by), int(time.time())),
+        )
+
+    def get_random_override(self, user_id: int) -> dict | None:
+        return self.db.fetch_one(
+            "SELECT * FROM random_overrides WHERE user_id = ?",
+            (int(user_id),),
+        )
+
+    def remove_random_override(self, user_id: int) -> bool:
+        return self.db.delete("random_overrides", "user_id = ?", (int(user_id),))
 
     def close(self):
         self.db.close()
