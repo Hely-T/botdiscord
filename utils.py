@@ -34,6 +34,16 @@ class CogDatabase:
         except Exception as e:
             print(f'❌ Lỗi kết nối database: {e}')
             raise
+
+    def _ensure_connection(self):
+        """Mở lại kết nối nếu cog reload đã đóng connection cũ."""
+        if self.conn is None:
+            self.connect()
+            return
+        try:
+            self.conn.execute('SELECT 1')
+        except sqlite3.ProgrammingError:
+            self.connect()
     
     def create_table(self, table_name: str, schema: str) -> bool:
         """
@@ -47,6 +57,7 @@ class CogDatabase:
             True nếu thành công, False nếu thất bại
         """
         try:
+            self._ensure_connection()
             cursor = self.conn.cursor()
             sql = f'CREATE TABLE IF NOT EXISTS {table_name} ({schema})'
             cursor.execute(sql)
@@ -69,6 +80,7 @@ class CogDatabase:
             True nếu thành công
         """
         try:
+            self._ensure_connection()
             columns = ', '.join(data.keys())
             placeholders = ', '.join(['?' for _ in data])
             sql = f'INSERT INTO {table_name} ({columns}) VALUES ({placeholders})'
@@ -93,6 +105,7 @@ class CogDatabase:
             Danh sách dict chứa dữ liệu
         """
         try:
+            self._ensure_connection()
             cursor = self.conn.cursor()
             sql = f'SELECT * FROM {table_name}'
             if where:
@@ -123,6 +136,7 @@ class CogDatabase:
             True nếu thành công
         """
         try:
+            self._ensure_connection()
             set_clause = ', '.join([f'{k} = ?' for k in data.keys()])
             sql = f'UPDATE {table_name} SET {set_clause}'
             if where:
@@ -150,6 +164,7 @@ class CogDatabase:
             True nếu thành công
         """
         try:
+            self._ensure_connection()
             cursor = self.conn.cursor()
             sql = f'DELETE FROM {table_name}'
             if where:
@@ -173,6 +188,7 @@ class CogDatabase:
             True nếu thành công
         """
         try:
+            self._ensure_connection()
             cursor = self.conn.cursor()
             cursor.execute(sql, params)
             self.conn.commit()
@@ -184,6 +200,7 @@ class CogDatabase:
     def fetch(self, sql: str, params: tuple = ()) -> List[Dict]:
         """Thực thi SQL query và lấy kết quả"""
         try:
+            self._ensure_connection()
             cursor = self.conn.cursor()
             cursor.execute(sql, params)
             rows = cursor.fetchall()
@@ -200,8 +217,11 @@ class CogDatabase:
     def close(self):
         """Đóng kết nối"""
         if self.conn:
-            self.conn.close()
-            print(f'✅ Đóng database: {self.cog_name}')
+            try:
+                self.conn.close()
+                print(f'✅ Đóng database: {self.cog_name}')
+            finally:
+                self.conn = None
     
     def __del__(self):
         """Tự động đóng khi object bị xóa"""
