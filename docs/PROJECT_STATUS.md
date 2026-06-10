@@ -2,7 +2,7 @@
 
 ## Phiên bản hiện tại
 
-`v2.8`
+`v3.2`
 
 Trạng thái: đang phát triển, đã chuẩn hóa catalog cog, service/database, role permission và UI theo feature.
 
@@ -10,7 +10,7 @@ Trạng thái: đang phát triển, đã chuẩn hóa catalog cog, service/datab
 
 - Recursive cog loader cho `cogs/` và subfolder catalog.
 - Help menu theo category.
-- User commands: `profile`, `cash`, `naptien`, `donate`, `points`, `time`, `give`, `topusers`.
+- User commands: `profile`, `cash`, `naptien`, `donate`, `points`, `time`, `give`, `topusers`, `afk`, `random`, `pick`, `setname`.
 - Booking commands: `luong`, `star`, `tinhluong`, `topbook`, `topnap`, `topgift`.
 - Role commands: `addrole`, `removerole`, `setrole`, `perms`, `myroles`, `rolescommands`.
 - Administrator commands theo nhóm:
@@ -18,7 +18,7 @@ Trạng thái: đang phát triển, đã chuẩn hóa catalog cog, service/datab
   - Economy: `cash a|r|e`, `luong a|r|e`, `star a|r|e`, `points a|r|e`, `time a|r|e`, `tongluong`, `topstar`, `addtime a|r|e`, `subtime`, `addpoints a|r|e`.
   - Booking config: `bookconfig`, `setgiobook`, `setphantram`, `setan`.
   - Responsive: `ar`, `form`, `res`, `up`.
-  - Moderation: `ban`, `unban`, `kick`, `role`, `mute`, `unmute`.
+  - Moderation: `ban`, `unban`, `kick`, `role`, `mute`, `unmute`, `lock`, `unlock`.
   - Operator: `gitpull`, `gitstatus`, `reload`, `load`, `unload`, `cogs`, `prefix`.
   - Command channel: `command`, `enable`, `disable`.
   - Slash: `/antiraid`, `/giveaway`, `/group`, `/level`, `/naptien`, `/donate`, `/ticket`.
@@ -26,7 +26,7 @@ Trạng thái: đang phát triển, đã chuẩn hóa catalog cog, service/datab
 - Donate có kênh cảm ơn, bảng xếp hạng tháng 1-50, phân trang 10 người và reset không ảnh hưởng cash/tổng donate.
 - Command có thể bị khóa theo từng channel; hỗ trợ khóa command gốc hoặc command con.
 - Log system có `chat`, `voice`, `server`, `join` và `cash`.
-- Database tự tạo cho users, booking, role permission, admin, settings, guild settings, responsive, bank payments và log system.
+- Database tự tạo cho users, booking, role permission, admin, settings, guild settings, responsive, bank payments, AFK và log system.
 - Định dạng tiền VNĐ thống nhất.
 - Ticket dùng một cog tại `cogs/administrator/ticket_cog.py`.
 - Ticket dùng `TicketService` và `ticket_system.db`.

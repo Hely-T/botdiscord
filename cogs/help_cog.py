@@ -29,6 +29,9 @@ HELP_CATEGORIES = [
                 "usage": "[command]",
                 "aliases": ["commands"],
             },
+            {"name": "afk", "description": "Đặt trạng thái AFK và báo lý do khi có người tag", "usage": "[lý do]", "aliases": []},
+            {"name": "random", "description": "Lấy một số ngẫu nhiên từ 1 đến số đã nhập", "usage": "<số lớn nhất>", "aliases": ["rand", "rd"]},
+            {"name": "pick", "description": "Chọn ngẫu nhiên một mục trong danh sách", "usage": "<mục 1, mục 2, mục 3>", "aliases": ["choose", "chon", "chọn"]},
         ],
     },
     {
@@ -49,6 +52,7 @@ HELP_CATEGORIES = [
             {"name": "points", "description": "Xem hoặc quản trị points", "usage": "[@user|all] | a|r|e @user amount", "aliases": []},
             {"name": "profile", "description": "Xem profile của bạn hoặc người khác", "usage": "[@user]", "aliases": []},
             {"name": "snipe", "description": "Xem lịch sử tin nhắn vừa bị xoá trong kênh", "usage": "[số|all]", "aliases": ["sn"]},
+            {"name": "setname", "description": "Tự đổi nickname; đổi tên người khác cần hard admin hoặc role DB", "usage": "[@user] <tên mới>", "aliases": ["setnick", "nickname"]},
             {"name": "level", "description": "Thống kê level, tin nhắn, voice và role reward", "usage": "[@user] [total|month|week|day]", "aliases": ["lv"]},
             {"name": "time", "description": "Xem hoặc quản trị tổng giờ", "usage": "[@user|all] | a|r|e @user hours", "aliases": []},
             {"name": "topusers", "description": "Xem top users", "usage": "[limit]", "aliases": []},
@@ -117,6 +121,7 @@ HELP_CATEGORIES = [
                 "aliases": ["logs"],
             },
             {"name": "kick", "description": "Kick một member khỏi server", "usage": "@user|username|id [reason]", "aliases": []},
+            {"name": "lock", "description": "Khoá chat tại kênh hiện tại hoặc kênh được tag", "usage": "[#channel]", "aliases": []},
             {"name": "mute", "description": "Mute một thành viên", "usage": "@user|username|id [duration] [reason]", "aliases": []},
             {"name": "prefix", "description": "Đổi prefix của bot", "usage": "<value>", "aliases": []},
             {"name": "reload", "description": "Reload một cog, một catalog hoặc tất cả", "usage": "[catalog|module]", "aliases": []},
@@ -143,6 +148,7 @@ HELP_CATEGORIES = [
             {"name": "unban", "description": "Gỡ ban một thành viên", "usage": "user_id [reason]", "aliases": []},
             {"name": "unload", "description": "Unload một cog hoặc cả catalog", "usage": "<catalog|module>", "aliases": []},
             {"name": "unmute", "description": "Gỡ mute một thành viên", "usage": "@user|username|id [reason]", "aliases": []},
+            {"name": "unlock", "description": "Mở khoá chat tại kênh hiện tại hoặc kênh được tag", "usage": "[#channel]", "aliases": []},
             {"name": "up", "description": "Up responsive profile lên channel chỉ định", "usage": "<key><số> #channel", "aliases": []},
         ],
         "slash_commands": [

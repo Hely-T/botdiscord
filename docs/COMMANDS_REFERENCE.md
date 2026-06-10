@@ -12,6 +12,22 @@ Trong docs dùng `{prefix}` để đại diện cho prefix hiện tại.
 
 ## User
 
+- `{prefix}afk [lý do]`
+  - Đặt trạng thái AFK. Nếu bỏ trống lý do, bot dùng `AFK`.
+  - Khi có người tag, bot báo lý do và thời gian đã AFK; trạng thái tự gỡ khi user nhắn lại.
+- `{prefix}random <số lớn nhất>`
+  - Chọn số ngẫu nhiên từ 1 đến số đã nhập.
+  - Alias: `{prefix}rand`, `{prefix}rd`.
+- `{prefix}pick <mục 1, mục 2, mục 3>`
+  - Chọn ngẫu nhiên một mục, hỗ trợ danh sách phân cách bằng dấu phẩy hoặc khoảng trắng.
+  - Alias: `{prefix}choose`, `{prefix}chon`, `{prefix}chọn`.
+- `{prefix}setname <tên mới>`
+  - Mọi user được tự đổi nickname của chính mình.
+- `{prefix}setname @user <tên mới>`
+  - Đổi nickname người khác.
+  - Quyền: hard admin hoặc role có quyền `setname` trong database.
+  - Alias: `{prefix}setnick`, `{prefix}nickname`.
+
 - `{prefix}profile [@user]`
   - Xem profile của bạn.
   - Xem người khác cần admin bot hoặc role có quyền `profile`.
@@ -235,6 +251,15 @@ Trong docs dùng `{prefix}` để đại diện cho prefix hiện tại.
   - Xem role đang dùng được những command nào.
 
 ## Administrator
+
+- `{prefix}lock [#channel]`
+  - Không nhập channel: khóa chat tại channel đang dùng lệnh.
+  - Có `#channel`: khóa channel được chỉ định.
+  - Quyền: bot admin hoặc role có quyền `lock` trong database.
+- `{prefix}unlock [#channel]`
+  - Không nhập channel: mở khóa channel đang dùng lệnh.
+  - Có `#channel`: mở khóa channel được chỉ định.
+  - Quyền: bot admin hoặc role có quyền `unlock` trong database.
 
 ### Bot admin
 

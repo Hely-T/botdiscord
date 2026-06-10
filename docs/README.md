@@ -33,3 +33,7 @@ Team member hoặc AI phải đọc `ARCHITECTURE.md` trước khi tạo cog, se
 - `v2.6`: tùy chỉnh nội dung/emoji và giao diện bắt đầu, kết thúc giveaway.
 - `v2.7`: thêm bật/tắt command theo từng channel.
 - `v2.8`: cập nhật help, README và tài liệu kiến trúc cho các tính năng mới.
+- `v2.9`: chuẩn hóa thời gian ở footer nhỏ của embed theo giờ Việt Nam.
+- `v3.0`: thêm AFK, random, pick và setname cho user.
+- `v3.1`: thêm lock/unlock channel theo quyền role database.
+- `v3.2`: cập nhật help và tài liệu cho nhóm lệnh mới.

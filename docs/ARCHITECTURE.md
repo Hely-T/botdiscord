@@ -225,6 +225,7 @@ Trước khi tạo DB mới phải kiểm tra dữ liệu đã có nguồn chung
 - Role hệ thống: `guild_settings.db` qua `GuildSettingsService`.
 - Ticket: `ticket_system.db` qua `TicketService`.
 - Bank/nạp tiền/donate: `bank_payments.db` qua `BankPaymentService`.
+- Trạng thái AFK theo server/user: `afk.db` qua `AfkService`.
 - Log cash/chat/voice/server/member: `log_system.db` qua `LogService`.
 
 Không nhân đôi dữ liệu. Ví dụ Ticket không tạo bảng staff role riêng vì quyền staff đã có trong `command_role.db`.
