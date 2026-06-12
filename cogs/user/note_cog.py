@@ -318,6 +318,7 @@ class NoteCog(commands.Cog):
     def _note_label(self, note: dict, position: int) -> str:
         title = str(note.get("title") or "").strip()
         content = str(note.get("content") or "").strip()
+        kind_label = "TXT · " if note.get("kind") == "txt" else ""
         marker = " - Fix" if int(note.get("edit_count") or 0) > 0 else ""
         head = title if title else content
         amount = self._format_amount_plain(note.get("amount"))
@@ -325,7 +326,7 @@ class NoteCog(commands.Cog):
         if int(note.get("author_user_id") or note.get("user_id") or 0) != int(note.get("user_id") or 0):
             author_name = note.get("author_name") or f"User {note.get('author_user_id')}"
             author = f" · bởi {author_name}"
-        return f"{position}. {self._shorten(head, 170)}{marker}{amount}{author}"
+        return f"{kind_label}{position}. {self._shorten(head, 170)}{marker}{amount}{author}"
 
     def _format_notes_plain(self, ctx, member: discord.Member | None = None) -> str:
         target = member or ctx.author
@@ -353,7 +354,8 @@ class NoteCog(commands.Cog):
         if note.get("kind") == "txt":
             title = self._render_txt_content(title, guild)
             content = self._render_txt_content(content, guild)
-        embed.title = f"🗒️ Note #{position} của {target_name}"
+        kind_label = "TXT · " if note.get("kind") == "txt" else ""
+        embed.title = f"🗒️ {kind_label}Note #{position} của {target_name}"
         if title:
             embed.add_field(name="Tiêu đề", value=title[:1024], inline=False)
         embed.description = self._shorten(content, 350) if compact else content[:4096]
@@ -366,7 +368,7 @@ class NoteCog(commands.Cog):
 
     def _build_note_source_embed(self, note: dict, position: int, target_name: str) -> discord.Embed:
         embed = discord.Embed(
-            title=f"📝 Mã nguồn note #{position} của {target_name}",
+            title=f"📝 TXT · Mã nguồn note #{position} của {target_name}",
             description=self._source_code_block(note.get("content") or ""),
             color=discord.Color.from_rgb(255, 184, 90),
         )
