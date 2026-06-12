@@ -71,11 +71,27 @@ class NoteTextModal(discord.ui.Modal):
             )
             notes = self.cog.service.list_notes(interaction.guild.id if interaction.guild else None, self.target_id)
             position = len(notes)
-            embed = self.cog._build_single_note_embed(created, position, self.target_name, compact=True)
+            embed = self.cog._build_single_note_embed(
+                created,
+                position,
+                self.target_name,
+                compact=True,
+                guild=interaction.guild,
+            )
             await interaction.response.send_message(
                 embed=embed,
-                view=NoteContentView(embed, self.cog._build_single_note_embed(created, position, self.target_name, compact=False)),
+                view=NoteContentView(
+                    embed,
+                    self.cog._build_single_note_embed(
+                        created,
+                        position,
+                        self.target_name,
+                        compact=False,
+                        guild=interaction.guild,
+                    ),
+                ),
                 ephemeral=True,
+                allowed_mentions=discord.AllowedMentions.none(),
             )
             return
 
@@ -89,11 +105,27 @@ class NoteTextModal(discord.ui.Modal):
             editor_user_id=interaction.user.id,
             editor_name=getattr(interaction.user, "display_name", str(interaction.user)),
         )
-        embed = self.cog._build_single_note_embed(updated, self.position, self.target_name, compact=True)
+        embed = self.cog._build_single_note_embed(
+            updated,
+            self.position,
+            self.target_name,
+            compact=True,
+            guild=interaction.guild,
+        )
         await interaction.response.send_message(
             embed=embed,
-            view=NoteContentView(embed, self.cog._build_single_note_embed(updated, self.position, self.target_name, compact=False)),
+            view=NoteContentView(
+                embed,
+                self.cog._build_single_note_embed(
+                    updated,
+                    self.position,
+                    self.target_name,
+                    compact=False,
+                    guild=interaction.guild,
+                ),
+            ),
             ephemeral=True,
+            allowed_mentions=discord.AllowedMentions.none(),
         )
 
 
@@ -162,6 +194,7 @@ class NoteCog(commands.Cog):
     VIEW_ACTIONS = {"view", "v", "show", "xem"}
     ADJUST_PATTERN = re.compile(r"^(?P<index>\d+)\s*(?P<sign>[+-])\s*(?P<amount>.+)$")
     FILE_PATTERN = re.compile(r"^(?P<title>.+?)\s*\[file\s+(?P<content>.+)\]\s*$", re.IGNORECASE | re.DOTALL)
+    EMOJI_PATTERN = re.compile(r"<a?:[A-Za-z0-9_]+:\d+>|:([A-Za-z0-9_]{2,32}):")
 
     def __init__(self, bot):
         self.bot = bot
@@ -188,6 +221,26 @@ class NoteCog(commands.Cog):
         if len(text) <= limit:
             return text
         return text[: limit - 3].rstrip() + "..."
+
+    @classmethod
+    def _render_txt_content(cls, content: str, guild: discord.Guild | None) -> str:
+        text = str(content or "")
+        if guild is None:
+            return text
+        emojis = {emoji.name: str(emoji) for emoji in guild.emojis}
+
+        def replace_emoji(match: re.Match) -> str:
+            emoji_name = match.group(1)
+            if emoji_name is None:
+                return match.group(0)
+            return emojis.get(emoji_name, match.group(0))
+
+        return cls.EMOJI_PATTERN.sub(replace_emoji, text)
+
+    @staticmethod
+    def _source_code_block(value: str) -> str:
+        safe_value = str(value or "").replace("```", "``" + chr(8203) + "`")
+        return f"```\n{safe_value}\n```"
 
     def _can_manage_notes(self, ctx) -> bool:
         if ctx.guild is None:
@@ -281,7 +334,15 @@ class NoteCog(commands.Cog):
             return f"{target.display_name} chưa có note nào."
         return "\n".join(self._note_label(note, index) for index, note in enumerate(notes, 1))
 
-    def _build_single_note_embed(self, note: dict | None, position: int, target_name: str, *, compact: bool) -> discord.Embed:
+    def _build_single_note_embed(
+        self,
+        note: dict | None,
+        position: int,
+        target_name: str,
+        *,
+        compact: bool,
+        guild: discord.Guild | None = None,
+    ) -> discord.Embed:
         embed = discord.Embed(color=discord.Color.from_rgb(255, 184, 90))
         if not note:
             embed.title = "🗒️ Note"
@@ -289,6 +350,9 @@ class NoteCog(commands.Cog):
             return embed
         title = str(note.get("title") or "").strip()
         content = str(note.get("content") or "").strip()
+        if note.get("kind") == "txt":
+            title = self._render_txt_content(title, guild)
+            content = self._render_txt_content(content, guild)
         embed.title = f"🗒️ Note #{position} của {target_name}"
         if title:
             embed.add_field(name="Tiêu đề", value=title[:1024], inline=False)
@@ -298,6 +362,18 @@ class NoteCog(commands.Cog):
             footer += " - Fix"
         embed.set_footer(text=footer)
         append_discord_timestamp(embed)
+        return embed
+
+    def _build_note_source_embed(self, note: dict, position: int, target_name: str) -> discord.Embed:
+        embed = discord.Embed(
+            title=f"📝 Mã nguồn note #{position} của {target_name}",
+            description=self._source_code_block(note.get("content") or ""),
+            color=discord.Color.from_rgb(255, 184, 90),
+        )
+        title = str(note.get("title") or "").strip()
+        if title:
+            embed.add_field(name="Tiêu đề", value=self._source_code_block(title), inline=False)
+        embed.set_footer(text="Hiển thị nguyên văn để sửa, gồm cả ID emoji")
         return embed
 
     def _build_notes_embed(self, ctx, member: discord.Member | None = None, title: str = "🗒️ Note") -> discord.Embed:
@@ -377,7 +453,9 @@ class NoteCog(commands.Cog):
         if not new_content or new_content.lower() == "txt" or note.get("kind") == "txt" and new_content.lower() in {"popup", "modal"}:
             await ctx.reply(
                 f"Bấm nút để sửa note TXT #{position} của {target.mention}.",
+                embed=self._build_note_source_embed(note, position, target.display_name),
                 mention_author=False,
+                allowed_mentions=discord.AllowedMentions.none(),
                 view=NoteModalLaunchView(
                     self,
                     ctx.author.id,
@@ -422,9 +500,14 @@ class NoteCog(commands.Cog):
         if not note:
             await ctx.reply(f"❌ Không có note số {position}.", mention_author=False)
             return
-        compact = self._build_single_note_embed(note, position, target.display_name, compact=True)
-        full = self._build_single_note_embed(note, position, target.display_name, compact=False)
-        await ctx.reply(embed=compact, view=NoteContentView(compact, full), mention_author=False)
+        compact = self._build_single_note_embed(note, position, target.display_name, compact=True, guild=ctx.guild)
+        full = self._build_single_note_embed(note, position, target.display_name, compact=False, guild=ctx.guild)
+        await ctx.reply(
+            embed=compact,
+            view=NoteContentView(compact, full),
+            mention_author=False,
+            allowed_mentions=discord.AllowedMentions.none(),
+        )
 
     async def _handle_add(self, ctx, stripped: str):
         mentioned_target, rest = await self._target_from_leading_mention(ctx, stripped)
@@ -464,9 +547,14 @@ class NoteCog(commands.Cog):
         notes = self.service.list_notes(self._guild_id(ctx), target.id)
         position = len(notes)
         if kind == "txt":
-            compact = self._build_single_note_embed(created, position, target.display_name, compact=True)
-            full = self._build_single_note_embed(created, position, target.display_name, compact=False)
-            await ctx.reply(embed=compact, view=NoteContentView(compact, full), mention_author=False)
+            compact = self._build_single_note_embed(created, position, target.display_name, compact=True, guild=ctx.guild)
+            full = self._build_single_note_embed(created, position, target.display_name, compact=False, guild=ctx.guild)
+            await ctx.reply(
+                embed=compact,
+                view=NoteContentView(compact, full),
+                mention_author=False,
+                allowed_mentions=discord.AllowedMentions.none(),
+            )
             return
         await ctx.reply(f"Đã thêm note #{position} cho {target.mention}: {created['content']}{self._format_amount_plain(amount)}.", mention_author=False)
 
