@@ -86,6 +86,8 @@ class NoteTextModal(discord.ui.Modal):
             content,
             title=title,
             kind="txt",
+            editor_user_id=interaction.user.id,
+            editor_name=getattr(interaction.user, "display_name", str(interaction.user)),
         )
         embed = self.cog._build_single_note_embed(updated, self.position, self.target_name, compact=True)
         await interaction.response.send_message(
@@ -263,7 +265,7 @@ class NoteCog(commands.Cog):
     def _note_label(self, note: dict, position: int) -> str:
         title = str(note.get("title") or "").strip()
         content = str(note.get("content") or "").strip()
-        marker = " {fix}" if note.get("kind") == "txt" else ""
+        marker = " - Fix" if int(note.get("edit_count") or 0) > 0 else ""
         head = title if title else content
         amount = self._format_amount_plain(note.get("amount"))
         author = ""
@@ -291,7 +293,9 @@ class NoteCog(commands.Cog):
         if title:
             embed.add_field(name="Tiêu đề", value=title[:1024], inline=False)
         embed.description = self._shorten(content, 350) if compact else content[:4096]
-        footer = f"TXT {{fix}}" if note.get("kind") == "txt" else "Note"
+        footer = "TXT" if note.get("kind") == "txt" else "Note"
+        if int(note.get("edit_count") or 0) > 0:
+            footer += " - Fix"
         embed.set_footer(text=footer)
         append_discord_timestamp(embed)
         return embed
@@ -390,7 +394,17 @@ class NoteCog(commands.Cog):
         except ValueError as exc:
             await ctx.reply(f"❌ Sửa note lỗi: {exc}", mention_author=False)
             return
-        updated = self.service.update_note_at(self._guild_id(ctx), target.id, position, content, amount, title=title, kind=kind)
+        updated = self.service.update_note_at(
+            self._guild_id(ctx),
+            target.id,
+            position,
+            content,
+            amount,
+            title=title,
+            kind=kind,
+            editor_user_id=ctx.author.id,
+            editor_name=ctx.author.display_name,
+        )
         await ctx.reply(f"✅ Đã sửa note #{position} của {target.mention}: {updated['title'] or updated['content']}", mention_author=False)
 
     async def _handle_view(self, ctx, rest: str):

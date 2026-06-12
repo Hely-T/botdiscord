@@ -45,6 +45,9 @@ class NoteService:
             "author_name": "TEXT",
             "title": "TEXT",
             "kind": "TEXT DEFAULT 'plain'",
+            "edit_count": "INTEGER DEFAULT 0",
+            "last_editor_user_id": "INTEGER",
+            "last_editor_name": "TEXT",
         }
         for column_name, column_sql in migrations.items():
             if column_name not in columns:
@@ -54,6 +57,8 @@ class NoteService:
         self.db.execute("UPDATE notes SET author_name = '' WHERE author_name IS NULL")
         self.db.execute("UPDATE notes SET title = '' WHERE title IS NULL")
         self.db.execute("UPDATE notes SET kind = 'plain' WHERE kind IS NULL OR kind = ''")
+        self.db.execute("UPDATE notes SET edit_count = 0 WHERE edit_count IS NULL")
+        self.db.execute("UPDATE notes SET last_editor_name = '' WHERE last_editor_name IS NULL")
 
     @staticmethod
     def _scope_guild_id(guild_id: int | None) -> int:
@@ -83,6 +88,9 @@ class NoteService:
                 "author_name": str(author_name or "").strip(),
                 "title": str(title or "").strip(),
                 "kind": kind if kind in {"plain", "txt"} else "plain",
+                "edit_count": 0,
+                "last_editor_user_id": None,
+                "last_editor_name": "",
                 "created_at": now,
                 "updated_at": now,
             },
@@ -117,6 +125,8 @@ class NoteService:
         *,
         title: str = "",
         kind: str = "plain",
+        editor_user_id: int | None = None,
+        editor_name: str = "",
     ) -> dict | None:
         note = self.get_note_at(guild_id, user_id, position)
         if not note:
@@ -128,6 +138,9 @@ class NoteService:
                 "amount": int(amount) if amount is not None else None,
                 "title": str(title or "").strip(),
                 "kind": kind if kind in {"plain", "txt"} else "plain",
+                "edit_count": int(note.get("edit_count") or 0) + 1,
+                "last_editor_user_id": int(editor_user_id) if editor_user_id is not None else None,
+                "last_editor_name": str(editor_name or "").strip(),
                 "updated_at": get_timestamp(),
             },
             "id = ? AND guild_id = ? AND user_id = ?",
