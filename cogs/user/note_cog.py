@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib
 import re
 
 import discord
@@ -7,9 +8,12 @@ from discord.ext import commands
 
 from cogs.admin_command_utils import format_vnd, parse_vnd_amount
 from services.admin_service import AdminService
-from services.note_service import NoteService
+import services.note_service as note_service_module
 from services.role_permission_service import RolePermissionService
 from utils import append_discord_timestamp
+
+note_service_module = importlib.reload(note_service_module)
+NoteService = note_service_module.NoteService
 
 
 class NoteTextModal(discord.ui.Modal):
