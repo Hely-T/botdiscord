@@ -163,7 +163,9 @@ class UserService:
             if new_value < 0:
                 raise ValueError("Hours không thể âm")
         else:
-            if new_value < 0:
+            # Cash âm từ casino được giữ nguyên và có thể nạp để bù nợ.
+            # Các thao tác chi tiêu ở bot tổng không được tự tạo thêm nợ.
+            if new_value < 0 and not (field_name == 'cash' and amount > 0):
                 raise ValueError(f"{field_name} không thể âm")
 
         setattr(user, field_name, new_value)
@@ -180,7 +182,7 @@ class UserService:
         user = self.get_user(user_id)
         if not user:
             raise ValueError(f"User {user_id} không tồn tại")
-        if value < 0:
+        if value < 0 and field_name != 'cash':
             raise ValueError(f"{field_name} không thể âm")
 
         self.db.update('users',
