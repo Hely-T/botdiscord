@@ -42,9 +42,12 @@ Trong docs dùng `{prefix}` để đại diện cho prefix hiện tại.
   - Bật/tắt cho người khác thêm note vào danh sách của bạn.
   - Có thể viết tắt `pb` hoặc `prv`.
 - `{prefix}note public|private @user`
-  - Admin hoặc role có quyền `note` bật/tắt quyền nhận note của người khác.
+  - Admin hoặc role có quyền `note public` hoặc `note private` bật/tắt quyền nhận note của người khác.
+  - Cấp quyền riêng bằng `addrole @role note public` hoặc `addrole @role note private`.
 - `{prefix}note status [@user]`
   - Kiểm tra note đang public hay private.
+- `{prefix}note @user`
+  - Xem note của user đó nếu họ public hoặc bạn có quyền `note`; private sẽ báo không có quyền truy cập.
 - `{prefix}note @user <nội dung>`
   - Thêm note vào danh sách người khác nếu họ public, hoặc bạn là admin/role có quyền `note`.
 - `{prefix}note @user txt`

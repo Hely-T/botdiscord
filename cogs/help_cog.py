@@ -714,9 +714,10 @@ class HelpView:
                 value=(
                     "`note` xem danh sách note của bạn bằng text thường.\n"
                     "`note <nội dung> <số tiền>` thêm note kèm tiền, ví dụ `note mua đồ 100k`.\n"
+                    "`note @user` xem note của user đó nếu public hoặc bạn có quyền `note`.\n"
                     "`note @user <nội dung>` thêm note vào người khác nếu họ public hoặc bạn có quyền `note`.\n"
                     "`note public/private` hoặc `note pb/prv` bật/tắt cho người khác note vào bạn.\n"
-                    "`note public/private @user` admin hoặc role `note` bật/tắt cho người khác.\n"
+                    "`note public/private @user` admin hoặc role `note public`/`note private` bật/tắt cho người khác.\n"
                     "`note @user txt` mở popup nhập tiêu đề và nội dung dài.\n"
                     "`note tiêu đề [file nội dung dài]` lưu dạng TXT có dấu `{fix}`.\n"
                     "`note view [@user] 2` xem riêng note có nút phóng to/thu gọn.\n"
