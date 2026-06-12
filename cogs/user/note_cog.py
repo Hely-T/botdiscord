@@ -6,27 +6,169 @@ import discord
 from discord.ext import commands
 
 from cogs.admin_command_utils import format_vnd, parse_vnd_amount
+from services.admin_service import AdminService
 from services.note_service import NoteService
+from services.role_permission_service import RolePermissionService
 from utils import append_discord_timestamp
+
+
+class NoteTextModal(discord.ui.Modal):
+    def __init__(
+        self,
+        cog: "NoteCog",
+        requester_id: int,
+        target_id: int,
+        target_name: str,
+        *,
+        position: int | None = None,
+        title_value: str = "",
+        content_value: str = "",
+    ):
+        super().__init__(title="Note TXT", timeout=300)
+        self.cog = cog
+        self.requester_id = requester_id
+        self.target_id = target_id
+        self.target_name = target_name
+        self.position = position
+        self.title_input = discord.ui.TextInput(
+            label="Tiêu đề",
+            required=False,
+            max_length=120,
+            default=title_value[:120],
+        )
+        self.content_input = discord.ui.TextInput(
+            label="Nội dung",
+            style=discord.TextStyle.paragraph,
+            required=True,
+            max_length=4000,
+            default=content_value[:4000],
+        )
+        self.add_item(self.title_input)
+        self.add_item(self.content_input)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        if interaction.user.id != self.requester_id:
+            await interaction.response.send_message("❌ Popup này không dành cho bạn.", ephemeral=True)
+            return
+        title = str(self.title_input.value or "").strip()
+        content = str(self.content_input.value or "").strip()
+        if not content:
+            await interaction.response.send_message("❌ Nội dung note không được để trống.", ephemeral=True)
+            return
+        if self.position is None:
+            created = self.cog.service.add_note(
+                interaction.guild.id if interaction.guild else None,
+                self.target_id,
+                content,
+                author_user_id=interaction.user.id,
+                author_name=getattr(interaction.user, "display_name", str(interaction.user)),
+                title=title,
+                kind="txt",
+            )
+            notes = self.cog.service.list_notes(interaction.guild.id if interaction.guild else None, self.target_id)
+            position = len(notes)
+            embed = self.cog._build_single_note_embed(created, position, self.target_name, compact=True)
+            await interaction.response.send_message(
+                embed=embed,
+                view=NoteContentView(embed, self.cog._build_single_note_embed(created, position, self.target_name, compact=False)),
+                ephemeral=True,
+            )
+            return
+
+        updated = self.cog.service.update_note_at(
+            interaction.guild.id if interaction.guild else None,
+            self.target_id,
+            self.position,
+            content,
+            title=title,
+            kind="txt",
+        )
+        embed = self.cog._build_single_note_embed(updated, self.position, self.target_name, compact=True)
+        await interaction.response.send_message(
+            embed=embed,
+            view=NoteContentView(embed, self.cog._build_single_note_embed(updated, self.position, self.target_name, compact=False)),
+            ephemeral=True,
+        )
+
+
+class NoteModalLaunchView(discord.ui.View):
+    def __init__(
+        self,
+        cog: "NoteCog",
+        requester_id: int,
+        target_id: int,
+        target_name: str,
+        *,
+        position: int | None = None,
+        title_value: str = "",
+        content_value: str = "",
+    ):
+        super().__init__(timeout=300)
+        self.cog = cog
+        self.requester_id = requester_id
+        self.target_id = target_id
+        self.target_name = target_name
+        self.position = position
+        self.title_value = title_value
+        self.content_value = content_value
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if interaction.user.id == self.requester_id:
+            return True
+        await interaction.response.send_message("❌ Nút này không dành cho bạn.", ephemeral=True)
+        return False
+
+    @discord.ui.button(label="Mở popup note TXT", style=discord.ButtonStyle.primary)
+    async def open_modal(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(
+            NoteTextModal(
+                self.cog,
+                self.requester_id,
+                self.target_id,
+                self.target_name,
+                position=self.position,
+                title_value=self.title_value,
+                content_value=self.content_value,
+            )
+        )
+
+
+class NoteContentView(discord.ui.View):
+    def __init__(self, compact_embed: discord.Embed, full_embed: discord.Embed):
+        super().__init__(timeout=300)
+        self.compact_embed = compact_embed
+        self.full_embed = full_embed
+        self.expanded = False
+
+    @discord.ui.button(label="Phóng to", style=discord.ButtonStyle.secondary)
+    async def toggle(self, interaction: discord.Interaction, button: discord.ui.Button):
+        self.expanded = not self.expanded
+        button.label = "Thu gọn" if self.expanded else "Phóng to"
+        await interaction.response.edit_message(embed=self.full_embed if self.expanded else self.compact_embed, view=self)
 
 
 class NoteCog(commands.Cog):
     DELETE_ACTIONS = {"d", "del", "delete", "rm", "remove", "xoa", "xóa"}
+    EDIT_ACTIONS = {"e", "edit", "sua", "sửa"}
+    PUBLIC_ACTIONS = {"public", "pb"}
+    PRIVATE_ACTIONS = {"private", "prv"}
+    STATUS_ACTIONS = {"status", "st", "check", "kiemtra", "kiểmtra"}
+    VIEW_ACTIONS = {"view", "v", "show", "xem"}
     ADJUST_PATTERN = re.compile(r"^(?P<index>\d+)\s*(?P<sign>[+-])\s*(?P<amount>.+)$")
+    FILE_PATTERN = re.compile(r"^(?P<title>.+?)\s*\[file\s+(?P<content>.+)\]\s*$", re.IGNORECASE | re.DOTALL)
 
     def __init__(self, bot):
         self.bot = bot
         self.service = NoteService()
+        self.admins = AdminService()
+        self.role_permissions = RolePermissionService()
+
+    def cog_unload(self):
+        self.service.close()
 
     @staticmethod
     def _guild_id(ctx) -> int | None:
         return ctx.guild.id if ctx.guild else None
-
-    @staticmethod
-    def _format_amount(amount: int | None) -> str:
-        if amount is None:
-            return "`Không ghi tiền`"
-        return f"`{format_vnd(amount)} VNĐ`"
 
     @staticmethod
     def _format_amount_plain(amount: int | None) -> str:
@@ -34,15 +176,56 @@ class NoteCog(commands.Cog):
             return ""
         return f" {format_vnd(amount)} VNĐ"
 
-    def _format_notes_plain(self, ctx) -> str:
-        notes = self.service.list_notes(self._guild_id(ctx), ctx.author.id)
-        if not notes:
-            return "Bạn chưa có note nào."
-        lines = [
-            f"{index}. {note['content']}{self._format_amount_plain(note['amount'])}"
-            for index, note in enumerate(notes, 1)
-        ]
-        return "\n".join(lines)
+    @staticmethod
+    def _shorten(value: str, limit: int = 180) -> str:
+        text = str(value or "").strip()
+        if len(text) <= limit:
+            return text
+        return text[: limit - 3].rstrip() + "..."
+
+    def _can_manage_notes(self, ctx) -> bool:
+        if ctx.guild is None:
+            return self.admins.is_admin(ctx.author.id)
+        if self.admins.is_admin(ctx.author.id):
+            return True
+        role_ids = [role.id for role in ctx.author.roles if role.name != "@everyone"]
+        return self.role_permissions.user_can_use(ctx.guild.id, role_ids, "note")
+
+    async def _target_from_leading_mention(self, ctx, raw: str) -> tuple[discord.Member | None, str]:
+        text = (raw or "").strip()
+        match = re.match(r"^<@!?(\d+)>\s*(.*)$", text, flags=re.DOTALL)
+        if not match:
+            return None, text
+        user_id = int(match.group(1))
+        member = ctx.guild.get_member(user_id) if ctx.guild else None
+        if member is None and ctx.guild:
+            try:
+                member = await ctx.guild.fetch_member(user_id)
+            except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+                member = None
+        return member, match.group(2).strip()
+
+    @classmethod
+    def _parse_note_content_and_amount(cls, raw: str) -> tuple[str, int | None, str, str]:
+        text = raw.strip()
+        if not text:
+            raise ValueError("Hãy nhập nội dung note.")
+
+        file_match = cls.FILE_PATTERN.match(text)
+        if file_match:
+            return file_match.group("content").strip(), None, file_match.group("title").strip(), "txt"
+
+        parts = text.rsplit(maxsplit=1)
+        if len(parts) == 2 and cls._looks_like_amount_token(parts[1]):
+            try:
+                amount = parse_vnd_amount(parts[1])
+            except ValueError:
+                return text, None, "", "plain"
+            content = parts[0].strip()
+            if content:
+                return content, amount, "", "plain"
+
+        return text, None, "", "plain"
 
     @staticmethod
     def _looks_like_amount_token(token: str) -> bool:
@@ -50,24 +233,6 @@ class NoteCog(commands.Cog):
         if re.search(r"(vnđ|vnd|đ|d|[kmb]|[.,])", cleaned):
             return True
         return bool(re.fullmatch(r"\d{4,}", cleaned))
-
-    @classmethod
-    def _parse_note_content_and_amount(cls, raw: str) -> tuple[str, int | None]:
-        text = raw.strip()
-        if not text:
-            raise ValueError("Hãy nhập nội dung note.")
-
-        parts = text.rsplit(maxsplit=1)
-        if len(parts) == 2 and cls._looks_like_amount_token(parts[1]):
-            try:
-                amount = parse_vnd_amount(parts[1])
-            except ValueError:
-                return text, None
-            content = parts[0].strip()
-            if content:
-                return content, amount
-
-        return text, None
 
     @staticmethod
     def _parse_positions(raw: str) -> list[int]:
@@ -82,25 +247,194 @@ class NoteCog(commands.Cog):
             raise ValueError("Hãy nhập số thứ tự note cần xoá.")
         return positions
 
-    def _build_notes_embed(self, ctx, title: str = "🗒️ Note") -> discord.Embed:
-        notes = self.service.list_notes(self._guild_id(ctx), ctx.author.id)
+    def _note_label(self, note: dict, position: int) -> str:
+        title = str(note.get("title") or "").strip()
+        content = str(note.get("content") or "").strip()
+        marker = " {fix}" if note.get("kind") == "txt" else ""
+        head = title if title else content
+        amount = self._format_amount_plain(note.get("amount"))
+        author = ""
+        if int(note.get("author_user_id") or note.get("user_id") or 0) != int(note.get("user_id") or 0):
+            author_name = note.get("author_name") or f"User {note.get('author_user_id')}"
+            author = f" · bởi {author_name}"
+        return f"{position}. {self._shorten(head, 170)}{marker}{amount}{author}"
+
+    def _format_notes_plain(self, ctx, member: discord.Member | None = None) -> str:
+        target = member or ctx.author
+        notes = self.service.list_notes(self._guild_id(ctx), target.id)
+        if not notes:
+            return f"{target.display_name} chưa có note nào."
+        return "\n".join(self._note_label(note, index) for index, note in enumerate(notes, 1))
+
+    def _build_single_note_embed(self, note: dict | None, position: int, target_name: str, *, compact: bool) -> discord.Embed:
         embed = discord.Embed(color=discord.Color.from_rgb(255, 184, 90))
-        embed.set_author(name=ctx.author.display_name, icon_url=ctx.author.display_avatar.url)
+        if not note:
+            embed.title = "🗒️ Note"
+            embed.description = "Không tìm thấy note."
+            return embed
+        title = str(note.get("title") or "").strip()
+        content = str(note.get("content") or "").strip()
+        embed.title = f"🗒️ Note #{position} của {target_name}"
+        if title:
+            embed.add_field(name="Tiêu đề", value=title[:1024], inline=False)
+        embed.description = self._shorten(content, 350) if compact else content[:4096]
+        footer = f"TXT {{fix}}" if note.get("kind") == "txt" else "Note"
+        embed.set_footer(text=footer)
+        append_discord_timestamp(embed)
+        return embed
+
+    def _build_notes_embed(self, ctx, member: discord.Member | None = None, title: str = "🗒️ Note") -> discord.Embed:
+        target = member or ctx.author
+        notes = self.service.list_notes(self._guild_id(ctx), target.id)
+        embed = discord.Embed(color=discord.Color.from_rgb(255, 184, 90))
+        embed.set_author(name=target.display_name, icon_url=target.display_avatar.url)
+        public_text = "public" if self.service.is_public(self._guild_id(ctx), target.id) else "private"
         embed.title = title
 
         if not notes:
-            embed.description = "Bạn chưa có note nào."
+            embed.description = f"{target.display_name} chưa có note nào.\nQuyền nhận note: `{public_text}`"
             return embed
 
-        lines = [
-            f"{index}. {note['content']}{self._format_amount_plain(note['amount'])}"
-            for index, note in enumerate(notes[:50], 1)
-        ]
-        embed.description = "\n".join(lines)
-        if len(notes) > 50:
-            embed.set_footer(text=f"Đang hiện 50/{len(notes)} note")
+        embed.description = "\n".join(self._note_label(note, index) for index, note in enumerate(notes[:50], 1))
+        embed.set_footer(text=f"Quyền nhận note: {public_text}" + (f" · Đang hiện 50/{len(notes)} note" if len(notes) > 50 else ""))
         append_discord_timestamp(embed)
         return embed
+
+    async def _handle_visibility(self, ctx, action: str, rest: str):
+        member, remaining = await self._target_from_leading_mention(ctx, rest)
+        target = member or ctx.author
+        if target.id != ctx.author.id and not self._can_manage_notes(ctx):
+            await ctx.reply("❌ Chỉ admin hoặc role có quyền `note` mới đổi public/private cho người khác.", mention_author=False)
+            return
+        is_public = action in self.PUBLIC_ACTIONS
+        self.service.set_public(self._guild_id(ctx), target.id, is_public)
+        await ctx.reply(f"✅ Note của {target.mention} đã chuyển sang `{action}`.", mention_author=False)
+
+    async def _handle_status(self, ctx, rest: str):
+        member, remaining = await self._target_from_leading_mention(ctx, rest)
+        target = member or ctx.author
+        if target.id != ctx.author.id and not self._can_manage_notes(ctx):
+            await ctx.reply("❌ Bạn không có quyền xem trạng thái note của người khác.", mention_author=False)
+            return
+        public_text = "public" if self.service.is_public(self._guild_id(ctx), target.id) else "private"
+        await ctx.reply(f"🗒️ Note của {target.mention} đang `{public_text}`.", mention_author=False)
+
+    async def _handle_delete(self, ctx, rest: str):
+        member, remaining = await self._target_from_leading_mention(ctx, rest)
+        target = member or ctx.author
+        if target.id != ctx.author.id and not self._can_manage_notes(ctx):
+            await ctx.reply("❌ Chỉ admin hoặc role có quyền `note` mới xoá note của người khác.", mention_author=False)
+            return
+        try:
+            positions = self._parse_positions(remaining if member else rest)
+        except ValueError as exc:
+            await ctx.reply(f"❌ Xoá note lỗi: {exc}", mention_author=False)
+            return
+        deleted = self.service.delete_positions(self._guild_id(ctx), target.id, positions)
+        if not deleted:
+            await ctx.reply("❌ Không có note nào khớp số thứ tự bạn nhập.", mention_author=False)
+            return
+        deleted_lines = [f"#{row['position']} {row['title'] or row['content']}" for row in deleted]
+        await ctx.reply(f"Đã xoá note {', '.join(deleted_lines)}.", mention_author=False)
+
+    async def _handle_edit(self, ctx, rest: str):
+        member, remaining = await self._target_from_leading_mention(ctx, rest)
+        target = member or ctx.author
+        raw = remaining if member else rest
+        parts = raw.split(maxsplit=1)
+        if not parts or not parts[0].isdigit():
+            await ctx.reply("❌ Dùng: `note edit [@user] <số> <nội dung|txt>`.", mention_author=False)
+            return
+        position = int(parts[0])
+        new_content = parts[1].strip() if len(parts) > 1 else ""
+        note = self.service.get_note_at(self._guild_id(ctx), target.id, position)
+        if not note:
+            await ctx.reply(f"❌ Không có note số {position}.", mention_author=False)
+            return
+        author_id = int(note.get("author_user_id") or target.id)
+        can_edit = target.id == ctx.author.id or author_id == ctx.author.id or self._can_manage_notes(ctx)
+        if not can_edit:
+            await ctx.reply("❌ Bạn chỉ sửa được note của mình thêm vào, trừ khi có quyền `note`.", mention_author=False)
+            return
+        if not new_content or new_content.lower() == "txt" or note.get("kind") == "txt" and new_content.lower() in {"popup", "modal"}:
+            await ctx.reply(
+                f"Bấm nút để sửa note TXT #{position} của {target.mention}.",
+                mention_author=False,
+                view=NoteModalLaunchView(
+                    self,
+                    ctx.author.id,
+                    target.id,
+                    target.display_name,
+                    position=position,
+                    title_value=note.get("title") or "",
+                    content_value=note.get("content") or "",
+                ),
+            )
+            return
+        try:
+            content, amount, title, kind = self._parse_note_content_and_amount(new_content)
+        except ValueError as exc:
+            await ctx.reply(f"❌ Sửa note lỗi: {exc}", mention_author=False)
+            return
+        updated = self.service.update_note_at(self._guild_id(ctx), target.id, position, content, amount, title=title, kind=kind)
+        await ctx.reply(f"✅ Đã sửa note #{position} của {target.mention}: {updated['title'] or updated['content']}", mention_author=False)
+
+    async def _handle_view(self, ctx, rest: str):
+        member, remaining = await self._target_from_leading_mention(ctx, rest)
+        target = member or ctx.author
+        raw = remaining if member else rest
+        if not raw.strip().isdigit():
+            await ctx.reply("❌ Dùng: `note view [@user] <số>`.", mention_author=False)
+            return
+        if target.id != ctx.author.id and not (self.service.is_public(self._guild_id(ctx), target.id) or self._can_manage_notes(ctx)):
+            await ctx.reply("❌ Note của người này đang private.", mention_author=False)
+            return
+        position = int(raw.strip())
+        note = self.service.get_note_at(self._guild_id(ctx), target.id, position)
+        if not note:
+            await ctx.reply(f"❌ Không có note số {position}.", mention_author=False)
+            return
+        compact = self._build_single_note_embed(note, position, target.display_name, compact=True)
+        full = self._build_single_note_embed(note, position, target.display_name, compact=False)
+        await ctx.reply(embed=compact, view=NoteContentView(compact, full), mention_author=False)
+
+    async def _handle_add(self, ctx, stripped: str):
+        target, rest = await self._target_from_leading_mention(ctx, stripped)
+        target = target or ctx.author
+        raw_content = rest if target.id != ctx.author.id else stripped
+        if target.id != ctx.author.id and not self.service.is_public(self._guild_id(ctx), target.id) and not self._can_manage_notes(ctx):
+            await ctx.reply("❌ Người này đang để note `private`. Chỉ admin hoặc role có quyền `note` mới thêm được.", mention_author=False)
+            return
+        if raw_content.strip().lower() == "txt":
+            await ctx.reply(
+                f"Bấm nút để nhập note TXT cho {target.mention}.",
+                mention_author=False,
+                view=NoteModalLaunchView(self, ctx.author.id, target.id, target.display_name),
+            )
+            return
+        try:
+            note_content, amount, title, kind = self._parse_note_content_and_amount(raw_content)
+        except ValueError as exc:
+            await ctx.reply(f"❌ Thêm note lỗi: {exc}", mention_author=False)
+            return
+        created = self.service.add_note(
+            self._guild_id(ctx),
+            target.id,
+            note_content,
+            amount,
+            author_user_id=ctx.author.id,
+            author_name=ctx.author.display_name,
+            title=title,
+            kind=kind,
+        )
+        notes = self.service.list_notes(self._guild_id(ctx), target.id)
+        position = len(notes)
+        if kind == "txt":
+            compact = self._build_single_note_embed(created, position, target.display_name, compact=True)
+            full = self._build_single_note_embed(created, position, target.display_name, compact=False)
+            await ctx.reply(embed=compact, view=NoteContentView(compact, full), mention_author=False)
+            return
+        await ctx.reply(f"Đã thêm note #{position} cho {target.mention}: {created['content']}{self._format_amount_plain(amount)}.", mention_author=False)
 
     @commands.command(name="note")
     async def note(self, ctx, *, content: str = None):
@@ -112,18 +446,20 @@ class NoteCog(commands.Cog):
         action, _, rest = stripped.partition(" ")
         lowered_action = action.lower()
 
+        if lowered_action in self.PUBLIC_ACTIONS or lowered_action in self.PRIVATE_ACTIONS:
+            await self._handle_visibility(ctx, lowered_action, rest)
+            return
+        if lowered_action in self.STATUS_ACTIONS:
+            await self._handle_status(ctx, rest)
+            return
+        if lowered_action in self.VIEW_ACTIONS:
+            await self._handle_view(ctx, rest)
+            return
         if lowered_action in self.DELETE_ACTIONS:
-            try:
-                positions = self._parse_positions(rest)
-            except ValueError as exc:
-                await ctx.reply(f"❌ Xoá note lỗi: {exc}", mention_author=False)
-                return
-            deleted = self.service.delete_positions(self._guild_id(ctx), ctx.author.id, positions)
-            if not deleted:
-                await ctx.reply("❌ Không có note nào khớp số thứ tự bạn nhập.", mention_author=False)
-                return
-            deleted_lines = [f"#{row['position']} {row['content']}{self._format_amount_plain(row['amount'])}" for row in deleted]
-            await ctx.reply(f"Đã xoá note {', '.join(deleted_lines)}.", mention_author=False)
+            await self._handle_delete(ctx, rest)
+            return
+        if lowered_action in self.EDIT_ACTIONS:
+            await self._handle_edit(ctx, rest)
             return
 
         adjust_match = self.ADJUST_PATTERN.match(stripped)
@@ -143,21 +479,14 @@ class NoteCog(commands.Cog):
             await ctx.reply(f"Đã sửa note #{position} {updated['content']}{self._format_amount_plain(updated['amount'])}.", mention_author=False)
             return
 
-        try:
-            note_content, amount = self._parse_note_content_and_amount(stripped)
-        except ValueError as exc:
-            await ctx.reply(f"❌ Thêm note lỗi: {exc}", mention_author=False)
-            return
-
-        created = self.service.add_note(self._guild_id(ctx), ctx.author.id, note_content, amount)
-        notes = self.service.list_notes(self._guild_id(ctx), ctx.author.id)
-        position = len(notes)
-        note_text = created["content"] if created else note_content
-        await ctx.reply(f"Đã thêm note #{position} {note_text}{self._format_amount_plain(amount)}.", mention_author=False)
+        await self._handle_add(ctx, stripped)
 
     @commands.command(name="notes")
-    async def notes(self, ctx):
-        await ctx.reply(embed=self._build_notes_embed(ctx, "🗒️ Note Của Bạn"), mention_author=False)
+    async def notes(self, ctx, member: discord.Member | None = None):
+        if member and member.id != ctx.author.id and not (self.service.is_public(self._guild_id(ctx), member.id) or self._can_manage_notes(ctx)):
+            await ctx.reply("❌ Note của người này đang private.", mention_author=False)
+            return
+        await ctx.reply(embed=self._build_notes_embed(ctx, member, "🗒️ Note"), mention_author=False)
 
 
 async def setup(bot):
