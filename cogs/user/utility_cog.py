@@ -47,10 +47,36 @@ class UserUtilityCog(commands.Cog):
         )
 
     @commands.command(name="random", aliases=["rand", "rd"])
-    async def random_number(self, ctx: commands.Context, maximum: int | None = None):
-        if maximum is None:
+    async def random_number(self, ctx: commands.Context, *, content: str = ""):
+        parts = content.strip().split()
+        if parts and parts[0].lower() == "set":
+            if ctx.guild is not None:
+                await ctx.reply("❌ Lệnh `random set` chỉ dùng trong DM với bot.", mention_author=False)
+                return
+            if not self.admin_service.is_hard_admin(ctx.author.id):
+                await ctx.reply("❌ Chỉ hard admin mới dùng được lệnh này.", mention_author=False)
+                return
+            if len(parts) != 3 or not parts[1].isdigit() or not parts[2].isdigit():
+                await ctx.reply("❌ Dùng trong DM: `random set <user_id> <số>`.", mention_author=False)
+                return
+            user_id = int(parts[1])
+            result = int(parts[2])
+            if result < 1:
+                await ctx.reply("❌ Kết quả chỉ định phải từ 1 trở lên.", mention_author=False)
+                return
+            if not self.afk_service.set_random_override(user_id, result, ctx.author.id):
+                await ctx.reply("❌ Không thể lưu kết quả chỉ định.", mention_author=False)
+                return
+            await ctx.reply(
+                f"✅ Đã đặt kết quả kế tiếp của user `{user_id}` thành `{result:,}`. Thiết lập dùng một lần.",
+                mention_author=False,
+            )
+            return
+
+        if len(parts) != 1 or not parts[0].isdigit():
             await ctx.reply("❌ Dùng: `random <số lớn nhất>`.", mention_author=False)
             return
+        maximum = int(parts[0])
         if maximum < 1:
             await ctx.reply("❌ Số lớn nhất phải từ 1 trở lên.", mention_author=False)
             return
@@ -68,32 +94,6 @@ class UserUtilityCog(commands.Cog):
             result = random.randint(1, maximum)
         await ctx.reply(
             f"✅ | Số ngẫu nhiên từ **1-{maximum:,}** là **{result:,}**.",
-            mention_author=False,
-        )
-
-    @commands.command(name="mrandom")
-    @commands.dm_only()
-    async def managed_random(
-        self,
-        ctx: commands.Context,
-        action: str = "",
-        user_id: int | None = None,
-        result: int | None = None,
-    ):
-        if not self.admin_service.is_hard_admin(ctx.author.id):
-            await ctx.reply("❌ Chỉ hard admin mới dùng được lệnh này.", mention_author=False)
-            return
-        if action.lower() != "set" or user_id is None or result is None:
-            await ctx.reply("❌ Dùng trong DM: `mrandom set <user_id> <số>`.", mention_author=False)
-            return
-        if result < 1:
-            await ctx.reply("❌ Kết quả chỉ định phải từ 1 trở lên.", mention_author=False)
-            return
-        if not self.afk_service.set_random_override(user_id, result, ctx.author.id):
-            await ctx.reply("❌ Không thể lưu kết quả chỉ định.", mention_author=False)
-            return
-        await ctx.reply(
-            f"✅ Đã đặt kết quả kế tiếp của user `{user_id}` thành `{result:,}`. Thiết lập dùng một lần.",
             mention_author=False,
         )
 
