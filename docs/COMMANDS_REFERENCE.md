@@ -56,11 +56,12 @@ Trong docs dùng `{prefix}` để đại diện cho prefix hiện tại.
   - Lưu note dạng TXT để dùng cho giao diện/template.
   - Lần tạo đầu không có `- Fix`; sau khi sửa ít nhất một lần mới hiện `- Fix`.
 - `{prefix}note view|v [@user] <số>`
-  - Xem riêng một note với nút phóng to/thu gọn nội dung dài.
+  - Xem thành phẩm của note TXT với Markdown và emoji server đã được render.
+  - Có nút phóng to/thu gọn nội dung dài.
 - `{prefix}note edit|e [@user] <số> <nội dung>`
   - Sửa note. Người ngoài chỉ sửa được note họ đã thêm, trừ khi có quyền `note`.
 - `{prefix}note edit|e @user <số> txt`
-  - Mở popup sửa note TXT.
+  - Hiện nguyên mã nguồn đầy đủ, gồm cả ID emoji, rồi mở popup sửa note TXT.
 - `{prefix}notes [@user]`
   - Xem danh sách note bằng embed; xem người khác cần public hoặc quyền `note`.
 
