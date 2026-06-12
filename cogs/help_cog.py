@@ -719,7 +719,7 @@ class HelpView:
                     "`note public/private` hoặc `note pb/prv` bật/tắt cho người khác note vào bạn.\n"
                     "`note public/private @user` admin hoặc role `note public`/`note private` bật/tắt cho người khác.\n"
                     "`note @user txt` mở popup nhập tiêu đề và nội dung dài.\n"
-                    "`note tiêu đề [file nội dung dài]` lưu dạng TXT có dấu `{fix}`.\n"
+                    "`note tiêu đề [file nội dung dài]` lưu dạng TXT; chỉ hiện `- Fix` sau khi đã sửa.\n"
                     "`note view [@user] 2` xem riêng note có nút phóng to/thu gọn.\n"
                     "`note edit @user 2 <nội dung>` sửa note; người ngoài chỉ sửa note họ đã thêm.\n"
                     "`note edit @user 2 txt` mở popup sửa note TXT.\n"

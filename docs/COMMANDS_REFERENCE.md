@@ -53,7 +53,8 @@ Trong docs dùng `{prefix}` để đại diện cho prefix hiện tại.
 - `{prefix}note @user txt`
   - Hiện nút mở popup nhập tiêu đề và nội dung dài.
 - `{prefix}note tiêu đề [file nội dung dài]`
-  - Lưu note dạng TXT có dấu `{fix}` để nhận biết nội dung dùng cho giao diện/template.
+  - Lưu note dạng TXT để dùng cho giao diện/template.
+  - Lần tạo đầu không có `- Fix`; sau khi sửa ít nhất một lần mới hiện `- Fix`.
 - `{prefix}note view|v [@user] <số>`
   - Xem riêng một note với nút phóng to/thu gọn nội dung dài.
 - `{prefix}note edit|e [@user] <số> <nội dung>`
