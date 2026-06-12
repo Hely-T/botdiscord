@@ -58,6 +58,7 @@ Trong docs dùng `{prefix}` để đại diện cho prefix hiện tại.
 - `{prefix}note view|v [@user] <số>`
   - Xem thành phẩm của note TXT với Markdown và emoji server đã được render.
   - Có nút phóng to/thu gọn nội dung dài.
+  - Note dạng TXT có nhãn `TXT` ở đầu dòng danh sách và đầu tiêu đề để phân biệt.
 - `{prefix}note edit|e [@user] <số> <nội dung>`
   - Sửa note. Người ngoài chỉ sửa được note họ đã thêm, trừ khi có quyền `note`.
 - `{prefix}note edit|e @user <số> txt`

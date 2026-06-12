@@ -720,7 +720,7 @@ class HelpView:
                     "`note public/private @user` admin hoặc role `note public`/`note private` bật/tắt cho người khác.\n"
                     "`note @user txt` mở popup nhập tiêu đề và nội dung dài.\n"
                     "`note tiêu đề [file nội dung dài]` lưu dạng TXT; chỉ hiện `- Fix` sau khi đã sửa.\n"
-                    "`note view/v [@user] 2` xem thành phẩm TXT đã render Markdown và emoji.\n"
+                    "`note view/v [@user] 2` xem thành phẩm TXT đã render Markdown và emoji, có nút phóng to/thu gọn.\n"
                     "`note edit/e @user 2 <nội dung>` sửa note; người ngoài chỉ sửa note họ đã thêm.\n"
                     "`note edit/e @user 2 txt` xem nguyên mã nguồn rồi mở popup sửa TXT.\n"
                     "`note del 1,2` hoặc `note d 1,2` xoá note theo số thứ tự.\n"
