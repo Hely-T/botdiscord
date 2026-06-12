@@ -67,6 +67,12 @@ COMMAND_PATH_ALIASES = {
         "e": "edit",
         "edit": "edit",
     },
+    "note": {
+        "public": "public",
+        "pb": "public",
+        "private": "private",
+        "prv": "private",
+    },
 }
 
 
