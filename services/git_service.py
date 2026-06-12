@@ -1,6 +1,8 @@
 import subprocess
-import os
-from utils import log_to_file, get_timestamp
+from datetime import datetime
+
+from utils import log_to_file
+
 
 class GitUpdateService:
     """
@@ -46,26 +48,102 @@ class GitUpdateService:
             }
     
     def pull_latest(self):
-        """Pull latest code từ GitHub"""
+        """Đồng bộ code deploy với origin/main, kể cả khi remote bị force-push."""
         log_to_file(f"{self.log_prefix} Đang pull code từ GitHub...")
-        
-        result = self._run_git_command(['git', 'pull', 'origin', 'main'])
-        
-        if result['success']:
-            log_to_file(f"{self.log_prefix} ✅ Pull thành công!")
-            return {
-                'success': True,
-                'message': f"✅ Pull thành công!\n{result['stdout']}",
-                'changed_files': self._get_changed_files()
-            }
-        else:
-            error_msg = result['stderr'] or result['stdout']
-            log_to_file(f"{self.log_prefix} ❌ Pull thất bại: {error_msg}")
+
+        status = self._run_git_command(['git', 'status', '--porcelain'])
+        if not status['success']:
+            return self._pull_error(status)
+        if status['stdout']:
             return {
                 'success': False,
-                'message': f"❌ Pull thất bại!\n{error_msg}",
-                'changed_files': []
+                'message': (
+                    "❌ VPS đang có file chưa commit nên bot không tự ghi đè.\n"
+                    f"```\n{status['stdout'][:1500]}\n```"
+                ),
+                'changed_files': [],
             }
+
+        current = self._run_git_command(['git', 'rev-parse', 'HEAD'])
+        if not current['success']:
+            return self._pull_error(current)
+        old_head = current['stdout']
+
+        fetched = self._run_git_command(['git', 'fetch', 'origin', 'main'])
+        if not fetched['success']:
+            return self._pull_error(fetched)
+
+        remote = self._run_git_command(['git', 'rev-parse', '--verify', 'origin/main'])
+        if not remote['success']:
+            return self._pull_error(remote)
+        new_head = remote['stdout']
+
+        if old_head == new_head:
+            return {
+                'success': True,
+                'message': "✅ Code đã ở phiên bản mới nhất.",
+                'changed_files': [],
+            }
+
+        backup_branch = None
+        ancestor = self._run_git_command(
+            ['git', 'merge-base', '--is-ancestor', old_head, new_head]
+        )
+        if not ancestor['success']:
+            backup_branch = self._create_backup_branch(old_head)
+            if not backup_branch:
+                return {
+                    'success': False,
+                    'message': "❌ Không tạo được nhánh backup trước khi đồng bộ lịch sử.",
+                    'changed_files': [],
+                }
+
+        changed_files = self._get_changed_files(old_head, new_head)
+        reset = self._run_git_command(['git', 'reset', '--hard', 'origin/main'])
+        if not reset['success']:
+            return self._pull_error(reset)
+
+        short_head = new_head[:7]
+        details = [f"✅ Đã cập nhật VPS tới `{short_head}`."]
+        if backup_branch:
+            details.append(
+                f"Remote đã viết lại lịch sử; commit cũ được giữ tại `{backup_branch}`."
+            )
+        log_to_file(f"{self.log_prefix} ✅ Pull thành công: {old_head[:7]} -> {short_head}")
+        return {
+            'success': True,
+            'message': "\n".join(details),
+            'changed_files': changed_files,
+        }
+
+    def _pull_error(self, result):
+        error_msg = result['stderr'] or result['stdout'] or 'Git command failed'
+        log_to_file(f"{self.log_prefix} ❌ Pull thất bại: {error_msg}")
+        return {
+            'success': False,
+            'message': f"❌ Pull thất bại!\n{error_msg}",
+            'changed_files': [],
+        }
+
+    def _create_backup_branch(self, commit_hash):
+        timestamp = datetime.now().strftime('%Y%m%d-%H%M%S')
+        base_name = f"backup/gitpull-{timestamp}-{commit_hash[:7]}"
+        branch_name = base_name
+        suffix = 2
+        while self._run_git_command(
+            ['git', 'show-ref', '--verify', '--quiet', f"refs/heads/{branch_name}"]
+        )['success']:
+            branch_name = f"{base_name}-{suffix}"
+            suffix += 1
+
+        result = self._run_git_command(['git', 'branch', branch_name, commit_hash])
+        if not result['success']:
+            error_msg = result['stderr'] or result['stdout'] or 'Không rõ lỗi'
+            log_to_file(
+                f"{self.log_prefix} ❌ Không tạo được branch backup: {error_msg}"
+            )
+            return None
+        return branch_name
     
     def get_status(self):
         """Kiểm tra trạng thái git"""
@@ -99,9 +177,9 @@ class GitUpdateService:
                 'commit': None
             }
     
-    def _get_changed_files(self):
+    def _get_changed_files(self, old_head='HEAD@{1}', new_head='HEAD'):
         """Lấy danh sách files đã thay đổi"""
-        result = self._run_git_command(['git', 'diff', '--name-only', 'HEAD@{1}', 'HEAD'])
+        result = self._run_git_command(['git', 'diff', '--name-only', old_head, new_head])
         
         if result['success']:
             files = result['stdout'].split('\n') if result['stdout'] else []
