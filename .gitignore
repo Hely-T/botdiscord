@@ -5,7 +5,7 @@
 venv/
 
 # Database
-database/*.db
+database/
 
 # Logs
 logs/

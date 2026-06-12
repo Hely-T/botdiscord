@@ -15,6 +15,14 @@ class GitUpdateService:
     def __init__(self, repo_path='.'):
         self.repo_path = repo_path
         self.log_prefix = "[GIT_SERVICE]"
+
+    RUNTIME_PATH_PREFIXES = (
+        "database/",
+        "logs/",
+        "__pycache__/",
+        ".venv/",
+        "venv/",
+    )
     
     def _run_git_command(self, command):
         """Chạy lệnh git và trả về kết quả"""
@@ -51,15 +59,18 @@ class GitUpdateService:
         """Đồng bộ code deploy với origin/main, kể cả khi remote bị force-push."""
         log_to_file(f"{self.log_prefix} Đang pull code từ GitHub...")
 
-        status = self._run_git_command(['git', 'status', '--porcelain'])
+        status = self._run_git_command(
+            ['git', 'status', '--porcelain', '--untracked-files=all']
+        )
         if not status['success']:
             return self._pull_error(status)
-        if status['stdout']:
+        blocking_changes = self._blocking_worktree_changes(status['stdout'])
+        if blocking_changes:
             return {
                 'success': False,
                 'message': (
                     "❌ VPS đang có file chưa commit nên bot không tự ghi đè.\n"
-                    f"```\n{status['stdout'][:1500]}\n```"
+                    f"```\n{blocking_changes[:1500]}\n```"
                 ),
                 'changed_files': [],
             }
@@ -115,6 +126,25 @@ class GitUpdateService:
             'message': "\n".join(details),
             'changed_files': changed_files,
         }
+
+    @classmethod
+    def _blocking_worktree_changes(cls, porcelain_output):
+        blocking = []
+        for line in str(porcelain_output or '').splitlines():
+            if not line:
+                continue
+            path = line[3:].strip().strip('"').replace("\\", "/")
+            if " -> " in path:
+                path = path.split(" -> ", 1)[1].strip().strip('"')
+            if any(
+                path == prefix.rstrip("/") or path.startswith(prefix)
+                for prefix in cls.RUNTIME_PATH_PREFIXES
+            ):
+                continue
+            if "/__pycache__/" in f"/{path}" or path.endswith((".pyc", ".pyo")):
+                continue
+            blocking.append(line)
+        return "\n".join(blocking)
 
     def _pull_error(self, result):
         error_msg = result['stderr'] or result['stdout'] or 'Git command failed'
