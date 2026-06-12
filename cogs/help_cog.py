@@ -124,6 +124,7 @@ HELP_CATEGORIES = [
             {"name": "lock", "description": "Khoá chat tại kênh hiện tại hoặc kênh được tag", "usage": "[#channel]", "aliases": []},
             {"name": "mute", "description": "Mute một thành viên", "usage": "@user|username|id [duration] [reason]", "aliases": []},
             {"name": "prefix", "description": "Đổi prefix của bot", "usage": "<value>", "aliases": []},
+            {"name": "rate", "description": "Xem hoặc đặt tỷ giá cash VND / OWO casino", "usage": "[cash <hệ số> owo <hệ số>]", "aliases": []},
             {"name": "reload", "description": "Reload một cog, một catalog hoặc tất cả", "usage": "[catalog|module]", "aliases": []},
             {"name": "reroll", "description": "Quay lại winner giveaway theo ID", "usage": "<giveaway_id>", "aliases": []},
             {"name": "gareroll", "description": "Quay lại winner giveaway theo ID", "usage": "<giveaway_id>", "aliases": []},
@@ -458,6 +459,17 @@ class HelpView:
                 ),
                 inline=False,
             )
+        if command["name"] == "rate":
+            embed.add_field(
+                name="Cách dùng",
+                value=(
+                    f"`{prefix}rate` - xem tỷ giá cash VND / OWO hiện tại\n"
+                    f"`{prefix}rate cash 1 owo 1` - đặt 1.000 VND = 1.000.000 OWO\n"
+                    f"`{prefix}rate cash 1 owo 0,5` - đặt 1.000 VND = 500.000 OWO\n"
+                    "Chỉ bot admin được dùng. Khi đổi tỷ giá, casino sẽ tự đồng bộ lại toàn bộ ví."
+                ),
+                inline=False,
+            )
         if command["name"] == "points":
             embed.add_field(
                 name="Cách dùng",
@@ -720,7 +732,7 @@ class HelpView:
                     "`note public/private @user` admin hoặc role `note public`/`note private` bật/tắt cho người khác.\n"
                     "`note @user txt` mở popup nhập tiêu đề và nội dung dài.\n"
                     "`note tiêu đề [file nội dung dài]` lưu dạng TXT; chỉ hiện `- Fix` sau khi đã sửa.\n"
-                    "`note view/v [@user] 2` xem thành phẩm TXT đã render Markdown và emoji, có nút phóng to/thu gọn.\n"
+                    "`note view/v [@user] 2` xem thành phẩm TXT; bấm Phóng to để xem đầy đủ, Thu gọn để quay lại bản ngắn.\n"
                     "`note edit/e @user 2 <nội dung>` sửa note; người ngoài chỉ sửa note họ đã thêm.\n"
                     "`note edit/e @user 2 txt` xem nguyên mã nguồn rồi mở popup sửa TXT.\n"
                     "`note del 1,2` hoặc `note d 1,2` xoá note theo số thứ tự.\n"

@@ -57,7 +57,7 @@ Trong docs dùng `{prefix}` để đại diện cho prefix hiện tại.
   - Lần tạo đầu không có `- Fix`; sau khi sửa ít nhất một lần mới hiện `- Fix`.
 - `{prefix}note view|v [@user] <số>`
   - Xem thành phẩm của note TXT với Markdown và emoji server đã được render.
-  - Có nút phóng to/thu gọn nội dung dài.
+  - Ban đầu nội dung dài được rút gọn; bấm `Phóng to` để xem đầy đủ và `Thu gọn` để quay lại bản ngắn.
   - Note dạng TXT có nhãn `TXT` ở đầu dòng danh sách và đầu tiêu đề để phân biệt.
 - `{prefix}note edit|e [@user] <số> <nội dung>`
   - Sửa note. Người ngoài chỉ sửa được note họ đã thêm, trừ khi có quyền `note`.
@@ -322,8 +322,16 @@ Trong docs dùng `{prefix}` để đại diện cho prefix hiện tại.
 
 ### Economy
 
+- `{prefix}rate`
+  - Xem tỷ giá đang dùng giữa cash VND của bot tổng và OWO của casino.
+  - Chỉ bot admin được dùng.
+- `{prefix}rate cash <hệ số> owo <hệ số>`
+  - Đặt tỷ giá mới, ví dụ `{prefix}rate cash 1 owo 1` tương ứng `1.000 VND = 1.000.000 OWO`.
+  - Hỗ trợ số thập phân bằng dấu chấm hoặc dấu phẩy, ví dụ `{prefix}rate cash 1 owo 0,5`.
+  - Khi đổi tỷ giá, bảng mốc đồng bộ được xóa để casino tự quy đổi lại toàn bộ user.
 - `{prefix}cash a|r|e @user <money>`
   - Quản trị cash theo action add/remove/edit.
+  - Cash âm do casino đồng bộ được giữ làm khoản nợ; nạp/cộng cash có thể bù dần về 0.
 - `{prefix}luong a|r|e @user <money>`
   - Quản trị lương booking theo action add/remove/edit.
 - `{prefix}star a|r|e @user <amount>`
