@@ -10,7 +10,7 @@ Trạng thái: đang phát triển, đã chuẩn hóa catalog cog, service/datab
 
 - Recursive cog loader cho `cogs/` và subfolder catalog.
 - Help menu theo category.
-- User commands: `profile`, `cash`, `naptien`, `donate`, `points`, `time`, `give`, `topusers`, `afk`, `random`, `pick`, `setname`.
+- User commands: `profile`, `cash`, `naptien`, `donate`, `points`, `time`, `give`, `topusers`, `afk`, `random`, `pick`, `setname`, `note`.
 - Booking commands: `luong`, `star`, `tinhluong`, `topbook`, `topnap`, `topgift`.
 - Role commands: `addrole`, `removerole`, `setrole`, `perms`, `myroles`, `rolescommands`.
 - Administrator commands theo nhóm:
@@ -24,6 +24,7 @@ Trạng thái: đang phát triển, đã chuẩn hóa catalog cog, service/datab
   - Slash: `/antiraid`, `/giveaway`, `/group`, `/level`, `/naptien`, `/donate`, `/ticket`.
 - Bank/VietQR: tạo QR nạp tiền/donate, kiểm tra giao dịch mỗi 5 giây, admin reload số dư ACB, cộng cash và gửi log cash.
 - Donate có kênh cảm ơn, bảng xếp hạng tháng 1-50, phân trang 10 người và reset không ảnh hưởng cash/tổng donate.
+- Note có public/private, note cho người khác theo quyền, TXT popup và nội dung dài có thể thu gọn/phóng to.
 - Command có thể bị khóa theo từng channel; hỗ trợ khóa command gốc hoặc command con.
 - Log system có `chat`, `voice`, `server`, `join` và `cash`.
 - Database tự tạo cho users, booking, role permission, admin, settings, guild settings, responsive, bank payments, AFK và log system.

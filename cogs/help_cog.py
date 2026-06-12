@@ -47,8 +47,8 @@ HELP_CATEGORIES = [
             {"name": "give", "description": "Chuyển cash cho user khác", "usage": "@user amount hoặc amount @user", "aliases": []},
             {"name": "math", "description": "Tính toán nhanh với số có dấu phẩy hoặc dấu chấm", "usage": "<biểu thức>", "aliases": ["calc", "tinh", "tính"]},
             {"name": "naptien", "description": "Tạo QR nạp cash, kiểm tra giao dịch và admin xem số dư ACB", "usage": "<amount> | check [id|code] | reload|sodu|balance | config ...", "aliases": ["nap"]},
-            {"name": "note", "description": "Ghi chú cá nhân text thường kèm số tiền tuỳ chọn", "usage": "[nội dung] [số tiền] | del 1,2 | 2 +100k", "aliases": []},
-            {"name": "notes", "description": "Xem danh sách note bằng embed", "usage": "", "aliases": []},
+            {"name": "note", "description": "Ghi chú cá nhân, note cho người khác, public/private và TXT popup", "usage": "[@user] <nội dung|txt> | public|private [@user] | edit [@user] số ... | del 1,2", "aliases": []},
+            {"name": "notes", "description": "Xem danh sách note bằng embed", "usage": "[@user]", "aliases": []},
             {"name": "points", "description": "Xem hoặc quản trị points", "usage": "[@user|all] | a|r|e @user amount", "aliases": []},
             {"name": "profile", "description": "Xem profile của bạn hoặc người khác", "usage": "[@user]", "aliases": []},
             {"name": "snipe", "description": "Xem lịch sử tin nhắn vừa bị xoá trong kênh", "usage": "[số|all]", "aliases": ["sn"]},
@@ -714,7 +714,14 @@ class HelpView:
                 value=(
                     "`note` xem danh sách note của bạn bằng text thường.\n"
                     "`note <nội dung> <số tiền>` thêm note kèm tiền, ví dụ `note mua đồ 100k`.\n"
-                    "`note <nội dung>` thêm note không có tiền.\n"
+                    "`note @user <nội dung>` thêm note vào người khác nếu họ public hoặc bạn có quyền `note`.\n"
+                    "`note public/private` hoặc `note pb/prv` bật/tắt cho người khác note vào bạn.\n"
+                    "`note public/private @user` admin hoặc role `note` bật/tắt cho người khác.\n"
+                    "`note @user txt` mở popup nhập tiêu đề và nội dung dài.\n"
+                    "`note tiêu đề [file nội dung dài]` lưu dạng TXT có dấu `{fix}`.\n"
+                    "`note view [@user] 2` xem riêng note có nút phóng to/thu gọn.\n"
+                    "`note edit @user 2 <nội dung>` sửa note; người ngoài chỉ sửa note họ đã thêm.\n"
+                    "`note edit @user 2 txt` mở popup sửa note TXT.\n"
                     "`note del 1,2` hoặc `note d 1,2` xoá note theo số thứ tự.\n"
                     "`note 2 +100k` cộng tiền vào note số 2.\n"
                     "`note 2 -100k` trừ tiền khỏi note số 2.\n"
@@ -725,7 +732,7 @@ class HelpView:
         if command["name"] == "notes":
             embed.add_field(
                 name="Cách dùng",
-                value="`notes` hiển thị danh sách note trong embed. Nếu muốn text thường thì dùng `note`.",
+                value="`notes` hiển thị note của bạn trong embed. `notes @user` xem note người khác nếu họ public hoặc bạn có quyền `note`.",
                 inline=False,
             )
         if command["name"] == "math":

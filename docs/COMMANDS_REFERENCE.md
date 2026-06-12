@@ -30,6 +30,35 @@ Trong docs dùng `{prefix}` để đại diện cho prefix hiện tại.
   - Đổi nickname người khác.
   - Quyền: hard admin hoặc role có quyền `setname` trong database.
   - Alias: `{prefix}setnick`, `{prefix}nickname`.
+- `{prefix}note`
+  - Xem danh sách note của bạn bằng text thường.
+- `{prefix}note <nội dung> [số tiền]`
+  - Thêm note vào danh sách của bạn, vẫn hỗ trợ tiền như `100k`, `1m`.
+- `{prefix}note d 1,2`
+  - Xoá note của bạn theo số thứ tự.
+- `{prefix}note 2 +100k` hoặc `{prefix}note 2 -100k`
+  - Cộng/trừ tiền vào note số 2 như chế độ cũ.
+- `{prefix}note public|private`
+  - Bật/tắt cho người khác thêm note vào danh sách của bạn.
+  - Có thể viết tắt `pb` hoặc `prv`.
+- `{prefix}note public|private @user`
+  - Admin hoặc role có quyền `note` bật/tắt quyền nhận note của người khác.
+- `{prefix}note status [@user]`
+  - Kiểm tra note đang public hay private.
+- `{prefix}note @user <nội dung>`
+  - Thêm note vào danh sách người khác nếu họ public, hoặc bạn là admin/role có quyền `note`.
+- `{prefix}note @user txt`
+  - Hiện nút mở popup nhập tiêu đề và nội dung dài.
+- `{prefix}note tiêu đề [file nội dung dài]`
+  - Lưu note dạng TXT có dấu `{fix}` để nhận biết nội dung dùng cho giao diện/template.
+- `{prefix}note view|v [@user] <số>`
+  - Xem riêng một note với nút phóng to/thu gọn nội dung dài.
+- `{prefix}note edit|e [@user] <số> <nội dung>`
+  - Sửa note. Người ngoài chỉ sửa được note họ đã thêm, trừ khi có quyền `note`.
+- `{prefix}note edit|e @user <số> txt`
+  - Mở popup sửa note TXT.
+- `{prefix}notes [@user]`
+  - Xem danh sách note bằng embed; xem người khác cần public hoặc quyền `note`.
 
 - `{prefix}profile [@user]`
   - Xem profile của bạn.
