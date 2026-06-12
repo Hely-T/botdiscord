@@ -491,7 +491,7 @@ Các thao tác manager, panel, claim, thêm/xóa user, rename, transfer và uncl
 - `{prefix}gitpull`
   - Đồng bộ code VPS với `origin/main`, kể cả khi GitHub đã force-push viết lại lịch sử.
   - Nếu lịch sử phân kỳ, bot tự tạo branch `backup/gitpull-...` giữ commit cũ rồi cập nhật VPS.
-  - Nếu VPS có file chưa commit, bot dừng lại để không ghi đè dữ liệu.
+  - Tự bỏ qua database, log và cache runtime; nếu có file code chưa commit, bot dừng lại để không ghi đè.
   - Alias: `{prefix}pull`, `{prefix}update`.
 - `{prefix}gitstatus`
   - Xem trạng thái git.
