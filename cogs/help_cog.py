@@ -109,7 +109,7 @@ HELP_CATEGORIES = [
             {"name": "form", "description": "Gửi mẫu form booking để booking tự điền", "usage": "[key]", "aliases": ["form<key>"]},
             {"name": "giveaway", "description": "Tạo giveaway và cấu hình emoji tham gia", "usage": "<time> <winners> <reward> [quantity] | config emoji <emoji>", "aliases": ["ga"]},
             {"name": "group", "description": "Quản lý bot join/leave server bằng splash", "usage": "join [invite] | leave", "aliases": ["g"]},
-            {"name": "gitpull", "description": "Pull code mới nhất từ GitHub", "usage": "", "aliases": ["pull", "update"]},
+            {"name": "gitpull", "description": "Đồng bộ VPS với GitHub, hỗ trợ lịch sử bị force-push", "usage": "", "aliases": ["pull", "update"]},
             {"name": "gitstatus", "description": "Xem trạng thái git hiện tại", "usage": "", "aliases": ["status"]},
             {"name": "end", "description": "End giveaway theo ID", "usage": "<giveaway_id>", "aliases": []},
             {"name": "gastop", "description": "Dừng giveaway theo ID", "usage": "<giveaway_id>", "aliases": []},
