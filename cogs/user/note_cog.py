@@ -195,6 +195,15 @@ class NoteCog(commands.Cog):
         role_ids = [role.id for role in ctx.author.roles if role.name != "@everyone"]
         return self.role_permissions.user_can_use(ctx.guild.id, role_ids, "note")
 
+    def _can_manage_visibility(self, ctx, action: str) -> bool:
+        if ctx.guild is None:
+            return self.admins.is_admin(ctx.author.id)
+        if self.admins.is_admin(ctx.author.id):
+            return True
+        command_name = "note public" if action in self.PUBLIC_ACTIONS else "note private"
+        role_ids = [role.id for role in ctx.author.roles if role.name != "@everyone"]
+        return self.role_permissions.manager.can_use_command(ctx.guild.id, role_ids, command_name)
+
     async def _target_from_leading_mention(self, ctx, raw: str) -> tuple[discord.Member | None, str]:
         text = (raw or "").strip()
         match = re.match(r"^<@!?(\d+)>\s*(.*)$", text, flags=re.DOTALL)
@@ -307,8 +316,9 @@ class NoteCog(commands.Cog):
     async def _handle_visibility(self, ctx, action: str, rest: str):
         member, remaining = await self._target_from_leading_mention(ctx, rest)
         target = member or ctx.author
-        if target.id != ctx.author.id and not self._can_manage_notes(ctx):
-            await ctx.reply("❌ Chỉ admin hoặc role có quyền `note` mới đổi public/private cho người khác.", mention_author=False)
+        if target.id != ctx.author.id and not self._can_manage_visibility(ctx, action):
+            permission_name = "note public" if action in self.PUBLIC_ACTIONS else "note private"
+            await ctx.reply(f"❌ Chỉ admin hoặc role có quyền `{permission_name}` mới đổi trạng thái này cho người khác.", mention_author=False)
             return
         is_public = action in self.PUBLIC_ACTIONS
         self.service.set_public(self._guild_id(ctx), target.id, is_public)
@@ -403,9 +413,15 @@ class NoteCog(commands.Cog):
         await ctx.reply(embed=compact, view=NoteContentView(compact, full), mention_author=False)
 
     async def _handle_add(self, ctx, stripped: str):
-        target, rest = await self._target_from_leading_mention(ctx, stripped)
-        target = target or ctx.author
-        raw_content = rest if target.id != ctx.author.id else stripped
+        mentioned_target, rest = await self._target_from_leading_mention(ctx, stripped)
+        target = mentioned_target or ctx.author
+        raw_content = rest if mentioned_target else stripped
+        if mentioned_target and not raw_content.strip():
+            if not (self.service.is_public(self._guild_id(ctx), target.id) or self._can_manage_notes(ctx)):
+                await ctx.reply("❌ Bạn không có quyền truy cập note của người này.", mention_author=False)
+                return
+            await ctx.reply(self._format_notes_plain(ctx, target), mention_author=False)
+            return
         if target.id != ctx.author.id and not self.service.is_public(self._guild_id(ctx), target.id) and not self._can_manage_notes(ctx):
             await ctx.reply("❌ Người này đang để note `private`. Chỉ admin hoặc role có quyền `note` mới thêm được.", mention_author=False)
             return
