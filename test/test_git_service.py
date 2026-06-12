@@ -90,6 +90,22 @@ class GitUpdateServiceTest(unittest.TestCase):
         with open(os.path.join(self.deploy, "bot.txt"), encoding="utf-8") as file:
             self.assertEqual(file.read(), "local edit\n")
 
+    def test_runtime_database_files_do_not_block_update(self):
+        database_dir = os.path.join(self.deploy, "database")
+        os.makedirs(database_dir, exist_ok=True)
+        self._write(database_dir, "users.db-wal", "runtime data\n")
+        self._write(self.source, "bot.txt", "version 2\n")
+        self._git(["add", "bot.txt"], cwd=self.source)
+        self._git(["commit", "-m", "version 2"], cwd=self.source)
+        self._git(["push", "origin", "main"], cwd=self.source)
+
+        result = GitUpdateService(self.deploy).pull_latest()
+
+        self.assertTrue(result["success"])
+        self.assertTrue(os.path.exists(os.path.join(database_dir, "users.db-wal")))
+        with open(os.path.join(self.deploy, "bot.txt"), encoding="utf-8") as file:
+            self.assertEqual(file.read(), "version 2\n")
+
 
 if __name__ == "__main__":
     unittest.main()
