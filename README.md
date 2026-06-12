@@ -8,6 +8,7 @@ Bot Discord viết bằng `discord.py`, được tổ chức theo hướng catal
 - Quản lý user: profile, cash, nạp tiền, donate, points, time, give, top users.
 - Booking: xem/tính lương, ghi nhận giờ book, tiền nạp, top book/top nạp/top quà.
 - Economy: mọi giá trị tiền dùng đơn vị VNĐ, hỗ trợ nhập nhanh `100k`, `1m`, `1b`, `100,000`.
+- Casino sync: bot tổng và casino dùng chung `users.db`, quy đổi cash VND / OWO theo tỷ giá admin cấu hình.
 - Bank/VietQR: tạo QR nạp cash hoặc donate, tự kiểm tra giao dịch mỗi 5 giây, admin reload số dư ACB và gửi log cash.
 - Donate: kênh cảm ơn riêng, bảng xếp hạng tháng 1-50 có phân trang và reset bảng không ảnh hưởng cash.
 - Khóa command theo channel: bật/tắt command gốc hoặc command con, hard admin luôn có quyền sửa cấu hình.
@@ -45,7 +46,10 @@ ACB_BANK_CODE=ACB
 NAPTIEN_DECOR_URL=
 DONATE_DECOR_URL=
 DONATE_THANK_TEMPLATE=Cảm ơn {user} đã donate {amount} VNĐ!
+CASH_DB_PATH=/duong-dan-tuyet-doi/toi/database/users.db
 ```
+
+Để liên kết bot tổng với casino, cấu hình `CASH_DB_PATH` của cả hai bot trỏ tới cùng file `users.db`. Nếu không đặt biến này, bot tổng dùng `database/users.db` trong thư mục dự án.
 
 Các thông tin ACB cũng có thể cài trực tiếp trong Discord bằng lệnh quản trị:
 
@@ -62,6 +66,8 @@ bdonate config leaderboard #bang-xep-hang
 bdonate top
 bdonate reset
 blog cash #log-cash
+brate
+brate cash 1 owo 1
 bdisable ga
 benable ga
 bcommand disable level setup
@@ -70,6 +76,8 @@ bcommand disable level setup
 `donate` có alias `dnt`. `donate reset` chỉ reset bảng xếp hạng tháng và gửi bản sao trước khi reset vào DM admin; cash và tổng donate tích lũy vẫn giữ nguyên.
 
 Nếu chưa cấu hình `log cash`, bot sẽ tự tìm kênh `log_cash`, `log-cash` hoặc `cash-log` để gửi log tiền. Bot tự quét giao dịch đang chờ mỗi 5 giây; nút **Tôi đã chuyển tiền** dùng để yêu cầu kiểm tra ngay.
+
+Lệnh `rate` chỉ dành cho bot admin. Khi đổi tỷ giá, bot xóa các mốc trong `currency_wallet_sync`; casino đọc cùng `users.db` và tự quy đổi lại ví. Cash âm từ casino được giữ làm khoản nợ và có thể được bù bằng nạp/cộng cash.
 
 ## Cấu trúc dự án
 
@@ -123,6 +131,7 @@ Ví dụ:
 - `cogs/user/donate_cog.py`: tạo QR donate, cộng cash/donate, gửi lời cảm ơn và quản lý bảng xếp hạng tháng.
 - `ui/user/payment_ui.py`: card QR, embed nạp tiền/donate và giao diện thanh toán.
 - `services/bank_service.py`: cấu hình ACB, pending payment, match giao dịch, trạng thái thanh toán và bảng xếp hạng donate.
+- `services/currency_sync_service.py`: tỷ giá cash VND / OWO và mốc đồng bộ ví dùng chung với casino.
 - `cogs/administrator/command_cog.py`: bật/tắt command theo channel.
 - `services/command_toggle_service.py`: lưu command bị khóa trong `command_toggle.db`.
 
