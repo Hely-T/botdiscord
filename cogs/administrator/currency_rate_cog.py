@@ -55,7 +55,7 @@ class CurrencyRateCog(AdminCommandBase):
             return
 
         try:
-            rate, pending_users = self.currency_sync.set_rate(
+            rate, updated_wallets = self.currency_sync.set_rate(
                 args[1],
                 args[3],
                 ctx.author.id,
@@ -72,7 +72,7 @@ class CurrencyRateCog(AdminCommandBase):
                 "✅ Đã Cập Nhật Tỷ Giá",
                 f"`{format_vnd(rate.cash_unit_vnd)} VND` = "
                 f"`{self._format_number(rate.owo_unit)} OWO`\n"
-                f"Casino sẽ tự quy đổi lại `{pending_users}` user.",
+                f"Đã quy đổi lại cash cho `{updated_wallets}` ví; số OWO được giữ nguyên.",
             )
         )
 

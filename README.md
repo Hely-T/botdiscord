@@ -77,7 +77,7 @@ bcommand disable level setup
 
 Nếu chưa cấu hình `log cash`, bot sẽ tự tìm kênh `log_cash`, `log-cash` hoặc `cash-log` để gửi log tiền. Bot tự quét giao dịch đang chờ mỗi 5 giây; nút **Tôi đã chuyển tiền** dùng để yêu cầu kiểm tra ngay.
 
-Lệnh `rate` chỉ dành cho bot admin. Khi đổi tỷ giá, bot xóa các mốc trong `currency_wallet_sync`; casino đọc cùng `users.db` và tự quy đổi lại ví. Cash âm từ casino được giữ làm khoản nợ và có thể được bù bằng nạp/cộng cash.
+Tên lệnh là `rate`; `b` trong `brate` chỉ là prefix mặc định. Lệnh này chỉ dành cho bot admin. Khi đổi tỷ giá, số OWO được giữ nguyên; bot tổng chỉ quy đổi lại cash trong `users.db` và cập nhật mốc `currency_wallet_sync`. Cash âm từ casino được giữ làm khoản nợ và có thể được bù bằng nạp/cộng cash.
 
 ## Cấu trúc dự án
 

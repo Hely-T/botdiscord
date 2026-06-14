@@ -331,7 +331,7 @@ Trong docs dùng `{prefix}` để đại diện cho prefix hiện tại.
 - `{prefix}rate cash <hệ số> owo <hệ số>`
   - Đặt tỷ giá mới, ví dụ `{prefix}rate cash 1 owo 1` tương ứng `1.000 VND = 1.000.000 OWO`.
   - Hỗ trợ số thập phân bằng dấu chấm hoặc dấu phẩy, ví dụ `{prefix}rate cash 1 owo 0,5`.
-  - Khi đổi tỷ giá, bảng mốc đồng bộ được xóa để casino tự quy đổi lại toàn bộ user.
+  - Khi đổi tỷ giá, OWO giữ nguyên; bot chỉ quy đổi lại cash và cập nhật mốc đồng bộ.
 - `{prefix}cash a|r|e @user <money>`
   - Quản trị cash theo action add/remove/edit.
   - Cash âm do casino đồng bộ được giữ làm khoản nợ; nạp/cộng cash có thể bù dần về 0.

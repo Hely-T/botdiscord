@@ -44,29 +44,48 @@ class CurrencySyncServiceTest(unittest.TestCase):
         self.assertEqual(self.service.owo_to_cash(-2_000_000), -2_000)
 
     def test_decimal_rate_accepts_comma(self):
-        rate, pending_users = self.service.set_rate("1", "0,5", 999)
+        rate, updated_wallets = self.service.set_rate("1", "0,5", 999)
         self.assertEqual(rate.cash_unit_vnd, 1_000)
         self.assertEqual(rate.owo_unit, 500_000)
-        self.assertEqual(pending_users, 2)
+        self.assertEqual(updated_wallets, 0)
         self.assertEqual(self.service.cash_to_owo(10_000), 5_000_000)
 
-    def test_rate_change_clears_sync_markers(self):
+    def test_rate_change_keeps_owo_and_revalues_cash(self):
         with closing(sqlite3.connect(self.cash_path)) as conn, conn:
-            conn.execute(
+            conn.executemany(
                 """
                 INSERT INTO currency_wallet_sync
                     (user_id, cash_balance, owo_balance, source, updated_at)
-                VALUES (123, 10000, 10000000, 'cash', datetime('now'))
-                """
+                VALUES (?, ?, ?, 'cash', datetime('now'))
+                """,
+                [
+                    (123, 10_000, 10_000_000),
+                    (456, -2_000, -2_000_000),
+                ],
             )
 
-        self.service.set_rate("1", "0.25", 999)
+        _, updated_wallets = self.service.set_rate("1", "0.25", 999)
 
         with closing(sqlite3.connect(self.cash_path)) as conn:
-            remaining = conn.execute(
-                "SELECT COUNT(*) FROM currency_wallet_sync"
-            ).fetchone()[0]
-        self.assertEqual(remaining, 0)
+            cash_rows = conn.execute(
+                "SELECT user_id, cash FROM users ORDER BY user_id"
+            ).fetchall()
+            sync_rows = conn.execute(
+                """
+                SELECT user_id, cash_balance, owo_balance, source
+                FROM currency_wallet_sync
+                ORDER BY user_id
+                """
+            ).fetchall()
+        self.assertEqual(updated_wallets, 2)
+        self.assertEqual(cash_rows, [(123, 40_000), (456, -8_000)])
+        self.assertEqual(
+            sync_rows,
+            [
+                (123, 40_000, 10_000_000, "rate"),
+                (456, -8_000, -2_000_000, "rate"),
+            ],
+        )
 
     def test_invalid_rate_is_rejected(self):
         with self.assertRaises(ValueError):

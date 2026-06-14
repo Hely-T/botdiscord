@@ -149,18 +149,36 @@ class CurrencySyncService:
                 """,
                 (cash_unit_vnd, owo_unit, int(updated_by)),
             )
-            users_table = conn.execute(
-                "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'users'"
-            ).fetchone()
-            user_count = (
-                int(conn.execute("SELECT COUNT(*) FROM users").fetchone()[0])
-                if users_table
-                else 0
-            )
-            # Xóa mốc cũ để casino tự quy đổi lại toàn bộ ví theo tỷ giá mới.
-            conn.execute("DELETE FROM currency_wallet_sync")
+            sync_rows = conn.execute(
+                """
+                SELECT user_id, owo_balance
+                FROM currency_wallet_sync
+                """
+            ).fetchall()
+            for row in sync_rows:
+                user_id = int(row["user_id"])
+                owo_balance = int(row["owo_balance"])
+                cash_balance = self._rounded_ratio(
+                    owo_balance,
+                    cash_unit_vnd,
+                    owo_unit,
+                )
+                conn.execute(
+                    "UPDATE users SET cash = ? WHERE user_id = ?",
+                    (cash_balance, user_id),
+                )
+                conn.execute(
+                    """
+                    UPDATE currency_wallet_sync
+                    SET cash_balance = ?,
+                        source = 'rate',
+                        updated_at = datetime('now')
+                    WHERE user_id = ?
+                    """,
+                    (cash_balance, user_id),
+                )
 
-        return self.get_rate(), user_count
+        return self.get_rate(), len(sync_rows)
 
     @staticmethod
     def _rounded_ratio(value: int, numerator: int, denominator: int) -> int:

@@ -252,7 +252,7 @@ Quy tắc:
 
 - `currency_exchange_rate` chỉ có một dòng tỷ giá hiện tại.
 - `currency_wallet_sync` lưu mốc số dư đã đồng bộ cho từng user.
-- Khi admin đổi tỷ giá bằng `rate`, toàn bộ mốc đồng bộ bị xóa để casino quy đổi lại.
+- Khi admin đổi tỷ giá bằng `rate`, OWO giữ nguyên; cash và mốc đồng bộ được tính lại theo tỷ giá mới.
 - Cash âm từ casino được giữ trong `users.cash` như khoản nợ; bot tổng chỉ cho cộng/nạp để bù nợ, không cho thao tác chi tiêu tạo thêm nợ.
 - Hai bot dùng SQLite WAL và không tạo database cash riêng.
 
