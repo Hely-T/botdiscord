@@ -165,6 +165,10 @@ Trong docs dùng `{prefix}` để đại diện cho prefix hiện tại.
   - Alias: `{prefix}p <url|từ khóa|playlist>` hoặc `{prefix}a <url|từ khóa|playlist>`.
   - Spotify URL sẽ được thử qua extractor; nếu link không chạy, gửi tên bài hoặc link YouTube/YT Music tương ứng.
   - Nếu bot chưa ở voice, người gọi `play` sẽ là người giữ quyền `play l/leave`.
+  - Player hoạt động trong cả text channel và phần chat của voice channel.
+  - Player cũ tự xóa và card mới được gửi xuống cuối chat khi thao tác hoặc chuyển bài.
+  - Card là ảnh đính kèm trực tiếp, không dùng embed và không render lại theo chu kỳ.
+  - Thời gian bắt đầu/kết thúc dùng timestamp động của Discord.
 - `{prefix}play q`
   - Xem queue.
   - Có thể dùng `{prefix}play queue`.
@@ -174,6 +178,7 @@ Trong docs dùng `{prefix}` để đại diện cho prefix hiện tại.
 - `{prefix}play a`
   - Bật/tắt autoplay.
   - Có thể dùng `{prefix}play autoplay on/off`.
+  - Autoplay lấy radio đề xuất theo chủ đề của YouTube, không tự ưu tiên cùng tác giả.
 - `{prefix}play s`
   - Bỏ qua bài hiện tại.
   - Có thể dùng `{prefix}play skip`.
@@ -199,6 +204,8 @@ Trong docs dùng `{prefix}` để đại diện cho prefix hiện tại.
 - `{prefix}play v <0-200>`
   - Set volume.
   - Có thể dùng `{prefix}play vol <0-200>`.
+  - Volume được lưu riêng theo user và tự áp dụng khi user đó bắt đầu phiên phát mới.
+  - Autoplay và loop không được lưu.
 - `{prefix}play rm <số>`
   - Xóa một bài khỏi queue theo số thứ tự.
 - `{prefix}play c`
