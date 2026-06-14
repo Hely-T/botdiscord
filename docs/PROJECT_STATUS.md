@@ -10,7 +10,7 @@ Trạng thái: đang phát triển, đã chuẩn hóa catalog cog, service/datab
 
 - Recursive cog loader cho `cogs/` và subfolder catalog.
 - Help menu theo category.
-- User commands: `profile`, `cash`, `naptien`, `donate`, `points`, `time`, `give`, `topusers`, `afk`, `random`, `pick`, `setname`, `note`.
+- User commands: `profile`, `cash`, `naptien`, `donate`, `points`, `time`, `give`, `topusers`, `afk`, `random`, `pick`, `uptime`, `setname`, `note`.
 - Booking commands: `luong`, `star`, `tinhluong`, `topbook`, `topnap`, `topgift`.
 - Role commands: `addrole`, `removerole`, `setrole`, `perms`, `myroles`, `rolescommands`.
 - Administrator commands theo nhóm:

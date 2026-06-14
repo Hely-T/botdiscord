@@ -24,6 +24,9 @@ Trong docs dùng `{prefix}` để đại diện cho prefix hiện tại.
 - `{prefix}pick <mục 1, mục 2, mục 3>`
   - Chọn ngẫu nhiên một mục, hỗ trợ danh sách phân cách bằng dấu phẩy hoặc khoảng trắng.
   - Alias: `{prefix}choose`, `{prefix}chon`, `{prefix}chọn`.
+- `{prefix}uptime`
+  - Xem thời gian bot/VPS đã chạy, RAM VPS, memory tiến trình bot và dung lượng ổ đĩa.
+  - Alias: `{prefix}system`, `{prefix}stats`.
 - `{prefix}setname <tên mới>`
   - Mọi user được tự đổi nickname của chính mình.
 - `{prefix}setname @user <tên mới>`

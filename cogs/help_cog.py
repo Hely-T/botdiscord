@@ -32,6 +32,7 @@ HELP_CATEGORIES = [
             {"name": "afk", "description": "Đặt trạng thái AFK và báo lý do khi có người tag", "usage": "[lý do]", "aliases": []},
             {"name": "random", "description": "Lấy một số ngẫu nhiên từ 1 đến số đã nhập", "usage": "<số lớn nhất>", "aliases": ["rand", "rd"]},
             {"name": "pick", "description": "Chọn ngẫu nhiên một mục trong danh sách", "usage": "<mục 1, mục 2, mục 3>", "aliases": ["choose", "chon", "chọn"]},
+            {"name": "uptime", "description": "Xem uptime, RAM, memory bot và dung lượng VPS", "usage": "", "aliases": ["system", "stats"]},
         ],
     },
     {
