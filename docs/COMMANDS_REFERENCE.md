@@ -1,6 +1,7 @@
 # Commands Reference
 
 Prefix lấy từ database `bot_settings.db`, mặc định theo `BOT_PREFIX` trong `.env`.
+Prefix không phân biệt chữ hoa/chữ thường.
 Trong docs dùng `{prefix}` để đại diện cho prefix hiện tại.
 
 ## General
