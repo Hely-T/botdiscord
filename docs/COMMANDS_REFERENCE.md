@@ -26,7 +26,7 @@ Trong docs dùng `{prefix}` để đại diện cho prefix hiện tại.
   - Alias: `{prefix}choose`, `{prefix}chon`, `{prefix}chọn`.
 - `{prefix}uptime`
   - Xem thời gian bot/VPS đã chạy, RAM VPS, memory tiến trình bot và dung lượng ổ đĩa.
-  - Alias: `{prefix}system`, `{prefix}stats`.
+  - Alias: `{prefix}upt`, `{prefix}system`, `{prefix}sys`, `{prefix}stats`, `{prefix}st`.
 - `{prefix}setname <tên mới>`
   - Mọi user được tự đổi nickname của chính mình.
 - `{prefix}setname @user <tên mới>`

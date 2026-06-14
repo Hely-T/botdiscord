@@ -112,7 +112,7 @@ class UserUtilityCog(commands.Cog):
         selected = random.choice(options)
         await ctx.reply(f"✅ | Mình chọn **{selected}**, còn bạn?", mention_author=False)
 
-    @commands.command(name="uptime", aliases=["system", "stats"])
+    @commands.command(name="uptime", aliases=["upt", "system", "sys", "stats", "st"])
     async def uptime(self, ctx: commands.Context):
         stats = collect_system_stats()
         embed = discord.Embed(
