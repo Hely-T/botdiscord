@@ -9,6 +9,12 @@ from discord.ext import commands
 from services.admin_service import AdminService
 from services.afk_service import AfkService
 from services.role_permission_service import RolePermissionService
+from services.system_stats_service import (
+    collect_system_stats,
+    format_bytes,
+    format_duration,
+    format_usage,
+)
 from utils import get_prefix
 
 
@@ -105,6 +111,44 @@ class UserUtilityCog(commands.Cog):
             return
         selected = random.choice(options)
         await ctx.reply(f"✅ | Mình chọn **{selected}**, còn bạn?", mention_author=False)
+
+    @commands.command(name="uptime", aliases=["system", "stats"])
+    async def uptime(self, ctx: commands.Context):
+        stats = collect_system_stats()
+        embed = discord.Embed(
+            title="Trạng thái hệ thống",
+            color=discord.Color.from_rgb(46, 48, 53),
+        )
+        embed.add_field(
+            name="Bot đã chạy",
+            value=f"`{format_duration(stats.bot_uptime_seconds)}`",
+            inline=False,
+        )
+        embed.add_field(
+            name="VPS đã chạy",
+            value=f"`{format_duration(stats.vps_uptime_seconds)}`",
+            inline=False,
+        )
+        embed.add_field(
+            name="RAM VPS",
+            value=f"`{format_usage(stats.ram_used_bytes, stats.ram_total_bytes)}`",
+            inline=False,
+        )
+        embed.add_field(
+            name="Memory của bot",
+            value=f"`{format_bytes(stats.process_memory_bytes)}`",
+            inline=False,
+        )
+        embed.add_field(
+            name="Dung lượng ổ đĩa",
+            value=(
+                f"`{format_usage(stats.disk_used_bytes, stats.disk_total_bytes)}`\n"
+                f"Còn trống: `{format_bytes(stats.disk_free_bytes)}`"
+            ),
+            inline=False,
+        )
+        embed.set_footer(text=f"Ping Discord: {round(self.bot.latency * 1000)} ms")
+        await ctx.reply(embed=embed, mention_author=False)
 
     @commands.command(name="setname", aliases=["setnick", "nickname"])
     @commands.guild_only()
