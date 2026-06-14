@@ -15,7 +15,7 @@ from cogs.admin_command_utils import (
     parse_color,
 )
 from services.responsive_service import ResponsiveService
-from utils import append_discord_timestamp, get_prefix
+from utils import append_discord_timestamp, get_prefix, match_case_insensitive_prefix
 
 
 FORM_TEMPLATE = (
@@ -1034,7 +1034,7 @@ class AdministratorResponsiveCog(AdminCommandBase):
 
         prefix = get_prefix()
         lowered = content.lower()
-        if lowered.startswith(prefix.lower()):
+        if match_case_insensitive_prefix(content, prefix):
             invoked = content[len(prefix):].strip().split(maxsplit=1)[0].lower()
             if invoked.startswith("form") and len(invoked) > len("form"):
                 key = invoked[len("form"):]

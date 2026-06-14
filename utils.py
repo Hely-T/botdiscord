@@ -590,6 +590,14 @@ def get_prefix():
         return BOT_PREFIX
 
 
+def match_case_insensitive_prefix(content: str, prefix: str) -> str | None:
+    """Trả về đúng phần prefix user đã gõ nếu khớp không phân biệt hoa thường."""
+    if not prefix or len(content) < len(prefix):
+        return None
+    candidate = content[:len(prefix)]
+    return candidate if candidate.casefold() == prefix.casefold() else None
+
+
 def get_command_help(command_name: str, prefix: str = None) -> str:
     """
     Tạo cú pháp help cho command

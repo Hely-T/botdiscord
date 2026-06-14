@@ -11,7 +11,7 @@ from cogs.cog_loader_utils import iter_cog_modules
 from services.admin_service import AdminService
 from services.command_toggle_service import ChannelCommandToggleService
 from services.guild_settings_service import GuildSettingsService
-from utils import create_error_splash, get_prefix
+from utils import create_error_splash, get_prefix, match_case_insensitive_prefix
 
 # Tạo các thư mục nếu chưa tồn tại
 os.makedirs(LOGS_DIR, exist_ok=True)
@@ -80,7 +80,8 @@ async def sync_slash_commands(bot):
 
 def prefix_callable(bot, message):
     prefix = get_prefix()
-    return commands.when_mentioned_or(prefix)(bot, message)
+    typed_prefix = match_case_insensitive_prefix(message.content, prefix)
+    return commands.when_mentioned_or(typed_prefix or prefix)(bot, message)
 
 
 def get_unknown_command_suggestion(bot, invoked: str | None) -> str | None:
@@ -118,7 +119,7 @@ def get_prefix_command_candidates(ctx: commands.Context) -> list[str]:
     candidates: list[str] = []
     prefix = get_prefix()
     content = str(getattr(ctx.message, "content", "") or "")
-    if content.startswith(prefix):
+    if match_case_insensitive_prefix(content, prefix):
         tokens = content[len(prefix):].strip().split()
         if len(tokens) > 1:
             candidates.extend(

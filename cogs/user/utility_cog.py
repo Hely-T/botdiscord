@@ -15,7 +15,7 @@ from services.system_stats_service import (
     format_duration,
     format_usage,
 )
-from utils import get_prefix
+from utils import get_prefix, match_case_insensitive_prefix
 
 
 class UserUtilityCog(commands.Cog):
@@ -213,7 +213,7 @@ class UserUtilityCog(commands.Cog):
         prefix = get_prefix()
         content = message.content.strip()
         invoked = ""
-        if content.lower().startswith(prefix.lower()):
+        if match_case_insensitive_prefix(content, prefix):
             invoked = content[len(prefix):].strip().split(maxsplit=1)[0].lower()
 
         author_status = self.afk_service.get_afk(message.guild.id, message.author.id)
