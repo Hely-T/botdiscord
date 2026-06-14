@@ -175,23 +175,14 @@ def _render_card(
     draw.text((372, 177), status, font=status_font, fill="white")
 
     duration = max(0, int(data.duration or 0))
-    elapsed = max(0, min(int(data.elapsed), duration)) if duration else max(0, int(data.elapsed))
-    progress = min(1.0, elapsed / duration) if duration else 0.0
-    bar_left, bar_top, bar_right, bar_bottom = 355, 235, 935, 254
-    draw.rounded_rectangle((bar_left, bar_top, bar_right, bar_bottom), radius=10, fill="#ddcdd2")
-    if progress > 0:
-        progress_right = bar_left + max(19, int((bar_right - bar_left) * progress))
-        draw.rounded_rectangle((bar_left, bar_top, progress_right, bar_bottom), radius=10, fill=accent)
-
-    draw.text((355, 265), _time_text(elapsed), font=small_font, fill=muted)
-    duration_text = _time_text(duration) if duration else "--:--"
-    duration_width = draw.textlength(duration_text, font=small_font)
-    draw.text((935 - duration_width, 265), duration_text, font=small_font, fill=muted)
+    duration_text = _time_text(duration) if duration else "Không rõ"
+    draw.text((355, 235), "THỜI LƯỢNG", font=small_font, fill=muted)
+    draw.text((355, 263), duration_text, font=status_font, fill=accent)
 
     modes = [
         f"Âm lượng {data.volume}%",
         f"Loop {'Bật' if data.loop else 'Tắt'}",
-        f"Radio liên quan {'Bật' if data.autoplay else 'Tắt'}",
+        f"Đề xuất YouTube {'Bật' if data.autoplay else 'Tắt'}",
         f"Queue {data.queue_count}",
     ]
     x = 355
@@ -223,12 +214,6 @@ async def build_player_file(data: PlayerCardData) -> discord.File:
     )
     buffer = await asyncio.to_thread(_render_card, data, raw_thumbnail, raw_background)
     return discord.File(buffer, filename=CARD_FILENAME)
-
-
-def build_player_embed() -> discord.Embed:
-    embed = discord.Embed(color=discord.Color.from_rgb(127, 49, 77))
-    embed.set_image(url=f"attachment://{CARD_FILENAME}")
-    return embed
 
 
 class PlayerVolumeModal(discord.ui.Modal, title="Chỉnh âm lượng"):
@@ -334,7 +319,7 @@ class MusicPlayerView(discord.ui.View):
     async def loop(self, interaction: discord.Interaction, button: discord.ui.Button):
         await self.controller.handle_player_button(interaction, self.guild_id, "loop")
 
-    @discord.ui.button(label="Radio liên quan", emoji="♾️", style=discord.ButtonStyle.secondary, row=0)
+    @discord.ui.button(label="Đề xuất YouTube", emoji="♾️", style=discord.ButtonStyle.secondary, row=0)
     async def autoplay(self, interaction: discord.Interaction, button: discord.ui.Button):
         await self.controller.handle_player_button(interaction, self.guild_id, "autoplay")
 

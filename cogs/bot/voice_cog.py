@@ -16,7 +16,6 @@ import time
 import wave
 from dataclasses import dataclass, field
 from pathlib import Path
-from types import SimpleNamespace
 from typing import Any
 
 import discord
@@ -35,7 +34,6 @@ from ui.bot.player_ui import (
     MusicPlayerView,
     PlayerCardData,
     PlayerSettingsView,
-    build_player_embed,
     build_player_file,
     normalize_accent_color,
 )
@@ -98,11 +96,11 @@ class GuildAudioState:
     stop_requested: bool = False
     player_message_id: int | None = None
     player_channel_id: int | None = None
-    player_task: asyncio.Task | None = None
     playback_started_at: float | None = None
     playback_elapsed: float = 0.0
     autoplay_history: list[str] = field(default_factory=list)
     last_music_item: AudioItem | None = None
+    preference_user_id: int | None = None
 
 
 class BotVoiceCog(commands.Cog):
@@ -170,6 +168,7 @@ class BotVoiceCog(commands.Cog):
         self._last_opus_error: str | None = None
         self._dll_directory_handles: list[Any] = []
         self._ffmpeg_path: str | None = None
+        self._player_message_locks: dict[int, asyncio.Lock] = {}
         self.admins = AdminService()
         self.role_permissions = RolePermissionService()
         self.player_service = MusicPlayerService()
@@ -178,13 +177,34 @@ class BotVoiceCog(commands.Cog):
         for state in self.states.values():
             if state.idle_task and not state.idle_task.done():
                 state.idle_task.cancel()
-            if state.player_task and not state.player_task.done():
-                state.player_task.cancel()
 
     def _get_state(self, guild_id: int) -> GuildAudioState:
         if guild_id not in self.states:
             self.states[guild_id] = GuildAudioState()
         return self.states[guild_id]
+
+    def _player_message_lock(self, guild_id: int) -> asyncio.Lock:
+        if guild_id not in self._player_message_locks:
+            self._player_message_locks[guild_id] = asyncio.Lock()
+        return self._player_message_locks[guild_id]
+
+    def _apply_user_preferences(self, state: GuildAudioState, user_id: int):
+        preferences = self.player_service.get_user_preferences(user_id)
+        state.volume = int(preferences["volume"]) / 100
+        state.preference_user_id = int(user_id)
+
+    def _save_user_preferences(
+        self,
+        state: GuildAudioState,
+        user_id: int,
+        *,
+        volume: int | None = None,
+    ):
+        values = {}
+        if volume is not None:
+            values["volume"] = volume
+        self.player_service.set_user_preferences(user_id, **values)
+        state.preference_user_id = int(user_id)
 
     @staticmethod
     def _set_voice_owner(state: GuildAudioState, member: discord.Member):
@@ -714,30 +734,6 @@ class BotVoiceCog(commands.Cog):
         if state.playback_started_at is None:
             state.playback_started_at = time.monotonic()
 
-    def _cancel_player_refresh(self, state: GuildAudioState):
-        if state.player_task and not state.player_task.done():
-            state.player_task.cancel()
-        state.player_task = None
-
-    def _schedule_player_refresh(self, guild_id: int):
-        state = self._get_state(guild_id)
-        self._cancel_player_refresh(state)
-        state.player_task = self.bot.loop.create_task(self._player_refresh_loop(guild_id))
-
-    async def _player_refresh_loop(self, guild_id: int):
-        try:
-            while True:
-                await asyncio.sleep(15)
-                state = self._get_state(guild_id)
-                if not state.current or state.current.item_type != "music":
-                    return
-                voice_client = state.voice_client
-                if not voice_client or not voice_client.is_connected():
-                    return
-                await self._refresh_player_message(guild_id)
-        except asyncio.CancelledError:
-            return
-
     def _schedule_idle_disconnect(self, guild_id: int):
         state = self._get_state(guild_id)
         self._cancel_idle(state)
@@ -755,7 +751,6 @@ class BotVoiceCog(commands.Cog):
             await voice_client.disconnect(force=False)
             state.voice_client = None
             state.current = None
-            self._cancel_player_refresh(state)
             self._clear_voice_owner(state)
         except asyncio.CancelledError:
             return
@@ -1069,14 +1064,28 @@ class BotVoiceCog(commands.Cog):
     async def _enqueue_autoplay(self, guild_id: int) -> bool:
         state = self._get_state(guild_id)
         previous = state.current or state.last_music_item
-        if not state.autoplay or not previous or previous.item_type != "music":
+        if (
+            not state.autoplay
+            or not previous
+            or previous.item_type != "music"
+            or not previous.video_id
+            or not any(
+                host in str(previous.webpage_url or "").lower()
+                for host in ("youtube.com", "youtu.be")
+            )
+        ):
             return False
         try:
             requester = self.bot.get_user(previous.requester_id)
-            fake_requester = requester or SimpleNamespace(
-                id=previous.requester_id,
-                display_name=previous.requester_name,
-            )
+            if requester is None:
+                requester = type(
+                    "AutoplayRequester",
+                    (),
+                    {
+                        "id": previous.requester_id,
+                        "display_name": previous.requester_name,
+                    },
+                )()
             seen = {
                 self._autoplay_item_key(item)
                 for item in [previous, *state.queue]
@@ -1084,33 +1093,16 @@ class BotVoiceCog(commands.Cog):
             }
             seen.update(state.autoplay_history)
 
-            candidates: list[AudioItem] = []
-            if previous.video_id and "youtube.com" in str(previous.webpage_url or ""):
-                radio_url = (
-                    f"https://www.youtube.com/watch?v={previous.video_id}"
-                    f"&list=RD{previous.video_id}"
-                )
-                try:
-                    candidates.extend(await self._extract_music_items(radio_url, fake_requester))
-                except Exception:
-                    pass
-
-            if not any(self._autoplay_item_key(item) not in seen for item in candidates):
-                candidates.extend(await self._extract_related_search_items(previous, fake_requester))
-
-            ranked = sorted(
-                (
-                    item
-                    for item in candidates
-                    if self._autoplay_item_key(item)
-                    and self._autoplay_item_key(item) not in seen
-                ),
-                key=lambda item: self._related_score(previous, item),
-                reverse=True,
+            radio_url = (
+                f"https://www.youtube.com/watch?v={previous.video_id}"
+                f"&list=RD{previous.video_id}"
             )
-            if ranked:
-                state.queue.append(ranked[0])
-                return True
+            candidates = await self._extract_music_items(radio_url, requester)
+            for candidate in candidates:
+                key = self._autoplay_item_key(candidate)
+                if key and key not in seen:
+                    state.queue.append(candidate)
+                    return True
         except Exception:
             return False
         return False
@@ -1119,81 +1111,6 @@ class BotVoiceCog(commands.Cog):
     def _autoplay_item_key(item: AudioItem) -> str:
         value = item.video_id or item.webpage_url or item.title
         return " ".join(str(value or "").strip().lower().split())
-
-    @staticmethod
-    def _music_tokens(value: str | None) -> set[str]:
-        stop_words = {
-            "official", "video", "audio", "lyrics", "lyric", "mv", "music",
-            "remix", "hd", "4k", "feat", "ft", "the", "and", "và", "bản",
-        }
-        cleaned = re.sub(r"[\[\](){}|/,_\-]+", " ", str(value or "").lower())
-        return {
-            token
-            for token in re.findall(r"[\wÀ-ỹ]+", cleaned, flags=re.UNICODE)
-            if len(token) >= 2 and token not in stop_words
-        }
-
-    def _related_score(self, previous: AudioItem, candidate: AudioItem) -> int:
-        previous_tokens = self._music_tokens(
-            " ".join(
-                part
-                for part in [previous.artist, previous.uploader, previous.album, previous.title]
-                if part
-            )
-        )
-        candidate_tokens = self._music_tokens(
-            " ".join(
-                part
-                for part in [candidate.artist, candidate.uploader, candidate.album, candidate.title]
-                if part
-            )
-        )
-        score = len(previous_tokens & candidate_tokens) * 10
-        if previous.artist and candidate.artist and previous.artist.lower() == candidate.artist.lower():
-            score += 35
-        if previous.uploader and candidate.uploader and previous.uploader.lower() == candidate.uploader.lower():
-            score += 25
-        if previous.album and candidate.album and previous.album.lower() == candidate.album.lower():
-            score += 20
-        return score
-
-    async def _extract_related_search_items(self, previous: AudioItem, requester) -> list[AudioItem]:
-        from yt_dlp import YoutubeDL
-
-        artist = previous.artist or previous.uploader or ""
-        artist = re.sub(r"\s*-\s*topic$|\s*vevo$", "", artist, flags=re.IGNORECASE).strip()
-        title = re.sub(
-            r"[\[(].*?(official|lyrics?|audio|mv|video).*?[\])]",
-            "",
-            previous.title,
-            flags=re.IGNORECASE,
-        ).strip()
-        query = " ".join(part for part in [artist, title, "radio bài hát tương tự"] if part)
-        search_query = f"ytsearch10:{query}"
-        options = {
-            "quiet": True,
-            "no_warnings": True,
-            "ignoreerrors": True,
-            "extract_flat": "in_playlist",
-            "noplaylist": True,
-        }
-
-        def run_extract():
-            with YoutubeDL(options) as ydl:
-                return ydl.extract_info(search_query, download=False)
-
-        info = await asyncio.wait_for(
-            self.bot.loop.run_in_executor(None, run_extract),
-            timeout=YTDLP_SEARCH_TIMEOUT,
-        )
-        entries = info.get("entries", []) if isinstance(info, dict) else []
-        return [
-            item
-            for entry in entries
-            if entry
-            for item in [self._build_music_item(entry, requester, query)]
-            if item
-        ]
 
     async def _play_next(self, guild_id: int):
         state = self._get_state(guild_id)
@@ -1225,7 +1142,6 @@ class BotVoiceCog(commands.Cog):
         try:
             ffmpeg_executable = self._find_ffmpeg() or "ffmpeg"
             if item.item_type == "music":
-                await self._refresh_player_message(guild_id)
                 item = await self._resolve_stream_url(item)
                 history_key = self._autoplay_item_key(item)
                 if history_key:
@@ -1253,8 +1169,6 @@ class BotVoiceCog(commands.Cog):
             state.playback_started_at = time.monotonic()
             await self._send_now_playing(guild_id, item)
             self.bot.loop.create_task(self._verify_playback_started(guild_id, item))
-            if item.item_type == "music":
-                self._schedule_player_refresh(guild_id)
         except Exception as exc:
             print(f"[voice] Play failed in guild {guild_id}: {repr(exc)}", file=sys.stderr)
             error_text = str(exc) or repr(exc)
@@ -1271,7 +1185,6 @@ class BotVoiceCog(commands.Cog):
     async def _after_play(self, guild_id: int, error):
         state = self._get_state(guild_id)
         finished_item = state.current
-        self._cancel_player_refresh(state)
         state.playback_started_at = None
         state.playback_elapsed = 0.0
 
@@ -1309,9 +1222,52 @@ class BotVoiceCog(commands.Cog):
     async def _send_now_playing(self, guild_id: int, item: AudioItem):
         if item.item_type == "tts":
             return
-        await self._refresh_player_message(guild_id)
+        await self._refresh_player_message(guild_id, move_to_bottom=True)
 
-    async def _refresh_player_message(self, guild_id: int, preview_item: AudioItem | None = None):
+    async def _delete_player_message_unlocked(self, state: GuildAudioState):
+        if not state.player_message_id or not state.player_channel_id:
+            return
+        channel = self.bot.get_channel(state.player_channel_id)
+        if isinstance(channel, (discord.TextChannel, discord.Thread, discord.VoiceChannel)):
+            try:
+                message = await channel.fetch_message(state.player_message_id)
+                await message.delete()
+            except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+                pass
+        state.player_message_id = None
+        state.player_channel_id = None
+
+    async def _delete_player_message(self, guild_id: int):
+        async with self._player_message_lock(guild_id):
+            await self._delete_player_message_unlocked(self._get_state(guild_id))
+
+    def _player_message_content(self, state: GuildAudioState, item: AudioItem) -> str:
+        elapsed = self._playback_seconds(state)
+        voice_client = state.voice_client
+        if voice_client and voice_client.is_paused():
+            return (
+                f"⏸️ Tạm dừng tại `{self._duration_text(elapsed)}`"
+                + (
+                    f" / `{self._duration_text(item.duration)}`"
+                    if item.duration
+                    else ""
+                )
+            )
+
+        started_at = int(time.time() - elapsed)
+        parts = [f"▶️ Bắt đầu <t:{started_at}:R>"]
+        if item.duration:
+            ends_at = started_at + int(item.duration)
+            parts.append(f"kết thúc <t:{ends_at}:R>")
+        return " • ".join(parts)
+
+    async def _refresh_player_message(
+        self,
+        guild_id: int,
+        preview_item: AudioItem | None = None,
+        *,
+        move_to_bottom: bool = False,
+    ):
         state = self._get_state(guild_id)
         if preview_item and (not state.current or state.current.item_type != "music"):
             item = preview_item
@@ -1320,7 +1276,7 @@ class BotVoiceCog(commands.Cog):
         if not item or item.item_type != "music" or not state.text_channel_id:
             return
         channel = self.bot.get_channel(state.text_channel_id)
-        if not isinstance(channel, (discord.TextChannel, discord.Thread)):
+        if not isinstance(channel, (discord.TextChannel, discord.Thread, discord.VoiceChannel)):
             return
 
         theme = self.player_service.get_theme(guild_id)
@@ -1340,30 +1296,44 @@ class BotVoiceCog(commands.Cog):
             background_url=theme.get("background_url") or None,
             header_text=theme.get("title_text", "BLACK LOUS MUSIC"),
         )
-        try:
-            player_file = await build_player_file(data)
-            embed = build_player_embed()
-            view = MusicPlayerView(self, guild_id)
-            message = None
-            if state.player_message_id and state.player_channel_id == channel.id:
-                try:
-                    message = await channel.fetch_message(state.player_message_id)
-                except (discord.NotFound, discord.Forbidden, discord.HTTPException):
-                    message = None
-            if message:
-                await message.edit(embed=embed, attachments=[player_file], view=view)
-            else:
-                message = await channel.send(embed=embed, file=player_file, view=view)
+        async with self._player_message_lock(guild_id):
+            try:
+                player_file = await build_player_file(data)
+                view = MusicPlayerView(self, guild_id)
+                content = self._player_message_content(state, item)
+                message = None
+                if (
+                    not move_to_bottom
+                    and state.player_message_id
+                    and state.player_channel_id == channel.id
+                ):
+                    try:
+                        message = await channel.fetch_message(state.player_message_id)
+                    except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+                        message = None
+                if message:
+                    await message.edit(
+                        content=content,
+                        embeds=[],
+                        attachments=[player_file],
+                        view=view,
+                    )
+                else:
+                    await self._delete_player_message_unlocked(state)
+                    message = await channel.send(content=content, file=player_file, view=view)
+                    state.player_message_id = message.id
+                    state.player_channel_id = channel.id
+            except (discord.Forbidden, discord.HTTPException, OSError, ValueError):
+                link_text = f"[{item.title}]({item.webpage_url})" if item.webpage_url else item.title
+                fallback = (
+                    f"🎧 **Đang phát:** {link_text}\n"
+                    f"👤 Yêu cầu bởi: <@{item.requester_id}>\n"
+                    f"{self._player_message_content(state, item)}"
+                )
+                await self._delete_player_message_unlocked(state)
+                message = await channel.send(content=fallback, view=MusicPlayerView(self, guild_id))
                 state.player_message_id = message.id
                 state.player_channel_id = channel.id
-        except (discord.Forbidden, discord.HTTPException, OSError, ValueError):
-            link_text = f"[{item.title}]({item.webpage_url})" if item.webpage_url else item.title
-            fallback = discord.Embed(
-                title="🎧 Đang phát",
-                description=f"### {link_text}\n👤 Yêu cầu bởi: <@{item.requester_id}>",
-                color=discord.Color.from_rgb(54, 162, 235),
-            )
-            await channel.send(embed=fallback)
 
     @staticmethod
     def _active_tts_requester(state: GuildAudioState) -> int | None:
@@ -1497,8 +1467,6 @@ class BotVoiceCog(commands.Cog):
             await ctx.send(embed=self._player_settings_embed(ctx.guild.id), view=PlayerSettingsView(self, ctx.guild.id))
             return
 
-        await self._refresh_player_message(ctx.guild.id)
-
     async def handle_player_theme_submit(
         self,
         interaction: discord.Interaction,
@@ -1523,7 +1491,7 @@ class BotVoiceCog(commands.Cog):
             background_url=background_url,
         )
         await interaction.response.send_message("✅ Đã lưu giao diện player.", ephemeral=True)
-        await self._refresh_player_message(guild_id)
+        await self._refresh_player_message(guild_id, move_to_bottom=True)
 
     async def handle_player_settings_button(self, interaction: discord.Interaction, guild_id: int):
         if not isinstance(interaction.user, discord.Member) or not self._can_manage_player_settings(interaction.user):
@@ -1541,7 +1509,7 @@ class BotVoiceCog(commands.Cog):
     async def reset_player_theme(self, interaction: discord.Interaction, guild_id: int):
         self.player_service.reset_theme(guild_id)
         await interaction.response.send_message("✅ Player đã trở về giao diện mặc định.", ephemeral=True)
-        await self._refresh_player_message(guild_id)
+        await self._refresh_player_message(guild_id, move_to_bottom=True)
 
     async def send_player_preview(self, interaction: discord.Interaction, guild_id: int):
         state = self._get_state(guild_id)
@@ -1564,7 +1532,6 @@ class BotVoiceCog(commands.Cog):
         )
         player_file = await build_player_file(data)
         await interaction.response.send_message(
-            embed=build_player_embed(),
             file=player_file,
             ephemeral=True,
         )
@@ -1580,11 +1547,12 @@ class BotVoiceCog(commands.Cog):
             return
         state = self._get_state(guild_id)
         state.volume = volume / 100
+        self._save_user_preferences(state, interaction.user.id, volume=volume)
         voice_client = state.voice_client
         if voice_client and isinstance(voice_client.source, discord.PCMVolumeTransformer):
             voice_client.source.volume = state.volume
         await interaction.response.send_message(f"🔊 Âm lượng: `{volume}%`.", ephemeral=True)
-        await self._refresh_player_message(guild_id)
+        await self._refresh_player_message(guild_id, move_to_bottom=True)
 
     async def handle_player_button(self, interaction: discord.Interaction, guild_id: int, action: str):
         state = self._get_state(guild_id)
@@ -1602,7 +1570,7 @@ class BotVoiceCog(commands.Cog):
                 await interaction.response.send_message("❌ Hiện không có bài đang phát.", ephemeral=True)
                 return
             await interaction.response.send_message(message, ephemeral=True)
-            await self._refresh_player_message(guild_id)
+            await self._refresh_player_message(guild_id, move_to_bottom=True)
             return
         if action == "skip":
             if not voice_client or not voice_client.is_playing():
@@ -1619,6 +1587,7 @@ class BotVoiceCog(commands.Cog):
             await interaction.response.send_message("⏹️ Đã dừng và xóa queue.", ephemeral=True)
             if voice_client and (voice_client.is_playing() or voice_client.is_paused()):
                 voice_client.stop()
+            await self._delete_player_message(guild_id)
             return
         if action == "loop":
             state.loop_current = not state.loop_current
@@ -1626,7 +1595,7 @@ class BotVoiceCog(commands.Cog):
                 f"🔁 Loop: `{'Bật' if state.loop_current else 'Tắt'}`.",
                 ephemeral=True,
             )
-            await self._refresh_player_message(guild_id)
+            await self._refresh_player_message(guild_id, move_to_bottom=True)
             return
         if action == "autoplay":
             state.autoplay = not state.autoplay
@@ -1634,7 +1603,7 @@ class BotVoiceCog(commands.Cog):
                 f"♾️ Autoplay: `{'Bật' if state.autoplay else 'Tắt'}`.",
                 ephemeral=True,
             )
-            await self._refresh_player_message(guild_id)
+            await self._refresh_player_message(guild_id, move_to_bottom=True)
             return
         if action == "shuffle":
             if len(state.queue) < 2:
@@ -1642,7 +1611,7 @@ class BotVoiceCog(commands.Cog):
                 return
             random.shuffle(state.queue)
             await interaction.response.send_message(f"🔀 Đã trộn `{len(state.queue)}` bài.", ephemeral=True)
-            await self._refresh_player_message(guild_id)
+            await self._refresh_player_message(guild_id, move_to_bottom=True)
             return
         if action == "queue":
             lines = []
@@ -1656,6 +1625,7 @@ class BotVoiceCog(commands.Cog):
                 embed=create_info_splash("🎶 Queue", "\n".join(lines) if lines else "Queue đang trống."),
                 ephemeral=True,
             )
+            await self._refresh_player_message(guild_id, move_to_bottom=True)
             return
         if action == "leave":
             if state.voice_owner_id and state.voice_owner_id != interaction.user.id:
@@ -1670,7 +1640,6 @@ class BotVoiceCog(commands.Cog):
             state.loop_current = False
             state.stop_requested = True
             self._cancel_idle(state)
-            self._cancel_player_refresh(state)
             if voice_client and voice_client.is_connected():
                 if voice_client.is_playing() or voice_client.is_paused():
                     voice_client.stop()
@@ -1680,6 +1649,7 @@ class BotVoiceCog(commands.Cog):
             state.playback_started_at = None
             state.playback_elapsed = 0.0
             self._clear_voice_owner(state)
+            await self._delete_player_message(guild_id)
 
     async def _show_play_help(self, ctx):
         prefix = ctx.clean_prefix
@@ -1730,7 +1700,6 @@ class BotVoiceCog(commands.Cog):
             state.autoplay = not state.autoplay
         status = "bật" if state.autoplay else "tắt"
         await ctx.send(embed=create_success_splash("✅ Autoplay", f"Autoplay hiện đang **{status}**."))
-        await self._refresh_player_message(ctx.guild.id)
 
     async def _handle_play_action(self, ctx, action: str, rest: str):
         state = self._get_state(ctx.guild.id)
@@ -1756,7 +1725,6 @@ class BotVoiceCog(commands.Cog):
                 return
             random.shuffle(state.queue)
             await ctx.send(embed=create_success_splash("✅ Shuffle", f"Đã trộn `{len(state.queue)}` bài trong queue."))
-            await self._refresh_player_message(ctx.guild.id)
             return
         if action == "autoplay":
             await self._toggle_autoplay(ctx, rest or None)
@@ -1774,7 +1742,6 @@ class BotVoiceCog(commands.Cog):
                 self._pause_playback_clock(state)
                 voice_client.pause()
                 await ctx.send(embed=create_success_splash("✅ Pause", "Đã tạm dừng phát nhạc."))
-                await self._refresh_player_message(ctx.guild.id)
             else:
                 await ctx.send(embed=create_error_splash("❌ Không Phát", "Hiện không có bài nào đang phát."))
             return
@@ -1783,7 +1750,6 @@ class BotVoiceCog(commands.Cog):
                 voice_client.resume()
                 self._resume_playback_clock(state)
                 await ctx.send(embed=create_success_splash("✅ Resume", "Đã tiếp tục phát nhạc."))
-                await self._refresh_player_message(ctx.guild.id)
             else:
                 await ctx.send(embed=create_error_splash("❌ Không Pause", "Bot không đang tạm dừng."))
             return
@@ -1795,16 +1761,15 @@ class BotVoiceCog(commands.Cog):
                 voice_client.stop()
             else:
                 self._schedule_idle_disconnect(ctx.guild.id)
-                self._cancel_player_refresh(state)
                 state.playback_started_at = None
                 state.playback_elapsed = 0.0
             await ctx.send(embed=create_success_splash("✅ Stop", "Đã dừng phát và xóa queue. Bot sẽ tự out sau 5 phút nếu không dùng."))
+            await self._delete_player_message(ctx.guild.id)
             return
         if action == "clear":
             count = len(state.queue)
             state.queue.clear()
             await ctx.send(embed=create_success_splash("✅ Clear Queue", f"Đã xóa `{count}` bài khỏi queue."))
-            await self._refresh_player_message(ctx.guild.id)
             return
         if action == "leave":
             if state.voice_owner_id and state.voice_owner_id != ctx.author.id:
@@ -1820,7 +1785,6 @@ class BotVoiceCog(commands.Cog):
             state.loop_current = False
             state.stop_requested = True
             self._cancel_idle(state)
-            self._cancel_player_refresh(state)
             if voice_client and voice_client.is_connected():
                 if voice_client.is_playing() or voice_client.is_paused():
                     voice_client.stop()
@@ -1831,12 +1795,12 @@ class BotVoiceCog(commands.Cog):
             state.playback_elapsed = 0.0
             self._clear_voice_owner(state)
             await ctx.send(embed=create_success_splash("✅ Đã Rời Voice", "Bot đã rời voice channel."))
+            await self._delete_player_message(ctx.guild.id)
             return
         if action == "now":
             if not state.current:
                 await ctx.send(embed=create_error_splash("❌ Không Có Bài", "Hiện chưa có bài nào đang phát."))
                 return
-            await self._send_now_playing(ctx.guild.id, state.current)
             return
         if action == "volume":
             if not rest:
@@ -1851,10 +1815,10 @@ class BotVoiceCog(commands.Cog):
                 await ctx.send(embed=create_error_splash("❌ Sai Volume", "Volume phải nằm trong khoảng 0-200."))
                 return
             state.volume = volume / 100
+            self._save_user_preferences(state, ctx.author.id, volume=volume)
             if voice_client and voice_client.source and isinstance(voice_client.source, discord.PCMVolumeTransformer):
                 voice_client.source.volume = state.volume
             await ctx.send(embed=create_success_splash("✅ Volume", f"Đã set volume thành `{volume}%`."))
-            await self._refresh_player_message(ctx.guild.id)
             return
         if action == "loop":
             if rest:
@@ -1870,7 +1834,6 @@ class BotVoiceCog(commands.Cog):
                 state.loop_current = not state.loop_current
             status = "bật" if state.loop_current else "tắt"
             await ctx.send(embed=create_success_splash("✅ Loop", f"Loop bài hiện tại đang **{status}**."))
-            await self._refresh_player_message(ctx.guild.id)
             return
         if action == "remove":
             if not rest:
@@ -1886,7 +1849,6 @@ class BotVoiceCog(commands.Cog):
                 return
             removed = state.queue.pop(index - 1)
             await ctx.send(embed=create_success_splash("✅ Đã Xóa Khỏi Queue", f"Đã xóa `{removed.title}`."))
-            await self._refresh_player_message(ctx.guild.id)
 
     async def _add_music(self, ctx, query: str):
         if not await self._require_ffmpeg(ctx):
@@ -1901,7 +1863,13 @@ class BotVoiceCog(commands.Cog):
 
         state = self._get_state(ctx.guild.id)
         state.text_channel_id = ctx.channel.id
-        should_show_preview = state.current is None
+        has_music_session = bool(
+            (state.current and state.current.item_type == "music")
+            or any(item.item_type == "music" for item in state.queue)
+        )
+        starting_new_session = not has_music_session
+        if starting_new_session:
+            self._apply_user_preferences(state, ctx.author.id)
 
         try:
             async with ctx.typing():
@@ -1931,10 +1899,9 @@ class BotVoiceCog(commands.Cog):
             return
 
         state.queue.extend(items)
-        if should_show_preview:
-            await self._refresh_player_message(ctx.guild.id, preview_item=items[0])
         await self._start_player_if_needed(ctx.guild.id)
-        await self._refresh_player_message(ctx.guild.id)
+        if not starting_new_session:
+            await self._refresh_player_message(ctx.guild.id, move_to_bottom=True)
 
     @commands.command(name="join", aliases=["j"])
     async def join(self, ctx):
@@ -2026,6 +1993,13 @@ class BotVoiceCog(commands.Cog):
         action = self.PLAY_ACTIONS.get(first.lower())
         if action:
             await self._handle_play_action(ctx, action, rest.strip())
+            state = self._get_state(ctx.guild.id)
+            if (
+                action not in {"skip", "stop", "leave"}
+                and state.current
+                and state.current.item_type == "music"
+            ):
+                await self._refresh_player_message(ctx.guild.id, move_to_bottom=True)
             return
 
         await self._add_music(ctx, content)
