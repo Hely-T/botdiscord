@@ -48,6 +48,8 @@ class NoteService:
             "edit_count": "INTEGER DEFAULT 0",
             "last_editor_user_id": "INTEGER",
             "last_editor_name": "TEXT",
+            "source_url": "TEXT",
+            "source_message_id": "INTEGER",
         }
         for column_name, column_sql in migrations.items():
             if column_name not in columns:
@@ -59,6 +61,7 @@ class NoteService:
         self.db.execute("UPDATE notes SET kind = 'plain' WHERE kind IS NULL OR kind = ''")
         self.db.execute("UPDATE notes SET edit_count = 0 WHERE edit_count IS NULL")
         self.db.execute("UPDATE notes SET last_editor_name = '' WHERE last_editor_name IS NULL")
+        self.db.execute("UPDATE notes SET source_url = '' WHERE source_url IS NULL")
 
     @staticmethod
     def _scope_guild_id(guild_id: int | None) -> int:
@@ -75,6 +78,8 @@ class NoteService:
         author_name: str = "",
         title: str = "",
         kind: str = "plain",
+        source_url: str = "",
+        source_message_id: int | None = None,
     ) -> dict | None:
         now = get_timestamp()
         self.db.insert(
@@ -91,6 +96,8 @@ class NoteService:
                 "edit_count": 0,
                 "last_editor_user_id": None,
                 "last_editor_name": "",
+                "source_url": str(source_url or "").strip(),
+                "source_message_id": int(source_message_id) if source_message_id is not None else None,
                 "created_at": now,
                 "updated_at": now,
             },

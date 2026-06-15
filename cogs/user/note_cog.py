@@ -326,7 +326,9 @@ class NoteCog(commands.Cog):
         if int(note.get("author_user_id") or note.get("user_id") or 0) != int(note.get("user_id") or 0):
             author_name = note.get("author_name") or f"User {note.get('author_user_id')}"
             author = f" · bởi {author_name}"
-        return f"{kind_label}{position}. {self._shorten(head, 170)}{marker}{amount}{author}"
+        source_url = str(note.get("source_url") or "").strip()
+        source_link = f" · [Tin nhắn]({source_url})" if source_url else ""
+        return f"{kind_label}{position}. {self._shorten(head, 170)}{marker}{amount}{author}{source_link}"
 
     def _format_notes_plain(self, ctx, member: discord.Member | None = None) -> str:
         target = member or ctx.author
@@ -359,12 +361,50 @@ class NoteCog(commands.Cog):
         if title:
             embed.add_field(name="Tiêu đề", value=title[:1024], inline=False)
         embed.description = self._shorten(content, 350) if compact else content[:4096]
+        source_url = str(note.get("source_url") or "").strip()
+        if source_url:
+            embed.add_field(
+                name="Tin nhắn gốc",
+                value=f"[Đi tới tin nhắn]({source_url})",
+                inline=False,
+            )
         footer = "TXT" if note.get("kind") == "txt" else "Note"
         if int(note.get("edit_count") or 0) > 0:
             footer += " - Fix"
         embed.set_footer(text=footer)
         append_discord_timestamp(embed)
         return embed
+
+    async def _resolve_replied_message(self, ctx) -> discord.Message | None:
+        reference = getattr(ctx.message, "reference", None)
+        if not reference:
+            return None
+        resolved = getattr(reference, "resolved", None)
+        if isinstance(resolved, discord.Message):
+            return resolved
+        if not reference.message_id:
+            return None
+        try:
+            return await ctx.channel.fetch_message(reference.message_id)
+        except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+            return None
+
+    @staticmethod
+    def _reply_note_content(message: discord.Message) -> str:
+        parts: list[str] = []
+        content = str(message.content or "").strip()
+        if content:
+            parts.append(content)
+        parts.extend(str(attachment.url) for attachment in message.attachments)
+        parts.extend(str(sticker.url) for sticker in message.stickers)
+        for embed in message.embeds:
+            if embed.title:
+                parts.append(str(embed.title))
+            if embed.description:
+                parts.append(str(embed.description))
+            for field in embed.fields:
+                parts.append(f"{field.name}: {field.value}")
+        return "\n".join(parts).strip()
 
     def _build_note_source_embed(self, note: dict, position: int, target_name: str) -> discord.Embed:
         embed = discord.Embed(
@@ -515,7 +555,10 @@ class NoteCog(commands.Cog):
         mentioned_target, rest = await self._target_from_leading_mention(ctx, stripped)
         target = mentioned_target or ctx.author
         raw_content = rest if mentioned_target else stripped
-        if mentioned_target and not raw_content.strip():
+        replied_message = None
+        if not raw_content.strip():
+            replied_message = await self._resolve_replied_message(ctx)
+        if mentioned_target and not raw_content.strip() and replied_message is None:
             if not (self.service.is_public(self._guild_id(ctx), target.id) or self._can_manage_notes(ctx)):
                 await ctx.reply("❌ Bạn không có quyền truy cập note của người này.", mention_author=False)
                 return
@@ -523,6 +566,44 @@ class NoteCog(commands.Cog):
             return
         if target.id != ctx.author.id and not self.service.is_public(self._guild_id(ctx), target.id) and not self._can_manage_notes(ctx):
             await ctx.reply("❌ Người này đang để note `private`. Chỉ admin hoặc role có quyền `note` mới thêm được.", mention_author=False)
+            return
+        if replied_message is not None:
+            reply_content = self._reply_note_content(replied_message)
+            if not reply_content:
+                await ctx.reply("❌ Tin nhắn được reply không có nội dung hoặc tệp để lưu.", mention_author=False)
+                return
+            created = self.service.add_note(
+                self._guild_id(ctx),
+                target.id,
+                reply_content,
+                author_user_id=ctx.author.id,
+                author_name=ctx.author.display_name,
+                title=f"Tin nhắn của {replied_message.author.display_name}",
+                kind="txt",
+                source_url=replied_message.jump_url,
+                source_message_id=replied_message.id,
+            )
+            position = len(self.service.list_notes(self._guild_id(ctx), target.id))
+            compact = self._build_single_note_embed(
+                created,
+                position,
+                target.display_name,
+                compact=True,
+                guild=ctx.guild,
+            )
+            full = self._build_single_note_embed(
+                created,
+                position,
+                target.display_name,
+                compact=False,
+                guild=ctx.guild,
+            )
+            await ctx.reply(
+                embed=compact,
+                view=NoteContentView(compact, full),
+                mention_author=False,
+                allowed_mentions=discord.AllowedMentions.none(),
+            )
             return
         if raw_content.strip().lower() == "txt":
             await ctx.reply(
@@ -563,6 +644,9 @@ class NoteCog(commands.Cog):
     @commands.command(name="note")
     async def note(self, ctx, *, content: str = None):
         if not content:
+            if ctx.message.reference:
+                await self._handle_add(ctx, "")
+                return
             await ctx.reply(self._format_notes_plain(ctx), mention_author=False)
             return
 

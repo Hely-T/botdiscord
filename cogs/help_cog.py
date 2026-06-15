@@ -733,6 +733,7 @@ class HelpView:
                     "`note <nội dung> <số tiền>` thêm note kèm tiền, ví dụ `note mua đồ 100k`.\n"
                     "`note @user` xem note của user đó nếu public hoặc bạn có quyền `note`.\n"
                     "`note @user <nội dung>` thêm note vào người khác nếu họ public hoặc bạn có quyền `note`.\n"
+                    "Reply tin nhắn rồi dùng `note` hoặc `note @user` để lưu nội dung thành TXT kèm link nhảy tới tin nhắn gốc.\n"
                     "`note public/private` hoặc `note pb/prv` bật/tắt cho người khác note vào bạn.\n"
                     "`note public/private @user` admin hoặc role `note public`/`note private` bật/tắt cho người khác.\n"
                     "`note @user txt` mở popup nhập tiêu đề và nội dung dài.\n"

@@ -54,6 +54,9 @@ Trong docs dùng `{prefix}` để đại diện cho prefix hiện tại.
   - Xem note của user đó nếu họ public hoặc bạn có quyền `note`; private sẽ báo không có quyền truy cập.
 - `{prefix}note @user <nội dung>`
   - Thêm note vào danh sách người khác nếu họ public, hoặc bạn là admin/role có quyền `note`.
+- Reply một tin nhắn rồi dùng `{prefix}note` hoặc `{prefix}note @user`
+  - Lưu nội dung, file, sticker hoặc embed của tin nhắn thành note TXT.
+  - Note có link **Tin nhắn** để nhảy thẳng tới tin nhắn gốc.
 - `{prefix}note @user txt`
   - Hiện nút mở popup nhập tiêu đề và nội dung dài.
 - `{prefix}note tiêu đề [file nội dung dài]`
