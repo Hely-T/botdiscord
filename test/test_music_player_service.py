@@ -44,6 +44,25 @@ class MusicPlayerPreferencesTest(unittest.TestCase):
             0,
         )
 
+    def test_volume_changes_are_saved_only_for_the_user_who_changed_it(self):
+        cog = BotVoiceCog.__new__(BotVoiceCog)
+        cog.player_service = self.service
+        state = GuildAudioState()
+
+        state.volume = 1.0
+        cog._save_user_preferences(state, 123, volume=100)
+        state.volume = 0.4
+        cog._save_user_preferences(state, 456, volume=40)
+
+        self.assertEqual(self.service.get_user_preferences(123)["volume"], 100)
+        self.assertEqual(self.service.get_user_preferences(456)["volume"], 40)
+        self.assertEqual(state.volume, 0.4)
+
+        cog._apply_user_preferences(state, 123)
+        self.assertEqual(state.volume, 1.0)
+        cog._apply_user_preferences(state, 456)
+        self.assertEqual(state.volume, 0.4)
+
     def test_player_content_and_icon_theme_can_be_saved_and_reset(self):
         theme = self.service.set_theme(
             777,

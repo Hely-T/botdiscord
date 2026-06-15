@@ -211,7 +211,9 @@ Trong docs dùng `{prefix}` để đại diện cho prefix hiện tại.
 - `{prefix}play v <0-200>`
   - Set volume.
   - Có thể dùng `{prefix}play vol <0-200>`.
-  - Volume được lưu riêng theo user và tự áp dụng khi user đó bắt đầu phiên phát mới.
+  - Volume được lưu riêng cho đúng người vừa chỉnh; người khác chỉnh không ghi đè dữ liệu của bạn.
+  - Mức mới có hiệu lực ngay cho phiên đang phát và toàn bộ queue hiện tại.
+  - Khi bắt đầu phiên phát mới, bot tự nạp volume đã lưu của người mở phiên đó.
   - Autoplay và loop không được lưu.
 - `{prefix}play rm <số>`
   - Xóa một bài khỏi queue theo số thứ tự.

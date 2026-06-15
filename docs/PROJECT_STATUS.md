@@ -26,7 +26,7 @@ Trạng thái: đang phát triển, đã chuẩn hóa catalog cog, service/datab
 - Donate có kênh cảm ơn, bảng xếp hạng tháng 1-50, phân trang 10 người và reset không ảnh hưởng cash/tổng donate.
 - Note có public/private, note cho người khác theo quyền, TXT popup và nội dung dài có thể thu gọn/phóng to.
 - Command có thể bị khóa theo từng channel; hỗ trợ khóa command gốc hoặc command con.
-- Music player lưu volume theo user, dùng đề xuất YouTube cho autoplay và chỉ giữ một card ở cuối chat.
+- Music player lưu volume độc lập theo từng user; mức vừa chỉnh áp dụng cho queue hiện tại, phiên mới nạp volume của người mở phiên.
 - Card player có thanh tiến trình GIF, đồng bộ playback clock mỗi 30 giây và persistent controls.
 - Playback không chờ render card; card được dựng bằng background task sau khi nhạc bắt đầu.
 - Giveaway có menu `ga config` để sửa nội dung, icon và emoji tham gia theo server.
