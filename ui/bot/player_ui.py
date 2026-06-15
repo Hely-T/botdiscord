@@ -214,12 +214,34 @@ def _render_card(
         _format_ui_text(data.autoplay_text, status="Bật" if data.autoplay else "Tắt"),
         _format_ui_text(data.queue_text, count=data.queue_count),
     ]
+    mode_font_size = 20
+    mode_font = small_font
+    available_width = 595
+    gap = 8
+    while mode_font_size > 13:
+        widths = [int(draw.textlength(mode, font=mode_font)) + 24 for mode in modes]
+        if sum(widths) + gap * (len(widths) - 1) <= available_width:
+            break
+        mode_font_size -= 1
+        mode_font = _font(mode_font_size)
+
+    widths = [int(draw.textlength(mode, font=mode_font)) + 24 for mode in modes]
+    if sum(widths) + gap * (len(widths) - 1) > available_width:
+        max_chip_width = (available_width - gap * (len(modes) - 1)) // len(modes)
+        modes = [
+            _fit_text(draw, mode, mode_font, max_chip_width - 24)
+            for mode in modes
+        ]
+        widths = [max_chip_width] * len(modes)
+
     x = 355
-    for mode in modes:
-        width = int(draw.textlength(mode, font=small_font)) + 30
+    for mode, width in zip(modes, widths):
         draw.rounded_rectangle((x, 298, x + width, 330), radius=14, fill="#f2dce4")
-        draw.text((x + 15, 303), mode, font=small_font, fill=accent)
-        x += width + 12
+        mode_bbox = draw.textbbox((0, 0), mode, font=mode_font)
+        mode_height = mode_bbox[3] - mode_bbox[1]
+        mode_y = 298 + ((32 - mode_height) // 2) - mode_bbox[1]
+        draw.text((x + 12, mode_y), mode, font=mode_font, fill=accent)
+        x += width + gap
 
     frame_path = ASSET_DIR / "player_frame.png"
     if frame_path.exists():
@@ -321,7 +343,7 @@ class PlayerVolumeModal(discord.ui.Modal, title="Chỉnh âm lượng"):
 
 class MusicPlayerView(discord.ui.View):
     def __init__(self, controller, guild_id: int, theme: dict | None = None):
-        super().__init__(timeout=900)
+        super().__init__(timeout=None)
         self.controller = controller
         self.guild_id = guild_id
         theme = theme or {}
@@ -345,44 +367,47 @@ class MusicPlayerView(discord.ui.View):
                     break
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
-        return await self.controller.check_player_interaction(interaction, self.guild_id)
+        return await self.controller.check_player_interaction(
+            interaction,
+            interaction.guild_id or self.guild_id,
+        )
 
-    @discord.ui.button(label="Pause / Resume", emoji="⏯️", style=discord.ButtonStyle.primary, row=0)
+    @discord.ui.button(label="Pause / Resume", emoji="⏯️", style=discord.ButtonStyle.primary, row=0, custom_id="music_player:pause_resume")
     async def pause_resume(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await self.controller.handle_player_button(interaction, self.guild_id, "pause_resume")
+        await self.controller.handle_player_button(interaction, interaction.guild_id or self.guild_id, "pause_resume")
 
-    @discord.ui.button(label="Stop", emoji="⏹️", style=discord.ButtonStyle.danger, row=0)
+    @discord.ui.button(label="Stop", emoji="⏹️", style=discord.ButtonStyle.danger, row=0, custom_id="music_player:stop")
     async def stop(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await self.controller.handle_player_button(interaction, self.guild_id, "stop")
+        await self.controller.handle_player_button(interaction, interaction.guild_id or self.guild_id, "stop")
 
-    @discord.ui.button(label="Skip", emoji="⏭️", style=discord.ButtonStyle.secondary, row=0)
+    @discord.ui.button(label="Skip", emoji="⏭️", style=discord.ButtonStyle.secondary, row=0, custom_id="music_player:skip")
     async def skip(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await self.controller.handle_player_button(interaction, self.guild_id, "skip")
+        await self.controller.handle_player_button(interaction, interaction.guild_id or self.guild_id, "skip")
 
-    @discord.ui.button(label="Loop", emoji="🔁", style=discord.ButtonStyle.secondary, row=0)
+    @discord.ui.button(label="Loop", emoji="🔁", style=discord.ButtonStyle.secondary, row=0, custom_id="music_player:loop")
     async def loop(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await self.controller.handle_player_button(interaction, self.guild_id, "loop")
+        await self.controller.handle_player_button(interaction, interaction.guild_id or self.guild_id, "loop")
 
-    @discord.ui.button(label="Đề xuất YouTube", emoji="♾️", style=discord.ButtonStyle.secondary, row=0)
+    @discord.ui.button(label="Đề xuất YouTube", emoji="♾️", style=discord.ButtonStyle.secondary, row=0, custom_id="music_player:autoplay")
     async def autoplay(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await self.controller.handle_player_button(interaction, self.guild_id, "autoplay")
+        await self.controller.handle_player_button(interaction, interaction.guild_id or self.guild_id, "autoplay")
 
-    @discord.ui.button(label="Shuffle", emoji="🔀", style=discord.ButtonStyle.secondary, row=1)
+    @discord.ui.button(label="Shuffle", emoji="🔀", style=discord.ButtonStyle.secondary, row=1, custom_id="music_player:shuffle")
     async def shuffle(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await self.controller.handle_player_button(interaction, self.guild_id, "shuffle")
+        await self.controller.handle_player_button(interaction, interaction.guild_id or self.guild_id, "shuffle")
 
-    @discord.ui.button(label="Queue", emoji="📋", style=discord.ButtonStyle.secondary, row=1)
+    @discord.ui.button(label="Queue", emoji="📋", style=discord.ButtonStyle.secondary, row=1, custom_id="music_player:queue")
     async def queue(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await self.controller.handle_player_button(interaction, self.guild_id, "queue")
+        await self.controller.handle_player_button(interaction, interaction.guild_id or self.guild_id, "queue")
 
-    @discord.ui.button(label="Âm lượng", emoji="🔊", style=discord.ButtonStyle.secondary, row=1)
+    @discord.ui.button(label="Âm lượng", emoji="🔊", style=discord.ButtonStyle.secondary, row=1, custom_id="music_player:volume")
     async def volume(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.send_modal(PlayerVolumeModal(self.controller, self.guild_id))
+        await interaction.response.send_modal(PlayerVolumeModal(self.controller, interaction.guild_id or self.guild_id))
 
-    @discord.ui.button(label="Settings", emoji="⚙️", style=discord.ButtonStyle.secondary, row=1)
+    @discord.ui.button(label="Settings", emoji="⚙️", style=discord.ButtonStyle.secondary, row=1, custom_id="music_player:settings")
     async def settings(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await self.controller.handle_player_settings_button(interaction, self.guild_id)
+        await self.controller.handle_player_settings_button(interaction, interaction.guild_id or self.guild_id)
 
-    @discord.ui.button(label="Rời voice", emoji="🚪", style=discord.ButtonStyle.secondary, row=1)
+    @discord.ui.button(label="Rời voice", emoji="🚪", style=discord.ButtonStyle.secondary, row=1, custom_id="music_player:leave")
     async def leave(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await self.controller.handle_player_button(interaction, self.guild_id, "leave")
+        await self.controller.handle_player_button(interaction, interaction.guild_id or self.guild_id, "leave")

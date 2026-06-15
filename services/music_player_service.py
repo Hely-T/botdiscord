@@ -7,8 +7,6 @@ DEFAULT_PLAYER_THEME = {
     "accent_color": "#7f314d",
     "background_url": "",
     "title_text": "BLACK LOUS MUSIC",
-    "message_playing": "▶️ Bắt đầu {started} • kết thúc {ends}",
-    "message_paused": "⏸️ Tạm dừng tại `{elapsed}` / `{duration}`",
     "card_requester": "Yêu cầu bởi: {requester}",
     "card_status_playing": "ĐANG PHÁT",
     "card_status_paused": "TẠM DỪNG",
@@ -37,7 +35,6 @@ DEFAULT_PLAYER_THEME = {
     "icon_volume": "🔊",
     "icon_settings": "⚙️",
     "icon_leave": "🚪",
-    "reaction_search": "🎶",
     "reaction_success": "✅",
     "reaction_error": "❌",
 }

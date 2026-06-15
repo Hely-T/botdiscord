@@ -27,7 +27,7 @@ Trạng thái: đang phát triển, đã chuẩn hóa catalog cog, service/datab
 - Note có public/private, note cho người khác theo quyền, TXT popup và nội dung dài có thể thu gọn/phóng to.
 - Command có thể bị khóa theo từng channel; hỗ trợ khóa command gốc hoặc command con.
 - Music player lưu volume theo user, dùng đề xuất YouTube cho autoplay và chỉ giữ một card ở cuối chat.
-- Card player có thanh tiến trình GIF tự chạy, không cần reload tin nhắn định kỳ.
+- Card player có thanh tiến trình GIF, đồng bộ playback clock mỗi 30 giây và persistent controls.
 - Giveaway có menu `ga config` để sửa nội dung, icon và emoji tham gia theo server.
 - Ticket manager có menu riêng cho nội dung và icon theo server.
 - Music player có menu settings cho giao diện, nội dung, icon và reaction; autoplay/loop không được lưu.

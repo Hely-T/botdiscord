@@ -40,6 +40,8 @@ from ui.bot.play_config_ui import PlayerThemeModal, PlayConfigMenu, build_play_c
 
 
 IDLE_TIMEOUT_SECONDS = 300
+PLAYER_SYNC_SECONDS = 30
+PLAYER_RENDER_LEAD_SECONDS = 2
 MAX_QUEUE_ITEMS = 80
 QUEUE_PAGE_SIZE = 12
 DEFAULT_VOLUME = 0.65
@@ -98,6 +100,7 @@ class GuildAudioState:
     player_channel_id: int | None = None
     playback_started_at: float | None = None
     playback_elapsed: float = 0.0
+    player_sync_task: asyncio.Task | None = None
     autoplay_history: list[str] = field(default_factory=list)
     last_music_item: AudioItem | None = None
     preference_user_id: int | None = None
@@ -172,11 +175,14 @@ class BotVoiceCog(commands.Cog):
         self.admins = AdminService()
         self.role_permissions = RolePermissionService()
         self.player_service = MusicPlayerService()
+        bot.add_view(MusicPlayerView(self, 0))
 
     def cog_unload(self):
         for state in self.states.values():
             if state.idle_task and not state.idle_task.done():
                 state.idle_task.cancel()
+            if state.player_sync_task and not state.player_sync_task.done():
+                state.player_sync_task.cancel()
 
     def _get_state(self, guild_id: int) -> GuildAudioState:
         if guild_id not in self.states:
@@ -721,6 +727,40 @@ class BotVoiceCog(commands.Cog):
         state.idle_task = None
 
     @staticmethod
+    def _cancel_player_sync(state: GuildAudioState):
+        if state.player_sync_task and not state.player_sync_task.done():
+            state.player_sync_task.cancel()
+        state.player_sync_task = None
+
+    def _schedule_player_sync(self, guild_id: int):
+        state = self._get_state(guild_id)
+        self._cancel_player_sync(state)
+        state.player_sync_task = self.bot.loop.create_task(
+            self._player_sync_loop(guild_id)
+        )
+
+    async def _player_sync_loop(self, guild_id: int):
+        try:
+            while True:
+                await asyncio.sleep(PLAYER_SYNC_SECONDS)
+                state = self._get_state(guild_id)
+                voice_client = state.voice_client
+                if (
+                    not state.current
+                    or state.current.item_type != "music"
+                    or not voice_client
+                    or not voice_client.is_connected()
+                ):
+                    return
+                if voice_client.is_paused():
+                    continue
+                if not voice_client.is_playing():
+                    return
+                await self._refresh_player_message(guild_id)
+        except asyncio.CancelledError:
+            return
+
+    @staticmethod
     def _playback_seconds(state: GuildAudioState) -> int:
         elapsed = state.playback_elapsed
         if state.playback_started_at is not None:
@@ -1145,12 +1185,25 @@ class BotVoiceCog(commands.Cog):
 
         try:
             ffmpeg_executable = self._find_ffmpeg() or "ffmpeg"
+            prepared_file = None
             if item.item_type == "music":
                 item = await self._resolve_stream_url(item)
                 history_key = self._autoplay_item_key(item)
                 if history_key:
                     state.autoplay_history.append(history_key)
                     state.autoplay_history = state.autoplay_history[-100:]
+                try:
+                    prepared_file = await self._build_player_card_file(
+                        guild_id,
+                        item,
+                        elapsed=0,
+                        paused=False,
+                    )
+                except (OSError, ValueError, discord.HTTPException) as card_error:
+                    print(
+                        f"[voice] Could not prepare player card in guild {guild_id}: {card_error!r}",
+                        file=sys.stderr,
+                    )
                 source = discord.FFmpegPCMAudio(
                     item.stream_url,
                     executable=ffmpeg_executable,
@@ -1171,7 +1224,19 @@ class BotVoiceCog(commands.Cog):
             voice_client.play(source, after=after_play)
             state.playback_elapsed = 0.0
             state.playback_started_at = time.monotonic()
-            await self._send_now_playing(guild_id, item)
+            if item.item_type == "music":
+                try:
+                    await self._send_now_playing(
+                        guild_id,
+                        item,
+                        prepared_file=prepared_file,
+                    )
+                except Exception as card_error:
+                    print(
+                        f"[voice] Could not send player card in guild {guild_id}: {card_error!r}",
+                        file=sys.stderr,
+                    )
+                self._schedule_player_sync(guild_id)
             self.bot.loop.create_task(self._verify_playback_started(guild_id, item))
         except Exception as exc:
             print(f"[voice] Play failed in guild {guild_id}: {repr(exc)}", file=sys.stderr)
@@ -1188,6 +1253,7 @@ class BotVoiceCog(commands.Cog):
 
     async def _after_play(self, guild_id: int, error):
         state = self._get_state(guild_id)
+        self._cancel_player_sync(state)
         finished_item = state.current
         state.playback_started_at = None
         state.playback_elapsed = 0.0
@@ -1223,10 +1289,20 @@ class BotVoiceCog(commands.Cog):
             except OSError:
                 pass
 
-    async def _send_now_playing(self, guild_id: int, item: AudioItem):
+    async def _send_now_playing(
+        self,
+        guild_id: int,
+        item: AudioItem,
+        *,
+        prepared_file: discord.File | None = None,
+    ):
         if item.item_type == "tts":
             return
-        await self._refresh_player_message(guild_id, move_to_bottom=True)
+        await self._refresh_player_message(
+            guild_id,
+            move_to_bottom=True,
+            prepared_file=prepared_file,
+        )
 
     async def _delete_player_message_unlocked(self, state: GuildAudioState):
         if not state.player_message_id or not state.player_channel_id:
@@ -1245,60 +1321,24 @@ class BotVoiceCog(commands.Cog):
         async with self._player_message_lock(guild_id):
             await self._delete_player_message_unlocked(self._get_state(guild_id))
 
-    @staticmethod
-    def _format_player_text(template: str, **values) -> str:
-        try:
-            return str(template).format(**values)
-        except (KeyError, ValueError):
-            return str(template)
-
-    def _player_message_content(self, guild_id: int, state: GuildAudioState, item: AudioItem) -> str:
-        theme = self.player_service.get_theme(guild_id)
-        elapsed = self._playback_seconds(state)
-        voice_client = state.voice_client
-        if voice_client and voice_client.is_paused():
-            return self._format_player_text(
-                theme.get("message_paused"),
-                elapsed=self._duration_text(elapsed),
-                duration=self._duration_text(item.duration),
-            )
-
-        started_at = int(time.time() - elapsed)
-        ends_at = started_at + int(item.duration or 0)
-        return self._format_player_text(
-            theme.get("message_playing"),
-            started=f"<t:{started_at}:R>",
-            ends=f"<t:{ends_at}:R>" if item.duration else "không rõ",
-        )
-
-    async def _refresh_player_message(
+    async def _build_player_card_file(
         self,
         guild_id: int,
-        preview_item: AudioItem | None = None,
+        item: AudioItem,
         *,
-        move_to_bottom: bool = False,
-    ):
+        elapsed: int,
+        paused: bool,
+    ) -> discord.File:
         state = self._get_state(guild_id)
-        if preview_item and (not state.current or state.current.item_type != "music"):
-            item = preview_item
-        else:
-            item = state.current
-        if not item or item.item_type != "music" or not state.text_channel_id:
-            return
-        channel = self.bot.get_channel(state.text_channel_id)
-        if not isinstance(channel, (discord.TextChannel, discord.Thread, discord.VoiceChannel)):
-            return
-
         theme = self.player_service.get_theme(guild_id)
-        voice_client = state.voice_client
         data = PlayerCardData(
             title=item.title,
             requester=item.requester_name,
             duration=item.duration,
-            elapsed=self._playback_seconds(state) if state.current else 0,
+            elapsed=elapsed,
             thumbnail=item.thumbnail,
             volume=int(state.volume * 100),
-            paused=bool(voice_client and voice_client.is_paused()),
+            paused=paused,
             loop=state.loop_current,
             autoplay=state.autoplay,
             queue_count=len(state.queue),
@@ -1314,11 +1354,47 @@ class BotVoiceCog(commands.Cog):
             autoplay_text=theme.get("card_autoplay"),
             queue_text=theme.get("card_queue"),
         )
+        return await build_player_file(data)
+
+    async def _refresh_player_message(
+        self,
+        guild_id: int,
+        preview_item: AudioItem | None = None,
+        *,
+        move_to_bottom: bool = False,
+        prepared_file: discord.File | None = None,
+    ):
+        state = self._get_state(guild_id)
+        if preview_item and (not state.current or state.current.item_type != "music"):
+            item = preview_item
+        else:
+            item = state.current
+        if not item or item.item_type != "music" or not state.text_channel_id:
+            return
+        channel = self.bot.get_channel(state.text_channel_id)
+        if not isinstance(channel, (discord.TextChannel, discord.Thread, discord.VoiceChannel)):
+            return
+
+        theme = self.player_service.get_theme(guild_id)
+        voice_client = state.voice_client
         async with self._player_message_lock(guild_id):
             try:
-                player_file = await build_player_file(data)
+                player_file = prepared_file or await self._build_player_card_file(
+                    guild_id,
+                    item,
+                    elapsed=(
+                        self._playback_seconds(state)
+                        + (
+                            PLAYER_RENDER_LEAD_SECONDS
+                            if voice_client and voice_client.is_playing()
+                            else 0
+                        )
+                    )
+                    if state.current
+                    else 0,
+                    paused=bool(voice_client and voice_client.is_paused()),
+                )
                 view = MusicPlayerView(self, guild_id, theme)
-                content = self._player_message_content(guild_id, state, item)
                 message = None
                 if (
                     not move_to_bottom
@@ -1331,22 +1407,21 @@ class BotVoiceCog(commands.Cog):
                         message = None
                 if message:
                     await message.edit(
-                        content=content,
+                        content=None,
                         embeds=[],
                         attachments=[player_file],
                         view=view,
                     )
                 else:
                     await self._delete_player_message_unlocked(state)
-                    message = await channel.send(content=content, file=player_file, view=view)
+                    message = await channel.send(file=player_file, view=view)
                     state.player_message_id = message.id
                     state.player_channel_id = channel.id
             except (discord.Forbidden, discord.HTTPException, OSError, ValueError):
                 link_text = f"[{item.title}]({item.webpage_url})" if item.webpage_url else item.title
                 fallback = (
                     f"🎧 **Đang phát:** {link_text}\n"
-                    f"👤 Yêu cầu bởi: <@{item.requester_id}>\n"
-                    f"{self._player_message_content(guild_id, state, item)}"
+                    f"👤 Yêu cầu bởi: <@{item.requester_id}>"
                 )
                 await self._delete_player_message_unlocked(state)
                 message = await channel.send(content=fallback, view=MusicPlayerView(self, guild_id, theme))
@@ -1617,6 +1692,7 @@ class BotVoiceCog(commands.Cog):
             state.queue.clear()
             state.loop_current = False
             state.stop_requested = True
+            self._cancel_player_sync(state)
             await interaction.response.send_message("⏹️ Đã dừng và xóa queue.", ephemeral=True)
             if voice_client and (voice_client.is_playing() or voice_client.is_paused()):
                 voice_client.stop()
@@ -1673,6 +1749,7 @@ class BotVoiceCog(commands.Cog):
             state.loop_current = False
             state.stop_requested = True
             self._cancel_idle(state)
+            self._cancel_player_sync(state)
             if voice_client and voice_client.is_connected():
                 if voice_client.is_playing() or voice_client.is_paused():
                     voice_client.stop()
@@ -1889,7 +1966,6 @@ class BotVoiceCog(commands.Cog):
         if not await self._require_package(ctx, "yt_dlp", "yt-dlp"):
             return
 
-        await self._try_react(ctx.message, self._play_reaction(ctx.guild.id, "reaction_search"))
         voice_client = await self._ensure_voice(ctx)
         if not voice_client:
             return

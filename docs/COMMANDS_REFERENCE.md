@@ -168,7 +168,9 @@ Trong docs dùng `{prefix}` để đại diện cho prefix hiện tại.
   - Player hoạt động trong cả text channel và phần chat của voice channel.
   - Player cũ tự xóa và card mới được gửi xuống cuối chat khi thao tác hoặc chuyển bài.
   - Card là ảnh đính kèm trực tiếp, không dùng embed.
-  - Thanh thời gian chạy trong GIF của card, không edit/reload tin nhắn theo chu kỳ nên không bị giật.
+  - Thanh thời gian chạy trong GIF và được đồng bộ lại từ playback clock mỗi 30 giây.
+  - Không còn dòng `Bắt đầu ... / kết thúc ...` bên ngoài ảnh.
+  - Nút player vẫn hoạt động sau khi reload cog.
   - Thời gian bắt đầu/kết thúc dùng timestamp động của Discord.
 - `{prefix}play q`
   - Xem queue.

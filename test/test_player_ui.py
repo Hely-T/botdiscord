@@ -5,6 +5,7 @@ from PIL import Image
 from ui.bot.player_ui import (
     ANIMATED_CARD_FILENAME,
     CARD_FILENAME,
+    MusicPlayerView,
     PlayerCardData,
     _render_card,
 )
@@ -40,6 +41,14 @@ class PlayerCardRenderTest(unittest.TestCase):
         with Image.open(buffer) as image:
             self.assertEqual(image.format, "PNG")
             self.assertEqual(getattr(image, "n_frames", 1), 1)
+
+    def test_player_controls_are_persistent(self):
+        view = MusicPlayerView(object(), 0)
+
+        self.assertIsNone(view.timeout)
+        custom_ids = [child.custom_id for child in view.children]
+        self.assertEqual(len(custom_ids), len(set(custom_ids)))
+        self.assertTrue(all(custom_ids))
 
 
 if __name__ == "__main__":

@@ -50,12 +50,12 @@ class MusicPlayerPreferencesTest(unittest.TestCase):
             button_play="Phát",
             button_skip="Bỏ qua",
             icon_skip="➡️",
-            reaction_search="🔎",
+            reaction_success="☑️",
         )
         self.assertNotIn("button_play", theme)
         self.assertEqual(theme["button_skip"], "Bỏ qua")
         self.assertEqual(theme["icon_skip"], "➡️")
-        self.assertEqual(theme["reaction_search"], "🔎")
+        self.assertEqual(theme["reaction_success"], "☑️")
 
         default = self.service.reset_theme_value(777, "button_skip")
         self.assertEqual(default, "Skip")
