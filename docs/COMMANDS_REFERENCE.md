@@ -351,6 +351,21 @@ Trong docs dùng `{prefix}` để đại diện cho prefix hiện tại.
 - `/giveaway action:config`
   - Mở cùng menu cấu hình bằng slash command.
 
+### Steal emoji
+
+- `{prefix}steal <custom emoji> [name]`
+  - Sao chép custom emoji tĩnh hoặc động; bỏ trống `name` để giữ tên gốc.
+- `{prefix}steal <URL ảnh> <name>`
+  - Tạo emoji từ URL PNG, JPG, GIF hoặc WEBP.
+- Đính kèm ảnh rồi dùng `{prefix}steal <name>`.
+- `/steal emoji:<custom emoji|URL> [name]`
+  - Bản slash, kết quả chỉ người dùng lệnh nhìn thấy.
+- Quyền: bot admin hoặc role có permission key `steal`.
+
+```text
+{prefix}addrole @role steal
+```
+
 ### Economy
 
 - `{prefix}rate`
