@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib
 import io
 import logging
 import re
@@ -9,6 +10,18 @@ from datetime import datetime
 import discord
 from discord import app_commands
 from discord.ext import commands
+
+import services.ticket_service as ticket_service_module
+import ui.ticket.components as ticket_components_module
+import ui.ticket.emoji as ticket_emoji_module
+import ui.ticket.ui as ticket_ui_module
+
+# Extension reload does not refresh imported service/UI modules automatically.
+# Reload dependencies in order so `breload` picks up ticket menu changes.
+importlib.reload(ticket_service_module)
+importlib.reload(ticket_emoji_module)
+importlib.reload(ticket_ui_module)
+importlib.reload(ticket_components_module)
 
 from cogs.admin_command_utils import AdminCommandBase
 from config import DISCORD_OWNER_IDS
