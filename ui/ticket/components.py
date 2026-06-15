@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 
 import discord
-from discord.ui import Button, ChannelSelect, Modal, Select, TextInput, UserSelect, View
+from discord.ui import Button, ChannelSelect, Modal, RoleSelect, Select, TextInput, UserSelect, View
 
 from ui.ticket.emoji import (
     TICKET_CONTENT_FIELDS,
@@ -376,6 +376,117 @@ class TicketThemeView(View):
         self.add_item(TicketThemeSelect(cog, guild_id, mode))
 
 
+class TicketMentionIdModal(Modal, title="Nhập ID cần tag"):
+    def __init__(self, cog, ticket_type: str):
+        super().__init__()
+        self.cog = cog
+        self.ticket_type = ticket_type
+        self.target_ids = TextInput(
+            label="Role ID hoặc User ID",
+            placeholder="VD: 123456789012345678, 987654321098765432",
+            style=discord.TextStyle.paragraph,
+            required=True,
+            max_length=1000,
+        )
+        self.add_item(self.target_ids)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        await self.cog.handle_ticket_mention_ids(
+            interaction,
+            self.ticket_type,
+            str(self.target_ids.value),
+        )
+
+
+class TicketMentionTargetView(View):
+    def __init__(self, cog, ticket_type: str):
+        super().__init__(timeout=600)
+        self.cog = cog
+        self.ticket_type = ticket_type
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        return await self.cog.require_role_or_admin_interaction(interaction, "ticket")
+
+    @discord.ui.select(
+        cls=RoleSelect,
+        placeholder="Chọn role cần tag cho mục này...",
+        min_values=1,
+        max_values=10,
+    )
+    async def roles(self, interaction: discord.Interaction, select: RoleSelect):
+        await self.cog.handle_ticket_mention_select(
+            interaction,
+            self.ticket_type,
+            "role",
+            [role.id for role in select.values],
+        )
+
+    @discord.ui.select(
+        cls=UserSelect,
+        placeholder="Chọn user cần tag cho mục này...",
+        min_values=1,
+        max_values=10,
+    )
+    async def users(self, interaction: discord.Interaction, select: UserSelect):
+        await self.cog.handle_ticket_mention_select(
+            interaction,
+            self.ticket_type,
+            "user",
+            [user.id for user in select.values],
+        )
+
+    @discord.ui.button(label="Nhập ID", emoji="🆔", style=discord.ButtonStyle.secondary)
+    async def ids(self, interaction: discord.Interaction, button: Button):
+        await interaction.response.send_modal(TicketMentionIdModal(self.cog, self.ticket_type))
+
+    @discord.ui.button(label="Xóa tag mục này", emoji="🗑️", style=discord.ButtonStyle.danger)
+    async def clear(self, interaction: discord.Interaction, button: Button):
+        self.cog.service.clear_type_mentions(interaction.guild.id, self.ticket_type)
+        await safe_interaction_send(
+            interaction,
+            content="✅ Đã xóa toàn bộ role/user tag của mục này.",
+            ephemeral=True,
+        )
+
+
+class TicketMentionTypeSelect(Select):
+    def __init__(self, cog, guild_id: int):
+        self.cog = cog
+        self.guild_id = guild_id
+        theme = cog.service.get_theme(guild_id)
+        options = [
+            discord.SelectOption(
+                label=label[:100],
+                value=value,
+                emoji=ticket_emoji(value, theme),
+            )
+            for value, label in ticket_types(theme).items()
+        ]
+        super().__init__(
+            placeholder="Chọn mục Ticket cần cài tag...",
+            min_values=1,
+            max_values=1,
+            options=options,
+        )
+
+    async def callback(self, interaction: discord.Interaction):
+        if not await self.cog.require_role_or_admin_interaction(interaction, "ticket"):
+            return
+        ticket_type = self.values[0]
+        await safe_interaction_send(
+            interaction,
+            content=self.cog.ticket_mention_config_text(interaction.guild, ticket_type),
+            view=TicketMentionTargetView(self.cog, ticket_type),
+            ephemeral=True,
+        )
+
+
+class TicketMentionTypeView(View):
+    def __init__(self, cog, guild_id: int):
+        super().__init__(timeout=600)
+        self.add_item(TicketMentionTypeSelect(cog, guild_id))
+
+
 class TicketManagerView(View):
     def __init__(self, cog):
         super().__init__(timeout=300)
@@ -413,6 +524,15 @@ class TicketManagerView(View):
             interaction,
             content="Chọn icon Ticket cần tùy chỉnh.",
             view=TicketThemeView(self.cog, interaction.guild.id, "icon"),
+            ephemeral=True,
+        )
+
+    @discord.ui.button(label="Tag theo mục", style=discord.ButtonStyle.secondary, emoji="🏷️")
+    async def mentions(self, interaction: discord.Interaction, button: Button):
+        await safe_interaction_send(
+            interaction,
+            content="Chọn mục Ticket để cài role/user được tag và cấp quyền xem kênh:",
+            view=TicketMentionTypeView(self.cog, interaction.guild.id),
             ephemeral=True,
         )
 

@@ -568,6 +568,43 @@ class BotVoiceCog(commands.Cog):
         theme = self.player_service.get_theme(guild_id)
         return str(theme.get(key) or "")
 
+    @staticmethod
+    def _format_player_text(template: str, **values) -> str:
+        try:
+            return str(template).format(**values)
+        except (KeyError, ValueError):
+            return str(template)
+
+    def _queue_added_embed(
+        self,
+        guild_id: int,
+        items: list[AudioItem],
+        position: int,
+    ) -> discord.Embed:
+        theme = self.player_service.get_theme(guild_id)
+        first = items[0]
+        values = {
+            "title": self._short_text(first.title, 120),
+            "count": len(items),
+            "position": position,
+            "requester": first.requester_name,
+        }
+        icon = str(theme.get("icon_queue_added") or "🎶").strip()
+        title = self._format_player_text(
+            theme.get("message_queue_added_title") or "Đã thêm vào queue",
+            **values,
+        )
+        body = self._format_player_text(
+            theme.get("message_queue_added_body")
+            or "`{title}`\nVị trí: `{position}` • Số bài: `{count}` • Yêu cầu bởi: {requester}",
+            **values,
+        )
+        return discord.Embed(
+            title=f"{icon} {title}".strip(),
+            description=body,
+            color=discord.Color.from_str(str(theme.get("accent_color") or "#7f314d")),
+        )
+
     def _find_guild_voice_client(self, guild: discord.Guild) -> discord.VoiceClient | None:
         voice_client = getattr(guild, "voice_client", None)
         if voice_client and voice_client.is_connected():
@@ -2012,10 +2049,18 @@ class BotVoiceCog(commands.Cog):
             await self._try_react(ctx.message, self._play_reaction(ctx.guild.id, "reaction_error"))
             return
 
+        queue_position = len(state.queue) + 1
         state.queue.extend(items)
         await self._start_player_if_needed(ctx.guild.id)
         await self._try_react(ctx.message, self._play_reaction(ctx.guild.id, "reaction_success"))
         if not starting_new_session:
+            await ctx.send(
+                embed=self._queue_added_embed(
+                    ctx.guild.id,
+                    items,
+                    queue_position,
+                )
+            )
             await self._refresh_player_message(ctx.guild.id, move_to_bottom=True)
 
     @commands.command(name="join", aliases=["j"])

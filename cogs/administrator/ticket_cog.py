@@ -124,6 +124,121 @@ class TicketCog(AdminCommandBase):
             if (member := guild.get_member(user_id)) is not None
         ]
 
+    def ticket_mention_config_text(self, guild: discord.Guild, ticket_type: str) -> str:
+        theme = self.service.get_theme(guild.id)
+        label = ticket_types(theme).get(ticket_type, ticket_type)
+        targets = self.service.get_type_mentions(guild.id, ticket_type)
+        role_mentions = [
+            f"<@&{int(row['target_id'])}>"
+            for row in targets
+            if row["target_type"] == "role"
+        ]
+        user_mentions = [
+            f"<@{int(row['target_id'])}>"
+            for row in targets
+            if row["target_type"] == "user"
+        ]
+        return (
+            f"**Mục:** {label}\n"
+            f"**Role:** {', '.join(role_mentions) if role_mentions else 'Chưa cài'}\n"
+            f"**User:** {', '.join(user_mentions) if user_mentions else 'Chưa cài'}\n\n"
+            "Chọn role/user sẽ thay danh sách cùng loại. Nút **Nhập ID** thay toàn bộ role và user của mục."
+        )
+
+    async def handle_ticket_mention_select(
+        self,
+        interaction: discord.Interaction,
+        ticket_type: str,
+        target_type: str,
+        target_ids: list[int],
+    ):
+        if not await self.require_role_or_admin_interaction(interaction, "ticket"):
+            return
+        self.service.replace_type_mentions(
+            interaction.guild.id,
+            ticket_type,
+            target_type,
+            target_ids,
+        )
+        await safe_interaction_send(
+            interaction,
+            content=(
+                f"✅ Đã lưu `{len(target_ids)}` "
+                f"{'role' if target_type == 'role' else 'user'} cho mục này.\n"
+                f"{self.ticket_mention_config_text(interaction.guild, ticket_type)}"
+            ),
+            ephemeral=True,
+        )
+
+    async def handle_ticket_mention_ids(
+        self,
+        interaction: discord.Interaction,
+        ticket_type: str,
+        raw_ids: str,
+    ):
+        if not await self.require_role_or_admin_interaction(interaction, "ticket"):
+            return
+        ids = list(dict.fromkeys(int(value) for value in re.findall(r"\d{15,25}", raw_ids)))
+        role_ids = []
+        user_ids = []
+        unknown_ids = []
+        for target_id in ids:
+            if interaction.guild.get_role(target_id):
+                role_ids.append(target_id)
+            elif interaction.guild.get_member(target_id):
+                user_ids.append(target_id)
+            else:
+                unknown_ids.append(target_id)
+        if not role_ids and not user_ids:
+            await safe_interaction_send(
+                interaction,
+                content="❌ Không tìm thấy role hoặc thành viên nào từ ID đã nhập trong server này.",
+                ephemeral=True,
+            )
+            return
+        self.service.set_type_mentions(
+            interaction.guild.id,
+            ticket_type,
+            role_ids=role_ids,
+            user_ids=user_ids,
+        )
+        warning = (
+            "\n⚠️ Bỏ qua ID không tồn tại trong server: "
+            + ", ".join(f"`{value}`" for value in unknown_ids)
+            if unknown_ids
+            else ""
+        )
+        await safe_interaction_send(
+            interaction,
+            content=(
+                f"✅ Đã lưu `{len(role_ids)}` role và `{len(user_ids)}` user.\n"
+                f"{self.ticket_mention_config_text(interaction.guild, ticket_type)}"
+                f"{warning}"
+            ),
+            ephemeral=True,
+        )
+
+    def ticket_notify_targets(
+        self,
+        guild: discord.Guild,
+        ticket_type: str,
+    ) -> tuple[list[discord.Role], list[discord.Member], bool]:
+        rows = self.service.get_type_mentions(guild.id, ticket_type)
+        configured = bool(rows)
+        roles = []
+        members = []
+        for row in rows:
+            target_id = int(row["target_id"])
+            if row["target_type"] == "role":
+                role = guild.get_role(target_id)
+                if role:
+                    roles.append(role)
+            elif row["target_type"] == "user":
+                member = guild.get_member(target_id)
+                if member:
+                    members.append(member)
+        return roles, members, configured
+
     async def save_config_value(
         self,
         interaction: discord.Interaction,
@@ -339,6 +454,28 @@ class TicketCog(AdminCommandBase):
                 read_message_history=True,
             )
 
+        notify_roles, notify_members, mentions_configured = self.ticket_notify_targets(
+            interaction.guild,
+            ticket_type,
+        )
+        for role in notify_roles:
+            if role not in overwrites:
+                overwrites[role] = discord.PermissionOverwrite(
+                    view_channel=True,
+                    read_messages=True,
+                    send_messages=True,
+                    read_message_history=True,
+                )
+        for member in notify_members:
+            if member not in overwrites:
+                overwrites[member] = discord.PermissionOverwrite(
+                    view_channel=True,
+                    read_messages=True,
+                    send_messages=True,
+                    attach_files=True,
+                    read_message_history=True,
+                )
+
         ticket_code = make_ticket_code()
         try:
             channel = await interaction.guild.create_text_channel(
@@ -362,12 +499,18 @@ class TicketCog(AdminCommandBase):
             await safe_interaction_send(interaction, content="❌ Không ghi được Ticket vào database.", ephemeral=True)
             return
 
-        role_mentions = " ".join(role.mention for role in manager_roles)
+        mention_roles = notify_roles if mentions_configured else manager_roles
+        mention_targets = [
+            interaction.user.mention,
+            *(role.mention for role in mention_roles),
+            *(member.mention for member in notify_members),
+        ]
         theme = self.service.get_theme(interaction.guild.id)
         await channel.send(
-            content=f"{interaction.user.mention} {role_mentions}".strip(),
+            content=" ".join(dict.fromkeys(mention_targets)),
             embed=build_ticket_created_embed(interaction.user, ticket_type, theme),
             view=TicketControlView(self, interaction.guild.id),
+            allowed_mentions=discord.AllowedMentions(users=True, roles=True),
         )
         await safe_interaction_send(interaction, content=f"✅ Đã tạo ticket: {channel.mention}", ephemeral=True)
 

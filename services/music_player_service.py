@@ -15,6 +15,8 @@ DEFAULT_PLAYER_THEME = {
     "card_loop": "Loop {status}",
     "card_autoplay": "Đề xuất YouTube {status}",
     "card_queue": "Queue {count}",
+    "message_queue_added_title": "Đã thêm vào queue",
+    "message_queue_added_body": "`{title}`\nVị trí: `{position}` • Số bài: `{count}` • Yêu cầu bởi: {requester}",
     "button_pause": "Pause / Resume",
     "button_stop": "Stop",
     "button_skip": "Skip",
@@ -35,6 +37,7 @@ DEFAULT_PLAYER_THEME = {
     "icon_volume": "🔊",
     "icon_settings": "⚙️",
     "icon_leave": "🚪",
+    "icon_queue_added": "🎶",
     "reaction_success": "✅",
     "reaction_error": "❌",
 }

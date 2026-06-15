@@ -166,6 +166,7 @@ Trong docs dùng `{prefix}` để đại diện cho prefix hiện tại.
 - `{prefix}play <url|từ khóa|playlist>`
   - Phát nhạc từ YouTube, YouTube Music, SoundCloud, MixCloud hoặc playlist qua `yt-dlp`.
   - Alias: `{prefix}p <url|từ khóa|playlist>` hoặc `{prefix}a <url|từ khóa|playlist>`.
+  - Khi đang phát, bài mới thêm vào queue sẽ có thông báo tên bài, vị trí và số lượng.
   - Spotify URL sẽ được thử qua extractor; nếu link không chạy, gửi tên bài hoặc link YouTube/YT Music tương ứng.
   - Nếu bot chưa ở voice, người gọi `play` sẽ là người giữ quyền `play l/leave`.
   - Player hoạt động trong cả text channel và phần chat của voice channel.
@@ -222,6 +223,7 @@ Trong docs dùng `{prefix}` để đại diện cho prefix hiện tại.
   - Có thể dùng `{prefix}play clear`.
 - `{prefix}play settings`
   - Mở menu tùy chỉnh giao diện, nội dung card/message, nhãn nút, icon và reaction theo server.
+  - Thông báo thêm queue hỗ trợ `{title}`, `{position}`, `{count}`, `{requester}`.
   - Mỗi lựa chọn có ví dụ; nhập `reset` để trả riêng mục đó về mặc định.
   - Chỉ bot admin hoặc role có quyền `play settings`.
   - Cấu hình player được lưu theo server; autoplay và loop vẫn chỉ áp dụng cho phiên hiện tại.
@@ -506,6 +508,9 @@ Placeholder auto response:
   - Xem hướng dẫn nhanh hệ thống Ticket.
 - `{prefix}ticket manager` hoặc `{prefix}ticket config`
   - Mở bảng cấu hình Ticket.
+  - Menu **Tag theo mục** cấu hình role/user được ping riêng cho từng loại Ticket.
+  - Có thể chọn role, chọn user hoặc nhập trực tiếp role ID/user ID.
+  - Role/user của mục được cấp quyền xem kênh và được tag khi Ticket tương ứng được tạo.
   - Menu **Nội dung** sửa tiêu đề, mô tả, lời nhắc, tên loại Ticket và nhãn nút.
   - Menu **Icon** sửa icon panel, loại Ticket và các nút điều khiển.
   - Mỗi ô nhập có ví dụ; nhập `reset` để trả riêng mục đó về mặc định.

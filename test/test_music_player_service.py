@@ -80,6 +80,27 @@ class MusicPlayerPreferencesTest(unittest.TestCase):
         self.assertEqual(default, "Skip")
         self.assertEqual(self.service.get_theme(777)["button_skip"], "Skip")
 
+    def test_queue_added_message_uses_configured_content_and_icon(self):
+        self.service.set_theme(
+            777,
+            message_queue_added_title="Đã xếp {count} bài",
+            message_queue_added_body="{title} ở vị trí {position} bởi {requester}",
+            icon_queue_added="➕",
+        )
+        cog = BotVoiceCog.__new__(BotVoiceCog)
+        cog.player_service = self.service
+        item = AudioItem(
+            title="Bài hát mới",
+            query="test",
+            requester_id=123,
+            requester_name="Tester",
+        )
+
+        embed = cog._queue_added_embed(777, [item], 2)
+
+        self.assertEqual(embed.title, "➕ Đã xếp 1 bài")
+        self.assertEqual(embed.description, "Bài hát mới ở vị trí 2 bởi Tester")
+
     def test_old_player_theme_table_is_migrated(self):
         self.service.db.execute("DROP TABLE player_theme")
         self.service.db.create_table(

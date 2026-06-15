@@ -27,10 +27,12 @@ Trạng thái: đang phát triển, đã chuẩn hóa catalog cog, service/datab
 - Note có public/private, note cho người khác theo quyền, TXT popup và nội dung dài có thể thu gọn/phóng to.
 - Command có thể bị khóa theo từng channel; hỗ trợ khóa command gốc hoặc command con.
 - Music player lưu volume độc lập theo từng user; mức vừa chỉnh áp dụng cho queue hiện tại, phiên mới nạp volume của người mở phiên.
+- Khi thêm bài hoặc playlist vào phiên đang phát, bot gửi thông báo queue rồi đưa card player xuống cuối chat.
 - Card player có thanh tiến trình GIF, đồng bộ playback clock mỗi 30 giây và persistent controls.
 - Playback không chờ render card; card được dựng bằng background task sau khi nhạc bắt đầu.
 - Giveaway có menu `ga config` để sửa nội dung, icon và emoji tham gia theo server.
 - Ticket manager có menu riêng cho nội dung và icon theo server.
+- Ticket hỗ trợ cấu hình role/user được tag riêng theo từng mục; mapping lưu DB theo server và đồng thời cấp quyền xem ticket.
 - Music player có menu settings cho giao diện, nội dung, icon và reaction; autoplay/loop không được lưu.
 - Log system có `chat`, `voice`, `server`, `join` và `cash`.
 - Database tự tạo cho users, booking, role permission, admin, settings, guild settings, responsive, bank payments, AFK và log system.

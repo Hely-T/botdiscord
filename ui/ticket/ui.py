@@ -105,6 +105,18 @@ def build_ticket_manager_embed(cog, guild: discord.Guild) -> discord.Embed:
     embed.add_field(name="Danh mục lưu trữ", value=channel_text(config.get("archive_category_id")), inline=False)
     embed.add_field(name="Kênh log", value=channel_text(config.get("log_channel_id")), inline=False)
     embed.add_field(name="Role quản trị Ticket", value=role_text, inline=False)
+    mention_lines = []
+    for ticket_type, label in ticket_types(cog.service.get_theme(guild.id)).items():
+        targets = cog.service.get_type_mentions(guild.id, ticket_type)
+        mentions = [
+            f"<@&{row['target_id']}>" if row["target_type"] == "role" else f"<@{row['target_id']}>"
+            for row in targets
+        ]
+        visible = mentions[:5]
+        if len(mentions) > len(visible):
+            visible.append(f"và {len(mentions) - len(visible)} mục khác")
+        mention_lines.append(f"**{label}:** {', '.join(visible) if visible else 'Chưa cài'}")
+    embed.add_field(name="Tag theo mục", value="\n".join(mention_lines), inline=False)
     embed.add_field(name="Giới hạn", value=f"`{config.get('max_open_tickets', 1)}` ticket/user", inline=True)
     embed.add_field(name="Cooldown", value=f"`{config.get('cooldown_seconds', 60)} giây`", inline=True)
     embed.add_field(name="Đóng ticket", value=f"`{config.get('close_mode', 'archive')}`", inline=True)

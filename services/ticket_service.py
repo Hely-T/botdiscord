@@ -68,6 +68,14 @@ class TicketService:
             updated_at TEXT NOT NULL,
             PRIMARY KEY (guild_id, theme_key)
         ''')
+        self.db.create_table('ticket_type_mentions', '''
+            guild_id INTEGER NOT NULL,
+            ticket_type TEXT NOT NULL,
+            target_type TEXT NOT NULL,
+            target_id INTEGER NOT NULL,
+            created_at TEXT NOT NULL,
+            PRIMARY KEY (guild_id, ticket_type, target_type, target_id)
+        ''')
         self._ensure_schema()
 
     def _ensure_column(self, table: str, column: str, ddl: str) -> None:
@@ -99,6 +107,7 @@ class TicketService:
             self.db.execute("CREATE INDEX IF NOT EXISTS idx_tickets_guild_channel ON tickets(guild_id, channel_id)")
             self.db.execute("CREATE INDEX IF NOT EXISTS idx_tickets_owner_status ON tickets(guild_id, owner_user_id, status)")
             self.db.execute("CREATE INDEX IF NOT EXISTS idx_ticket_events_ticket_id ON ticket_events(ticket_id)")
+            self.db.execute("CREATE INDEX IF NOT EXISTS idx_ticket_type_mentions ON ticket_type_mentions(guild_id, ticket_type)")
         except Exception as e:
             logger.exception(f"Ticket Index creation failed: {e}")
             
@@ -184,6 +193,63 @@ class TicketService:
             "ticket_theme",
             "guild_id = ? AND theme_key = ?",
             (int(guild_id), str(key)),
+        )
+
+    def get_type_mentions(self, guild_id: int, ticket_type: str) -> List[Dict]:
+        return self.db.fetch(
+            """
+            SELECT target_type, target_id
+            FROM ticket_type_mentions
+            WHERE guild_id = ? AND ticket_type = ?
+            ORDER BY target_type, target_id
+            """,
+            (int(guild_id), str(ticket_type)),
+        )
+
+    def replace_type_mentions(
+        self,
+        guild_id: int,
+        ticket_type: str,
+        target_type: str,
+        target_ids: List[int],
+    ) -> None:
+        if target_type not in {"role", "user"}:
+            raise ValueError(f"Invalid ticket mention target type: {target_type}")
+        guild_id = int(guild_id)
+        ticket_type = str(ticket_type)
+        self.db.delete(
+            "ticket_type_mentions",
+            "guild_id = ? AND ticket_type = ? AND target_type = ?",
+            (guild_id, ticket_type, target_type),
+        )
+        for target_id in dict.fromkeys(int(value) for value in target_ids):
+            self.db.insert(
+                "ticket_type_mentions",
+                {
+                    "guild_id": guild_id,
+                    "ticket_type": ticket_type,
+                    "target_type": target_type,
+                    "target_id": target_id,
+                    "created_at": get_timestamp(),
+                },
+            )
+
+    def set_type_mentions(
+        self,
+        guild_id: int,
+        ticket_type: str,
+        *,
+        role_ids: List[int],
+        user_ids: List[int],
+    ) -> None:
+        self.replace_type_mentions(guild_id, ticket_type, "role", role_ids)
+        self.replace_type_mentions(guild_id, ticket_type, "user", user_ids)
+
+    def clear_type_mentions(self, guild_id: int, ticket_type: str) -> None:
+        self.db.delete(
+            "ticket_type_mentions",
+            "guild_id = ? AND ticket_type = ?",
+            (int(guild_id), str(ticket_type)),
         )
 
     def get_user_active_tickets(self, guild_id: int, user_id: int) -> List[Dict]:

@@ -1,5 +1,6 @@
 import datetime
 import os
+import tempfile
 import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -91,6 +92,26 @@ class TestTicketPermissions(unittest.TestCase):
             "ticket",
         )
 
+    def test_ticket_notify_targets_resolves_configured_roles_and_users(self):
+        role = MagicMock(spec=discord.Role)
+        member = MagicMock(spec=discord.Member)
+        self.guild.get_role.side_effect = lambda target_id: role if target_id == 456 else None
+        self.guild.get_member.side_effect = lambda target_id: member if target_id == 123 else None
+        self.cog.service = MagicMock()
+        self.cog.service.get_type_mentions.return_value = [
+            {"target_type": "role", "target_id": 456},
+            {"target_type": "user", "target_id": 123},
+        ]
+
+        roles, members, configured = self.cog.ticket_notify_targets(
+            self.guild,
+            "payment",
+        )
+
+        self.assertEqual(roles, [role])
+        self.assertEqual(members, [member])
+        self.assertTrue(configured)
+
 
 class TestTicketDatabase(unittest.TestCase):
     def test_invalid_config_key_is_rejected(self):
@@ -104,6 +125,71 @@ class TestTicketDatabase(unittest.TestCase):
     def test_ticket_service_has_no_separate_staff_role_api(self):
         self.assertFalse(hasattr(TicketService, "add_staff_role"))
         self.assertFalse(hasattr(TicketService, "get_staff_roles"))
+
+
+class TestTicketTypeMentions(unittest.TestCase):
+    def setUp(self):
+        self.temp_dir = tempfile.TemporaryDirectory()
+        patcher = patch("utils.DATABASE_DIR", self.temp_dir.name)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.service = TicketService()
+
+    def tearDown(self):
+        self.service.db.close()
+        self.temp_dir.cleanup()
+
+    def test_mentions_are_saved_per_guild_and_ticket_type(self):
+        self.service.set_type_mentions(
+            777,
+            "payment",
+            role_ids=[111, 111],
+            user_ids=[222],
+        )
+        self.service.set_type_mentions(
+            777,
+            "support",
+            role_ids=[333],
+            user_ids=[],
+        )
+
+        payment = self.service.get_type_mentions(777, "payment")
+        support = self.service.get_type_mentions(777, "support")
+
+        self.assertEqual(
+            {(row["target_type"], row["target_id"]) for row in payment},
+            {("role", 111), ("user", 222)},
+        )
+        self.assertEqual(
+            {(row["target_type"], row["target_id"]) for row in support},
+            {("role", 333)},
+        )
+        self.assertEqual(self.service.get_type_mentions(888, "payment"), [])
+
+    def test_replacing_roles_keeps_configured_users(self):
+        self.service.set_type_mentions(
+            777,
+            "payment",
+            role_ids=[111],
+            user_ids=[222],
+        )
+
+        self.service.replace_type_mentions(777, "payment", "role", [333])
+
+        targets = self.service.get_type_mentions(777, "payment")
+        self.assertEqual(
+            {(row["target_type"], row["target_id"]) for row in targets},
+            {("role", 333), ("user", 222)},
+        )
+
+    def test_clear_removes_only_selected_ticket_type(self):
+        self.service.replace_type_mentions(777, "payment", "role", [111])
+        self.service.replace_type_mentions(777, "support", "role", [333])
+
+        self.service.clear_type_mentions(777, "payment")
+
+        self.assertEqual(self.service.get_type_mentions(777, "payment"), [])
+        self.assertEqual(len(self.service.get_type_mentions(777, "support")), 1)
 
 
 class TestContextAdapter(unittest.IsolatedAsyncioTestCase):
