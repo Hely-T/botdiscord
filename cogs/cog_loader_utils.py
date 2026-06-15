@@ -8,7 +8,8 @@ def module_name_from_path(file_path: str) -> str:
     return rel_path[:-3].replace(os.sep, ".")
 
 
-def iter_cog_modules(base_dir: str = COGS_DIR) -> list[str]:
+def iter_cog_modules(base_dir: str | None = None) -> list[str]:
+    base_dir = base_dir or COGS_DIR
     modules = []
     for root, dirs, files in os.walk(base_dir):
         dirs.sort()
@@ -34,4 +35,13 @@ def resolve_cog_modules(target: str | None = None) -> list[str]:
         return iter_cog_modules(folder_path)
     if os.path.isfile(file_path):
         return [normalized]
+
+    short_name = normalized.rsplit(".", 1)[-1].removesuffix("_cog").lower()
+    matches = [
+        module_name
+        for module_name in iter_cog_modules()
+        if module_name.rsplit(".", 1)[-1].removesuffix("_cog").lower() == short_name
+    ]
+    if matches:
+        return matches
     return [normalized]

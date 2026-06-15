@@ -557,6 +557,7 @@ Các thao tác manager, panel, claim, thêm/xóa user, rename, transfer và uncl
   - Xem trạng thái git.
   - Alias: `{prefix}status`.
 - `{prefix}reload [catalog|module]`
+  - Hỗ trợ tên ngắn, ví dụ `{prefix}reload ticket` sẽ reload `administrator.ticket_cog`.
   - Reload một cog, một catalog hoặc toàn bộ.
 - `{prefix}load <catalog|module>`
   - Load một cog hoặc catalog.
