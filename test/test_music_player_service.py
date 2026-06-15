@@ -125,6 +125,51 @@ class MusicPlayerAutoplayTest(unittest.IsolatedAsyncioTestCase):
         query = cog._extract_music_items.await_args.args[0]
         self.assertIn("list=RDcurrent", query)
 
+    async def test_playback_starts_before_player_card_is_scheduled(self):
+        events = []
+        item = AudioItem(
+            title="Bài test",
+            query="https://example.com/watch",
+            stream_url="https://example.com/audio",
+            duration=120,
+            requester_id=123,
+            requester_name="Tester",
+        )
+        voice_client = MagicMock()
+        voice_client.is_connected.return_value = True
+        voice_client.play.side_effect = lambda source, after: events.append("play")
+
+        cog = BotVoiceCog.__new__(BotVoiceCog)
+        cog.states = {
+            777: GuildAudioState(
+                voice_client=voice_client,
+                queue=[item],
+            ),
+        }
+        cog.bot = MagicMock()
+
+        def discard_task(coroutine):
+            coroutine.close()
+            return MagicMock()
+
+        cog.bot.loop.create_task.side_effect = discard_task
+        cog._cancel_idle = MagicMock()
+        cog._resolve_stream_url = AsyncMock(return_value=item)
+        cog._find_ffmpeg = MagicMock(return_value="ffmpeg")
+        cog._autoplay_item_key = MagicMock(return_value="test")
+        cog._schedule_now_playing_card = MagicMock(
+            side_effect=lambda guild_id, current: events.append("card")
+        )
+        cog._schedule_player_sync = MagicMock()
+
+        with (
+            patch("cogs.bot.voice_cog.discord.FFmpegPCMAudio", return_value=object()),
+            patch("cogs.bot.voice_cog.discord.PCMVolumeTransformer", return_value=object()),
+        ):
+            await cog._play_next(777)
+
+        self.assertEqual(events[:2], ["play", "card"])
+
 
 if __name__ == "__main__":
     unittest.main()

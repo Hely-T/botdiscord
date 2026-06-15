@@ -4,6 +4,7 @@ import asyncio
 import random
 import re
 import shlex
+import time
 from dataclasses import dataclass
 
 import discord
@@ -332,6 +333,13 @@ class AdministratorGiveawayCog(AdminCommandBase):
     def _theme_icon(self, giveaway: dict | None, key: str) -> str:
         return self._theme_value(giveaway, f"icon_{key}")
 
+    @staticmethod
+    def _clean_theme_label(value: str) -> str:
+        return re.sub(r"\*+", "", value).strip().rstrip(":").strip()
+
+    def _theme_label(self, giveaway: dict | None, key: str) -> str:
+        return self._clean_theme_label(self._theme_value(giveaway, key))
+
     def _giveaway_host_avatar_url(self, giveaway: dict) -> str | None:
         creator_id = int(giveaway["creator_id"])
         guild = self.bot.get_guild(int(giveaway["guild_id"]))
@@ -382,23 +390,23 @@ class AdministratorGiveawayCog(AdminCommandBase):
         if status_text == "Đã kết thúc":
             description_lines.extend(
                 [
-                    f"{self._theme_icon(giveaway, 'winner')} **{self._theme_value(giveaway, 'label_winner')}:** {self._winner_mentions(giveaway)}",
-                    f"{self._theme_icon(giveaway, 'host')} **{self._theme_value(giveaway, 'label_host')}:** {host_mention}",
+                    f"{self._theme_icon(giveaway, 'winner')} **{self._theme_label(giveaway, 'label_winner')}:** {self._winner_mentions(giveaway)}",
+                    f"{self._theme_icon(giveaway, 'host')} **{self._theme_label(giveaway, 'label_host')}:** {host_mention}",
                 ]
             )
         else:
             ends_at = int(giveaway["ends_at"])
             description_lines.extend(
                 [
-                    f"{self._theme_icon(giveaway, 'time')} **{self._theme_value(giveaway, 'label_time')}:** <t:{ends_at}:R>",
-                    f"{self._theme_icon(giveaway, 'host')} **{self._theme_value(giveaway, 'label_host')}:** {host_mention}",
+                    f"{self._theme_icon(giveaway, 'time')} **{self._theme_label(giveaway, 'label_time')}:** <t:{ends_at}:R>",
+                    f"{self._theme_icon(giveaway, 'host')} **{self._theme_label(giveaway, 'label_host')}:** {host_mention}",
                 ]
             )
             if selected_winner_ids:
                 selected_text = ", ".join(f"<@{user_id}>" for user_id in selected_winner_ids)
                 description_lines.append(
                     f"{self._theme_icon(giveaway, 'selected')} "
-                    f"**{self._theme_value(giveaway, 'label_selected')}:** {selected_text}"
+                    f"**{self._theme_label(giveaway, 'label_selected')}:** {selected_text}"
                 )
 
         embed = discord.Embed(
@@ -415,13 +423,13 @@ class AdministratorGiveawayCog(AdminCommandBase):
 
         if int(giveaway.get("quantity_total") or 1) > 1:
             embed.add_field(
-                name=f"{self._theme_icon(giveaway, 'package')} {self._theme_value(giveaway, 'label_package')}",
+                name=f"{self._theme_icon(giveaway, 'package')} {self._theme_label(giveaway, 'label_package')}",
                 value=f"`{int(giveaway['quantity_index'])}/{int(giveaway['quantity_total'])}`",
                 inline=False,
             )
         if giveaway.get("template"):
             embed.add_field(
-                name=f"{self._theme_icon(giveaway, 'template')} {self._theme_value(giveaway, 'label_template')}",
+                name=f"{self._theme_icon(giveaway, 'template')} {self._theme_label(giveaway, 'label_template')}",
                 value=str(giveaway["template"])[:1024],
                 inline=False,
             )
@@ -754,15 +762,14 @@ class AdministratorGiveawayCog(AdminCommandBase):
                 embed=self._build_giveaway_embed(giveaway, ended),
                 view=None,
             )
-            discord_now = edited_message.edited_at or edited_message.created_at
-            remaining_seconds = int(giveaway["ends_at"]) - int(discord_now.timestamp())
+            remaining_seconds = self._giveaway_delay_seconds(giveaway)
             if not ended and remaining_seconds <= 0:
                 await self._end_giveaway(giveaway_id, automatic=True)
                 return
             if not ended:
                 await self._add_entry_reaction(message, giveaway)
                 if schedule_end:
-                    self._schedule_end(giveaway, delay_seconds=remaining_seconds)
+                    self._schedule_end(giveaway)
 
     async def _create_one_giveaway(
         self,
@@ -804,7 +811,7 @@ class AdministratorGiveawayCog(AdminCommandBase):
             view=None,
         )
         await self._add_entry_reaction(message, giveaway)
-        self._schedule_end(giveaway, delay_seconds=payload.duration_seconds)
+        self._schedule_end(giveaway)
         return giveaway_id
 
     async def _create_giveaways(self, channel, guild_id: int, creator_id: int, payload: GiveawayCreatePayload) -> list[int]:
@@ -821,7 +828,11 @@ class AdministratorGiveawayCog(AdminCommandBase):
             )
         return giveaway_ids
 
-    def _schedule_end(self, giveaway: dict, delay_seconds: int | float | None = None):
+    @staticmethod
+    def _giveaway_delay_seconds(giveaway: dict, now: float | None = None) -> float:
+        return max(0.0, float(giveaway["ends_at"]) - float(now if now is not None else time.time()))
+
+    def _schedule_end(self, giveaway: dict):
         giveaway_id = int(giveaway["giveaway_id"])
         existing = self._end_tasks.pop(giveaway_id, None)
         if existing:
@@ -829,12 +840,7 @@ class AdministratorGiveawayCog(AdminCommandBase):
 
         async def runner():
             try:
-                delay = max(
-                    0,
-                    float(delay_seconds)
-                    if delay_seconds is not None
-                    else float(giveaway["duration_seconds"]),
-                )
+                delay = self._giveaway_delay_seconds(giveaway)
                 await asyncio.sleep(delay)
                 await self._end_giveaway(giveaway_id, automatic=True)
             except asyncio.CancelledError:
@@ -890,7 +896,11 @@ class AdministratorGiveawayCog(AdminCommandBase):
             return True, "Đã cập nhật người thắng cho giveaway đã kết thúc."
 
         giveaway_message = await self._fetch_giveaway_message(giveaway)
-        participants = await self._sync_reaction_participants(giveaway, giveaway_message)
+        participants = (
+            self.service.get_participants(giveaway_id)
+            if automatic
+            else await self._sync_reaction_participants(giveaway, giveaway_message)
+        )
         selected_winner_ids = self.service.decode_selected_winner_ids(giveaway)
         winner_ids = selected_winner_ids or self._pick_winners(participants, int(giveaway["winners_count"]))
         self.service.mark_ended(giveaway_id, winner_ids)

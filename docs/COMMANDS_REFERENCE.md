@@ -170,6 +170,7 @@ Trong docs dùng `{prefix}` để đại diện cho prefix hiện tại.
   - Nếu bot chưa ở voice, người gọi `play` sẽ là người giữ quyền `play l/leave`.
   - Player hoạt động trong cả text channel và phần chat của voice channel.
   - Player cũ tự xóa và card mới được gửi xuống cuối chat khi thao tác hoặc chuyển bài.
+  - Nhạc bắt đầu ngay khi nguồn phát sẵn sàng; card được render ở background và có thể xuất hiện sau.
   - Card là ảnh đính kèm trực tiếp, không dùng embed.
   - Thanh thời gian chạy trong GIF và được đồng bộ lại từ playback clock mỗi 30 giây.
   - Không còn dòng `Bắt đầu ... / kết thúc ...` bên ngoài ảnh.
