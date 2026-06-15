@@ -5,23 +5,29 @@ import re
 import discord
 from discord.ui import Button, ChannelSelect, Modal, Select, TextInput, UserSelect, View
 
-from ui.ticket.emoji import ticket_emoji
+from ui.ticket.emoji import (
+    TICKET_CONTENT_FIELDS,
+    TICKET_ICON_FIELDS,
+    ticket_emoji,
+    ticket_theme_value,
+)
 from ui.ticket.ui import (
-    TICKET_TYPES,
     build_ticket_close_cancelled_embed,
     build_ticket_close_progress_embed,
     build_ticket_create_cancelled_embed,
     build_ticket_create_progress_embed,
     build_ticket_guide_embed,
     safe_interaction_send,
+    ticket_types,
 )
 
 
 class TicketTypeSelect(Select):
-    def __init__(self, cog):
+    def __init__(self, cog, guild_id: int | None = None):
+        theme = cog.service.get_theme(guild_id) if guild_id else {}
         options = [
-            discord.SelectOption(label=label, value=value, emoji=ticket_emoji(value))
-            for value, label in TICKET_TYPES.items()
+            discord.SelectOption(label=label, value=value, emoji=ticket_emoji(value, theme))
+            for value, label in ticket_types(theme).items()
         ]
         super().__init__(
             placeholder="Chọn loại yêu cầu hỗ trợ...",
@@ -37,17 +43,25 @@ class TicketTypeSelect(Select):
 
 
 class TicketTypeView(View):
-    def __init__(self, cog):
+    def __init__(self, cog, guild_id: int | None = None):
         super().__init__(timeout=120)
-        self.add_item(TicketTypeSelect(cog))
+        self.add_item(TicketTypeSelect(cog, guild_id))
 
 
 class TicketCreateConfirmView(View):
-    def __init__(self, cog, ticket_type: str, owner_id: int):
+    def __init__(self, cog, ticket_type: str, owner_id: int, guild_id: int | None = None):
         super().__init__(timeout=120)
         self.cog = cog
         self.ticket_type = ticket_type
         self.owner_id = owner_id
+        theme = cog.service.get_theme(guild_id) if guild_id else {}
+        for child in self.children:
+            if child.label == "Xác nhận":
+                child.label = ticket_theme_value(theme, "button_confirm")
+                child.emoji = ticket_emoji("confirm", theme)
+            elif child.label == "Hủy":
+                child.label = ticket_theme_value(theme, "button_cancel")
+                child.emoji = ticket_emoji("cancel", theme)
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         if interaction.user.id == self.owner_id:
@@ -76,9 +90,18 @@ class TicketCreateConfirmView(View):
 
 
 class TicketPanelView(View):
-    def __init__(self, cog):
+    def __init__(self, cog, guild_id: int | None = None):
         super().__init__(timeout=None)
         self.cog = cog
+        self.guild_id = guild_id
+        theme = cog.service.get_theme(guild_id) if guild_id else {}
+        for child in self.children:
+            if child.custom_id == "ticket:open":
+                child.label = ticket_theme_value(theme, "button_open")
+                child.emoji = ticket_emoji("ticket", theme)
+            elif child.custom_id == "ticket:guide":
+                child.label = ticket_theme_value(theme, "button_guide")
+                child.emoji = ticket_emoji("log", theme)
 
     @discord.ui.button(
         label="Mở Ticket",
@@ -96,7 +119,8 @@ class TicketPanelView(View):
         custom_id="ticket:guide",
     )
     async def guide(self, interaction: discord.Interaction, button: Button):
-        await safe_interaction_send(interaction, embed=build_ticket_guide_embed(), ephemeral=True)
+        theme = self.cog.service.get_theme(interaction.guild.id)
+        await safe_interaction_send(interaction, embed=build_ticket_guide_embed(theme), ephemeral=True)
 
 
 class TicketCloseConfirmView(View):
@@ -163,9 +187,20 @@ class TicketManageView(View):
 
 
 class TicketControlView(View):
-    def __init__(self, cog):
+    def __init__(self, cog, guild_id: int | None = None):
         super().__init__(timeout=None)
         self.cog = cog
+        theme = cog.service.get_theme(guild_id) if guild_id else {}
+        mapping = {
+            "ticket:claim": ("button_claim", "claim"),
+            "ticket:manage": ("button_manage", "manage"),
+            "ticket:close": ("button_close", "close"),
+        }
+        for child in self.children:
+            if child.custom_id in mapping:
+                label_key, icon_key = mapping[child.custom_id]
+                child.label = ticket_theme_value(theme, label_key)
+                child.emoji = ticket_emoji(icon_key, theme)
 
     @discord.ui.button(
         label="Claim",
@@ -264,6 +299,83 @@ class TicketLimitModal(Modal, title="Cấu hình Ticket"):
         await safe_interaction_send(interaction, content="✅ Đã lưu giới hạn Ticket.", ephemeral=True)
 
 
+class TicketThemeModal(Modal):
+    def __init__(self, cog, guild_id: int, key: str, current: str):
+        super().__init__(title=f"Sửa {key}"[:45])
+        self.cog = cog
+        self.guild_id = guild_id
+        self.key = key
+        example = (
+            TICKET_ICON_FIELDS.get(key)
+            if key.startswith("icon_")
+            else TICKET_CONTENT_FIELDS.get(key)
+        ) or ""
+        max_length = 4000
+        if key.startswith("icon_"):
+            max_length = 100
+        elif key.startswith("button_"):
+            max_length = 80
+        elif key.startswith("type_"):
+            max_length = 100
+        elif key.endswith("_title"):
+            max_length = 256
+        self.value_input = TextInput(
+            label=key[:45],
+            placeholder=f"VD: {example}"[:100],
+            default=current[:max_length],
+            style=discord.TextStyle.paragraph if len(current) > 80 else discord.TextStyle.short,
+            max_length=max_length,
+        )
+        self.add_item(self.value_input)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        await self.cog.handle_ticket_theme_submit(
+            interaction,
+            self.key,
+            str(self.value_input.value),
+        )
+
+
+class TicketThemeSelect(Select):
+    def __init__(self, cog, guild_id: int, mode: str):
+        self.cog = cog
+        self.guild_id = guild_id
+        fields = TICKET_ICON_FIELDS if mode == "icon" else TICKET_CONTENT_FIELDS
+        options = [
+            discord.SelectOption(
+                label=key.replace("_", " ").title()[:100],
+                value=key,
+                description=f"VD: {example}"[:100],
+                emoji="✨" if mode == "icon" else "📝",
+            )
+            for key, example in fields.items()
+        ]
+        super().__init__(
+            placeholder="Chọn icon cần sửa..." if mode == "icon" else "Chọn nội dung cần sửa...",
+            options=options,
+        )
+
+    async def callback(self, interaction: discord.Interaction):
+        if not await self.cog.require_role_or_admin_interaction(interaction, "ticket"):
+            return
+        key = self.values[0]
+        theme = self.cog.service.get_theme(self.guild_id)
+        await interaction.response.send_modal(
+            TicketThemeModal(
+                self.cog,
+                self.guild_id,
+                key,
+                ticket_theme_value(theme, key),
+            )
+        )
+
+
+class TicketThemeView(View):
+    def __init__(self, cog, guild_id: int, mode: str):
+        super().__init__(timeout=600)
+        self.add_item(TicketThemeSelect(cog, guild_id, mode))
+
+
 class TicketManagerView(View):
     def __init__(self, cog):
         super().__init__(timeout=300)
@@ -285,6 +397,24 @@ class TicketManagerView(View):
     async def limits(self, interaction: discord.Interaction, button: Button):
         config = self.cog.service.ensure_config(interaction.guild.id)
         await interaction.response.send_modal(TicketLimitModal(self.cog, config))
+
+    @discord.ui.button(label="Nội dung", style=discord.ButtonStyle.secondary, emoji="📝")
+    async def content(self, interaction: discord.Interaction, button: Button):
+        await safe_interaction_send(
+            interaction,
+            content="Chọn nội dung Ticket cần tùy chỉnh. Modal sẽ có ví dụ trong ô nhập.",
+            view=TicketThemeView(self.cog, interaction.guild.id, "content"),
+            ephemeral=True,
+        )
+
+    @discord.ui.button(label="Icon", style=discord.ButtonStyle.secondary, emoji="✨")
+    async def icons(self, interaction: discord.Interaction, button: Button):
+        await safe_interaction_send(
+            interaction,
+            content="Chọn icon Ticket cần tùy chỉnh.",
+            view=TicketThemeView(self.cog, interaction.guild.id, "icon"),
+            ephemeral=True,
+        )
 
     @discord.ui.button(label="Gửi / Refresh Panel", style=discord.ButtonStyle.success, emoji=ticket_emoji("refresh"))
     async def panel(self, interaction: discord.Interaction, button: Button):

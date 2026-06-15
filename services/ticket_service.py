@@ -61,6 +61,13 @@ class TicketService:
             message TEXT,
             created_at TEXT NOT NULL
         ''')
+        self.db.create_table('ticket_theme', '''
+            guild_id INTEGER NOT NULL,
+            theme_key TEXT NOT NULL,
+            theme_value TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            PRIMARY KEY (guild_id, theme_key)
+        ''')
         self._ensure_schema()
 
     def _ensure_column(self, table: str, column: str, ddl: str) -> None:
@@ -144,6 +151,40 @@ class TicketService:
         ok = self.db.update('ticket_config', {key: value, 'updated_at': get_timestamp()}, 'guild_id = ?', (guild_id,))
         logger.debug("[TICKET_DB] update_config result ok=%s rowcount=%s", ok, getattr(self.db.conn, "total_changes", "N/A"))
         return ok
+
+    def get_theme(self, guild_id: int) -> dict:
+        rows = self.db.fetch(
+            "SELECT theme_key, theme_value FROM ticket_theme WHERE guild_id = ?",
+            (int(guild_id),),
+        )
+        return {str(row["theme_key"]): str(row["theme_value"]) for row in rows}
+
+    def set_theme_value(self, guild_id: int, key: str, value: str):
+        existing = self.db.select_one(
+            "ticket_theme",
+            "guild_id = ? AND theme_key = ?",
+            (int(guild_id), str(key)),
+        )
+        data = {"theme_value": str(value), "updated_at": get_timestamp()}
+        if existing:
+            self.db.update(
+                "ticket_theme",
+                data,
+                "guild_id = ? AND theme_key = ?",
+                (int(guild_id), str(key)),
+            )
+        else:
+            self.db.insert(
+                "ticket_theme",
+                {"guild_id": int(guild_id), "theme_key": str(key), **data},
+            )
+
+    def reset_theme_value(self, guild_id: int, key: str):
+        self.db.delete(
+            "ticket_theme",
+            "guild_id = ? AND theme_key = ?",
+            (int(guild_id), str(key)),
+        )
 
     def get_user_active_tickets(self, guild_id: int, user_id: int) -> List[Dict]:
         # Status open hoặc claimed được coi là active

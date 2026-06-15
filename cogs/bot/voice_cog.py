@@ -33,10 +33,10 @@ from services.role_permission_service import RolePermissionService
 from ui.bot.player_ui import (
     MusicPlayerView,
     PlayerCardData,
-    PlayerSettingsView,
     build_player_file,
     normalize_accent_color,
 )
+from ui.bot.play_config_ui import PlayerThemeModal, PlayConfigMenu, build_play_config_embed
 
 
 IDLE_TIMEOUT_SECONDS = 300
@@ -554,6 +554,10 @@ class BotVoiceCog(commands.Cog):
             await message.add_reaction(emoji)
         except (discord.Forbidden, discord.HTTPException):
             pass
+
+    def _play_reaction(self, guild_id: int, key: str) -> str:
+        theme = self.player_service.get_theme(guild_id)
+        return str(theme.get(key) or "")
 
     def _find_guild_voice_client(self, guild: discord.Guild) -> discord.VoiceClient | None:
         voice_client = getattr(guild, "voice_client", None)
@@ -1241,25 +1245,31 @@ class BotVoiceCog(commands.Cog):
         async with self._player_message_lock(guild_id):
             await self._delete_player_message_unlocked(self._get_state(guild_id))
 
-    def _player_message_content(self, state: GuildAudioState, item: AudioItem) -> str:
+    @staticmethod
+    def _format_player_text(template: str, **values) -> str:
+        try:
+            return str(template).format(**values)
+        except (KeyError, ValueError):
+            return str(template)
+
+    def _player_message_content(self, guild_id: int, state: GuildAudioState, item: AudioItem) -> str:
+        theme = self.player_service.get_theme(guild_id)
         elapsed = self._playback_seconds(state)
         voice_client = state.voice_client
         if voice_client and voice_client.is_paused():
-            return (
-                f"⏸️ Tạm dừng tại `{self._duration_text(elapsed)}`"
-                + (
-                    f" / `{self._duration_text(item.duration)}`"
-                    if item.duration
-                    else ""
-                )
+            return self._format_player_text(
+                theme.get("message_paused"),
+                elapsed=self._duration_text(elapsed),
+                duration=self._duration_text(item.duration),
             )
 
         started_at = int(time.time() - elapsed)
-        parts = [f"▶️ Bắt đầu <t:{started_at}:R>"]
-        if item.duration:
-            ends_at = started_at + int(item.duration)
-            parts.append(f"kết thúc <t:{ends_at}:R>")
-        return " • ".join(parts)
+        ends_at = started_at + int(item.duration or 0)
+        return self._format_player_text(
+            theme.get("message_playing"),
+            started=f"<t:{started_at}:R>",
+            ends=f"<t:{ends_at}:R>" if item.duration else "không rõ",
+        )
 
     async def _refresh_player_message(
         self,
@@ -1295,12 +1305,20 @@ class BotVoiceCog(commands.Cog):
             accent_color=theme.get("accent_color", "#7f314d"),
             background_url=theme.get("background_url") or None,
             header_text=theme.get("title_text", "BLACK LOUS MUSIC"),
+            requester_text=theme.get("card_requester"),
+            status_playing_text=theme.get("card_status_playing"),
+            status_paused_text=theme.get("card_status_paused"),
+            duration_label=theme.get("card_duration"),
+            volume_text=theme.get("card_volume"),
+            loop_text=theme.get("card_loop"),
+            autoplay_text=theme.get("card_autoplay"),
+            queue_text=theme.get("card_queue"),
         )
         async with self._player_message_lock(guild_id):
             try:
                 player_file = await build_player_file(data)
-                view = MusicPlayerView(self, guild_id)
-                content = self._player_message_content(state, item)
+                view = MusicPlayerView(self, guild_id, theme)
+                content = self._player_message_content(guild_id, state, item)
                 message = None
                 if (
                     not move_to_bottom
@@ -1328,10 +1346,10 @@ class BotVoiceCog(commands.Cog):
                 fallback = (
                     f"🎧 **Đang phát:** {link_text}\n"
                     f"👤 Yêu cầu bởi: <@{item.requester_id}>\n"
-                    f"{self._player_message_content(state, item)}"
+                    f"{self._player_message_content(guild_id, state, item)}"
                 )
                 await self._delete_player_message_unlocked(state)
-                message = await channel.send(content=fallback, view=MusicPlayerView(self, guild_id))
+                message = await channel.send(content=fallback, view=MusicPlayerView(self, guild_id, theme))
                 state.player_message_id = message.id
                 state.player_channel_id = channel.id
 
@@ -1394,26 +1412,10 @@ class BotVoiceCog(commands.Cog):
 
     def _player_settings_embed(self, guild_id: int) -> discord.Embed:
         theme = self.player_service.get_theme(guild_id)
-        background = theme.get("background_url") or "`ui/bot/assets/player_background.png` hoặc thumbnail bài hát"
-        embed = discord.Embed(
-            title="🎨 Music Player UI",
-            description="Chỉnh canvas player bằng menu hoặc lệnh prefix.",
-            color=discord.Color.from_str(normalize_accent_color(theme.get("accent_color"))),
-        )
-        embed.add_field(name="Màu chính", value=f"`{theme.get('accent_color')}`", inline=True)
-        embed.add_field(name="Tiêu đề", value=f"`{theme.get('title_text')}`", inline=True)
-        embed.add_field(name="Ảnh nền", value=str(background), inline=False)
-        embed.add_field(
-            name="Lệnh nhanh",
-            value=(
-                "`play settings accent #7f314d`\n"
-                "`play settings title Black Lous Music`\n"
-                "`play settings background <url|off>` hoặc đính kèm ảnh\n"
-                "`play settings reset`"
-            ),
-            inline=False,
-        )
-        return embed
+        return build_play_config_embed(theme)
+
+    def player_theme_modal(self, guild_id: int, theme: dict) -> PlayerThemeModal:
+        return PlayerThemeModal(self, guild_id, theme)
 
     async def _show_player_settings(self, ctx, raw: str):
         if not isinstance(ctx.author, discord.Member) or not self._can_manage_player_settings(ctx.author):
@@ -1429,7 +1431,7 @@ class BotVoiceCog(commands.Cog):
         if not raw:
             await ctx.send(
                 embed=self._player_settings_embed(ctx.guild.id),
-                view=PlayerSettingsView(self, ctx.guild.id),
+                view=PlayConfigMenu(self, ctx.guild.id),
             )
             return
 
@@ -1464,7 +1466,7 @@ class BotVoiceCog(commands.Cog):
             text = background_url or "Dùng ảnh trong `ui/bot/assets` hoặc thumbnail bài hát."
             await ctx.send(embed=create_success_splash("✅ Đã Đổi Ảnh Nền", text))
         else:
-            await ctx.send(embed=self._player_settings_embed(ctx.guild.id), view=PlayerSettingsView(self, ctx.guild.id))
+            await ctx.send(embed=self._player_settings_embed(ctx.guild.id), view=PlayConfigMenu(self, ctx.guild.id))
             return
 
     async def handle_player_theme_submit(
@@ -1493,6 +1495,29 @@ class BotVoiceCog(commands.Cog):
         await interaction.response.send_message("✅ Đã lưu giao diện player.", ephemeral=True)
         await self._refresh_player_message(guild_id, move_to_bottom=True)
 
+    async def handle_play_theme_submit(
+        self,
+        interaction: discord.Interaction,
+        guild_id: int,
+        key: str,
+        value: str,
+    ):
+        if key not in self.player_service.get_theme(guild_id):
+            await interaction.response.send_message("❌ Mục config không hợp lệ.", ephemeral=True)
+            return
+        value = value.strip().replace("\\n", "\n")
+        if value.lower() in {"reset", "default"}:
+            default = self.player_service.reset_theme_value(guild_id, key)
+            message = f"✅ Đã reset `{key}` về `{default}`."
+        else:
+            if key.startswith(("icon_", "reaction_")) and not value:
+                await interaction.response.send_message("❌ Icon/reaction không được để trống.", ephemeral=True)
+                return
+            self.player_service.set_theme(guild_id, **{key: value})
+            message = f"✅ Đã lưu `{key}`."
+        await interaction.response.send_message(message, ephemeral=True)
+        await self._refresh_player_message(guild_id, move_to_bottom=True)
+
     async def handle_player_settings_button(self, interaction: discord.Interaction, guild_id: int):
         if not isinstance(interaction.user, discord.Member) or not self._can_manage_player_settings(interaction.user):
             await interaction.response.send_message(
@@ -1502,7 +1527,7 @@ class BotVoiceCog(commands.Cog):
             return
         await interaction.response.send_message(
             embed=self._player_settings_embed(guild_id),
-            view=PlayerSettingsView(self, guild_id),
+            view=PlayConfigMenu(self, guild_id),
             ephemeral=True,
         )
 
@@ -1529,6 +1554,14 @@ class BotVoiceCog(commands.Cog):
             accent_color=theme.get("accent_color", "#7f314d"),
             background_url=theme.get("background_url") or None,
             header_text=theme.get("title_text", "BLACK LOUS MUSIC"),
+            requester_text=theme.get("card_requester"),
+            status_playing_text=theme.get("card_status_playing"),
+            status_paused_text=theme.get("card_status_paused"),
+            duration_label=theme.get("card_duration"),
+            volume_text=theme.get("card_volume"),
+            loop_text=theme.get("card_loop"),
+            autoplay_text=theme.get("card_autoplay"),
+            queue_text=theme.get("card_queue"),
         )
         player_file = await build_player_file(data)
         await interaction.response.send_message(
@@ -1856,7 +1889,7 @@ class BotVoiceCog(commands.Cog):
         if not await self._require_package(ctx, "yt_dlp", "yt-dlp"):
             return
 
-        await self._try_react(ctx.message, "🎶")
+        await self._try_react(ctx.message, self._play_reaction(ctx.guild.id, "reaction_search"))
         voice_client = await self._ensure_voice(ctx)
         if not voice_client:
             return
@@ -1881,7 +1914,7 @@ class BotVoiceCog(commands.Cog):
                     "Nguồn nhạc phản hồi quá lâu. Thử gửi link YouTube trực tiếp hoặc tìm lại bằng tên ngắn hơn.",
                 )
             )
-            await self._try_react(ctx.message, "❌")
+            await self._try_react(ctx.message, self._play_reaction(ctx.guild.id, "reaction_error"))
             return
         except Exception as exc:
             await ctx.send(
@@ -1890,16 +1923,17 @@ class BotVoiceCog(commands.Cog):
                     f"{exc}\nNếu Spotify URL không chạy, hãy gửi tên bài hoặc link YouTube/YT Music tương ứng.",
                 )
             )
-            await self._try_react(ctx.message, "❌")
+            await self._try_react(ctx.message, self._play_reaction(ctx.guild.id, "reaction_error"))
             return
 
         if not items:
             await ctx.send(embed=create_error_splash("❌ Không Có Kết Quả", "Không tìm thấy bài/playlist phù hợp."))
-            await self._try_react(ctx.message, "❌")
+            await self._try_react(ctx.message, self._play_reaction(ctx.guild.id, "reaction_error"))
             return
 
         state.queue.extend(items)
         await self._start_player_if_needed(ctx.guild.id)
+        await self._try_react(ctx.message, self._play_reaction(ctx.guild.id, "reaction_success"))
         if not starting_new_session:
             await self._refresh_player_message(ctx.guild.id, move_to_bottom=True)
 

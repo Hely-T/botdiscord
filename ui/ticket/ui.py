@@ -3,7 +3,7 @@ from __future__ import annotations
 import discord
 from discord.ui import View
 
-from ui.ticket.emoji import ticket_text
+from ui.ticket.emoji import ticket_text, ticket_theme_value
 from utils import create_error_splash, create_info_splash, create_success_splash
 
 
@@ -14,6 +14,21 @@ TICKET_TYPES = {
     "payment": "Thanh toán",
     "contact_admin": "Liên hệ Admin",
 }
+
+
+def ticket_types(theme: dict | None = None) -> dict[str, str]:
+    return {
+        key: ticket_theme_value(theme, f"type_{key}") or fallback
+        for key, fallback in TICKET_TYPES.items()
+    }
+
+
+def format_ticket_template(theme: dict | None, key: str, **values) -> str:
+    template = ticket_theme_value(theme, key)
+    try:
+        return template.format(**values)
+    except (KeyError, ValueError):
+        return template
 
 
 async def safe_interaction_send(
@@ -96,14 +111,13 @@ def build_ticket_manager_embed(cog, guild: discord.Guild) -> discord.Embed:
     return embed
 
 
-def build_ticket_guide_embed() -> discord.Embed:
+def build_ticket_guide_embed(theme: dict | None = None) -> discord.Embed:
     return discord.Embed(
-        title=ticket_text("log", "Hướng Dẫn Ticket"),
-        description=(
-            "1. Bấm **Mở Ticket**.\n"
-            "2. Chọn đúng loại hỗ trợ.\n"
-            "3. Xác nhận tạo kênh.\n"
-            "4. Mô tả vấn đề và gửi hình ảnh nếu cần."
+        title=ticket_text("log", ticket_theme_value(theme, "guide_title"), theme),
+        description=format_ticket_template(
+            theme,
+            "guide_description",
+            open_button=ticket_theme_value(theme, "button_open"),
         ),
         color=discord.Color.blurple(),
     )
@@ -131,21 +145,33 @@ def build_ticket_close_cancelled_embed() -> discord.Embed:
     return create_info_splash(ticket_text("cancel", "Đã Hủy"), "Ticket vẫn tiếp tục mở.")
 
 
-def build_ticket_panel_embed(config: dict) -> discord.Embed:
+def build_ticket_panel_embed(config: dict, theme: dict | None = None) -> discord.Embed:
     return discord.Embed(
-        title=ticket_text("ticket", "TRUNG TÂM HỖ TRỢ"),
-        description=(
-            "Bấm **Mở Ticket** để tạo yêu cầu hỗ trợ.\n"
-            f"Giới hạn: `{config.get('max_open_tickets', 1)}` ticket/người."
+        title=ticket_text("ticket", ticket_theme_value(theme, "panel_title"), theme),
+        description=format_ticket_template(
+            theme,
+            "panel_description",
+            open_button=ticket_theme_value(theme, "button_open"),
+            limit=config.get("max_open_tickets", 1),
         ),
         color=discord.Color.blurple(),
     )
 
 
-def build_ticket_created_embed(user: discord.Member, ticket_type: str) -> discord.Embed:
+def build_ticket_created_embed(user: discord.Member, ticket_type: str, theme: dict | None = None) -> discord.Embed:
+    type_label = ticket_types(theme).get(ticket_type, ticket_type)
     return discord.Embed(
-        title=ticket_text("ticket", TICKET_TYPES.get(ticket_type, ticket_type)),
-        description=f"Xin chào {user.mention}. Hãy mô tả chi tiết vấn đề cần hỗ trợ.",
+        title=ticket_text(
+            "ticket",
+            format_ticket_template(theme, "created_title", type=type_label),
+            theme,
+        ),
+        description=format_ticket_template(
+            theme,
+            "created_description",
+            user=user.mention,
+            type=type_label,
+        ),
         color=discord.Color.green(),
     )
 

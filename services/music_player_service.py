@@ -7,6 +7,39 @@ DEFAULT_PLAYER_THEME = {
     "accent_color": "#7f314d",
     "background_url": "",
     "title_text": "BLACK LOUS MUSIC",
+    "message_playing": "▶️ Bắt đầu {started} • kết thúc {ends}",
+    "message_paused": "⏸️ Tạm dừng tại `{elapsed}` / `{duration}`",
+    "card_requester": "Yêu cầu bởi: {requester}",
+    "card_status_playing": "ĐANG PHÁT",
+    "card_status_paused": "TẠM DỪNG",
+    "card_duration": "THỜI LƯỢNG",
+    "card_volume": "Âm lượng {volume}%",
+    "card_loop": "Loop {status}",
+    "card_autoplay": "Đề xuất YouTube {status}",
+    "card_queue": "Queue {count}",
+    "button_pause": "Pause / Resume",
+    "button_stop": "Stop",
+    "button_skip": "Skip",
+    "button_loop": "Loop",
+    "button_autoplay": "Đề xuất YouTube",
+    "button_shuffle": "Shuffle",
+    "button_queue": "Queue",
+    "button_volume": "Âm lượng",
+    "button_settings": "Settings",
+    "button_leave": "Rời voice",
+    "icon_pause": "⏯️",
+    "icon_stop": "⏹️",
+    "icon_skip": "⏭️",
+    "icon_loop": "🔁",
+    "icon_autoplay": "♾️",
+    "icon_shuffle": "🔀",
+    "icon_queue": "📋",
+    "icon_volume": "🔊",
+    "icon_settings": "⚙️",
+    "icon_leave": "🚪",
+    "reaction_search": "🎶",
+    "reaction_success": "✅",
+    "reaction_error": "❌",
 }
 
 DEFAULT_USER_PREFERENCES = {
@@ -27,6 +60,7 @@ class MusicPlayerService:
             updated_at TEXT
             """,
         )
+        self._ensure_theme_columns()
         self.db.create_table(
             "user_preferences",
             """
@@ -35,6 +69,16 @@ class MusicPlayerService:
             updated_at TEXT
             """,
         )
+
+    def _ensure_theme_columns(self):
+        columns = {row["name"] for row in self.db.fetch("PRAGMA table_info(player_theme)")}
+        for key, default in DEFAULT_PLAYER_THEME.items():
+            if key in columns or key in {"accent_color", "background_url", "title_text"}:
+                continue
+            escaped = str(default).replace("'", "''")
+            self.db.execute(
+                f"ALTER TABLE player_theme ADD COLUMN {key} TEXT DEFAULT '{escaped}'"
+            )
 
     def get_theme(self, guild_id: int) -> dict:
         saved = self.db.select_one("player_theme", "guild_id = ?", (int(guild_id),)) or {}
@@ -55,6 +99,12 @@ class MusicPlayerService:
     def reset_theme(self, guild_id: int) -> dict:
         self.db.delete("player_theme", "guild_id = ?", (int(guild_id),))
         return self.get_theme(guild_id)
+
+    def reset_theme_value(self, guild_id: int, key: str) -> str:
+        if key not in DEFAULT_PLAYER_THEME:
+            return ""
+        self.set_theme(guild_id, **{key: DEFAULT_PLAYER_THEME[key]})
+        return DEFAULT_PLAYER_THEME[key]
 
     def get_user_preferences(self, user_id: int) -> dict:
         saved = self.db.select_one(

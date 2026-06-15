@@ -33,6 +33,14 @@ class PlayerCardData:
     accent_color: str = "#7f314d"
     background_url: str | None = None
     header_text: str = "BLACK LOUS MUSIC"
+    requester_text: str = "Yêu cầu bởi: {requester}"
+    status_playing_text: str = "ĐANG PHÁT"
+    status_paused_text: str = "TẠM DỪNG"
+    duration_label: str = "THỜI LƯỢNG"
+    volume_text: str = "Âm lượng {volume}%"
+    loop_text: str = "Loop {status}"
+    autoplay_text: str = "Đề xuất YouTube {status}"
+    queue_text: str = "Queue {count}"
 
 
 def _font(size: int, bold: bool = False) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
@@ -69,6 +77,13 @@ def _time_text(seconds: int | None) -> str:
     if hours:
         return f"{hours}:{minutes:02d}:{secs:02d}"
     return f"{minutes}:{secs:02d}"
+
+
+def _format_ui_text(template: str, **values) -> str:
+    try:
+        return str(template).format(**values)
+    except (KeyError, ValueError):
+        return str(template)
 
 
 async def _download_thumbnail(url: str | None) -> bytes | None:
@@ -167,23 +182,28 @@ def _render_card(
     header = _fit_text(draw, data.header_text.upper(), header_font, 580)
     draw.text((355, 35), header, font=header_font, fill=accent)
     draw.text((355, 62), title, font=title_font, fill=text)
-    draw.text((355, 125), f"Yêu cầu bởi: {data.requester}", font=meta_font, fill=muted)
+    draw.text(
+        (355, 125),
+        _format_ui_text(data.requester_text, requester=data.requester),
+        font=meta_font,
+        fill=muted,
+    )
 
-    status = "TẠM DỪNG" if data.paused else "ĐANG PHÁT"
+    status = data.status_paused_text if data.paused else data.status_playing_text
     status_color = "#c44c72" if data.paused else "#4f9b72"
     draw.rounded_rectangle((355, 170, 500, 208), radius=16, fill=status_color)
     draw.text((372, 177), status, font=status_font, fill="white")
 
     duration = max(0, int(data.duration or 0))
     duration_text = _time_text(duration) if duration else "Không rõ"
-    draw.text((355, 235), "THỜI LƯỢNG", font=small_font, fill=muted)
+    draw.text((355, 235), data.duration_label, font=small_font, fill=muted)
     draw.text((355, 263), duration_text, font=status_font, fill=accent)
 
     modes = [
-        f"Âm lượng {data.volume}%",
-        f"Loop {'Bật' if data.loop else 'Tắt'}",
-        f"Đề xuất YouTube {'Bật' if data.autoplay else 'Tắt'}",
-        f"Queue {data.queue_count}",
+        _format_ui_text(data.volume_text, volume=data.volume),
+        _format_ui_text(data.loop_text, status="Bật" if data.loop else "Tắt"),
+        _format_ui_text(data.autoplay_text, status="Bật" if data.autoplay else "Tắt"),
+        _format_ui_text(data.queue_text, count=data.queue_count),
     ]
     x = 355
     for mode in modes:
@@ -233,72 +253,30 @@ class PlayerVolumeModal(discord.ui.Modal, title="Chỉnh âm lượng"):
         await self.controller.handle_player_volume(interaction, self.guild_id, self.volume.value)
 
 
-class PlayerThemeModal(discord.ui.Modal, title="Chỉnh giao diện Player"):
-    accent = discord.ui.TextInput(
-        label="Màu chính",
-        placeholder="#7f314d",
-        required=False,
-        max_length=7,
-    )
-    title_text = discord.ui.TextInput(
-        label="Tiêu đề nhỏ",
-        placeholder="BLACK LOUS MUSIC",
-        required=False,
-        max_length=40,
-    )
-    background_url = discord.ui.TextInput(
-        label="URL ảnh nền",
-        placeholder="https://... hoặc để trống để dùng ảnh trong UI",
-        required=False,
-        max_length=500,
-    )
-
-    def __init__(self, controller, guild_id: int, theme: dict):
-        super().__init__()
-        self.controller = controller
-        self.guild_id = guild_id
-        self.accent.default = str(theme.get("accent_color") or "#7f314d")
-        self.title_text.default = str(theme.get("title_text") or "BLACK LOUS MUSIC")
-        self.background_url.default = str(theme.get("background_url") or "")
-
-    async def on_submit(self, interaction: discord.Interaction):
-        await self.controller.handle_player_theme_submit(
-            interaction,
-            self.guild_id,
-            accent=str(self.accent.value),
-            title_text=str(self.title_text.value),
-            background_url=str(self.background_url.value),
-        )
-
-
-class PlayerSettingsView(discord.ui.View):
-    def __init__(self, controller, guild_id: int):
-        super().__init__(timeout=300)
-        self.controller = controller
-        self.guild_id = guild_id
-
-    async def interaction_check(self, interaction: discord.Interaction) -> bool:
-        return await self.controller.check_player_settings_interaction(interaction, self.guild_id)
-
-    @discord.ui.button(label="Chỉnh giao diện", emoji="🎨", style=discord.ButtonStyle.primary)
-    async def edit(self, interaction: discord.Interaction, button: discord.ui.Button):
-        theme = self.controller.player_service.get_theme(self.guild_id)
-        await interaction.response.send_modal(PlayerThemeModal(self.controller, self.guild_id, theme))
-
-    @discord.ui.button(label="Xem trước", emoji="🖼️", style=discord.ButtonStyle.secondary)
-    async def preview(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await self.controller.send_player_preview(interaction, self.guild_id)
-
-    @discord.ui.button(label="Mặc định", emoji="↩️", style=discord.ButtonStyle.danger)
-    async def reset(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await self.controller.reset_player_theme(interaction, self.guild_id)
-
-
 class MusicPlayerView(discord.ui.View):
-    def __init__(self, controller, guild_id: int):
+    def __init__(self, controller, guild_id: int, theme: dict | None = None):
         super().__init__(timeout=900)
         self.controller = controller
         self.guild_id = guild_id
+        theme = theme or {}
+        mapping = [
+            ("Pause / Resume", "button_pause", "icon_pause"),
+            ("Stop", "button_stop", "icon_stop"),
+            ("Skip", "button_skip", "icon_skip"),
+            ("Loop", "button_loop", "icon_loop"),
+            ("Đề xuất YouTube", "button_autoplay", "icon_autoplay"),
+            ("Shuffle", "button_shuffle", "icon_shuffle"),
+            ("Queue", "button_queue", "icon_queue"),
+            ("Âm lượng", "button_volume", "icon_volume"),
+            ("Settings", "button_settings", "icon_settings"),
+            ("Rời voice", "button_leave", "icon_leave"),
+        ]
+        for child in self.children:
+            for default_label, label_key, icon_key in mapping:
+                if child.label == default_label:
+                    child.label = str(theme.get(label_key) or child.label)
+                    child.emoji = str(theme.get(icon_key) or child.emoji)
+                    break
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         return await self.controller.check_player_interaction(interaction, self.guild_id)

@@ -20,13 +20,18 @@ from cogs.admin_command_utils import (
 )
 from services.giveaway_service import GiveawayService
 from utils import append_discord_timestamp
-from ui.administrator.emoji import (
+from ui.administrator.giveaway_emoji import (
     GIVEAWAY_CUSTOM_EMOJI_RE,
     GIVEAWAY_DEFAULT_ENTRY_EMOJI,
     GIVEAWAY_THEME_DEFAULTS,
     giveaway_icon,
     giveaway_theme_key,
     giveaway_theme_value,
+)
+from ui.administrator.giveaway_ui import (
+    GiveawayConfigView,
+    GiveawayManualSetView,
+    build_giveaway_config_embed,
 )
 
 
@@ -40,45 +45,6 @@ class GiveawayCreatePayload:
     winners_count: int
     quantity: int = 1
     template: str = ""
-
-
-class GiveawayWinnerSelect(discord.ui.Select):
-    def __init__(self, cog: "AdministratorGiveawayCog", giveaway: dict, participants: list[dict]):
-        self.cog = cog
-        self.giveaway = giveaway
-        winners_count = int(giveaway["winners_count"])
-        options = [
-            discord.SelectOption(
-                label=str(row["username"])[:100],
-                value=str(row["user_id"]),
-                description=f"ID {row['user_id']}"[:100],
-            )
-            for row in participants[:25]
-        ]
-        super().__init__(
-            placeholder=f"Chọn {min(winners_count, len(options))} winner thủ công...",
-            min_values=max(1, min(winners_count, len(options))),
-            max_values=max(1, min(winners_count, len(options))),
-            options=options,
-            custom_id=f"giveaway:set_winner:{giveaway['giveaway_id']}",
-        )
-
-    async def callback(self, interaction: discord.Interaction):
-        winner_ids = [int(value) for value in self.values]
-        await self.cog._save_selected_winners_interaction(interaction, int(self.giveaway["giveaway_id"]), winner_ids)
-
-
-class GiveawayManualSetView(discord.ui.View):
-    def __init__(self, cog: "AdministratorGiveawayCog", giveaway: dict, participants: list[dict]):
-        super().__init__(timeout=900)
-        self.cog = cog
-        self.giveaway = giveaway
-        if participants:
-            self.add_item(GiveawayWinnerSelect(cog, giveaway, participants))
-
-    @discord.ui.button(label="Random winner", style=discord.ButtonStyle.primary, emoji=giveaway_icon("random"), custom_id="giveaway:manual_random")
-    async def random_winner(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await self.cog._random_winners_interaction(interaction, int(self.giveaway["giveaway_id"]))
 
 
 class AdministratorGiveawayCog(AdminCommandBase):
@@ -335,11 +301,17 @@ class AdministratorGiveawayCog(AdminCommandBase):
             print(f"❌ Không thêm được emoji giveaway {giveaway.get('giveaway_id')}: {exc}")
             return False
 
-    async def _send_interaction_splash(self, interaction: discord.Interaction, embed: discord.Embed, ephemeral: bool = True):
+    async def _send_interaction_splash(
+        self,
+        interaction: discord.Interaction,
+        embed: discord.Embed,
+        ephemeral: bool = True,
+        view: discord.ui.View | None = None,
+    ):
         if interaction.response.is_done():
-            await interaction.followup.send(embed=embed, ephemeral=ephemeral)
+            await interaction.followup.send(embed=embed, view=view, ephemeral=ephemeral)
         else:
-            await interaction.response.send_message(embed=embed, ephemeral=ephemeral)
+            await interaction.response.send_message(embed=embed, view=view, ephemeral=ephemeral)
 
     def _giveaway_theme(self, giveaway: dict | None) -> dict[str, str]:
         if not giveaway:
@@ -1028,32 +1000,29 @@ class AdministratorGiveawayCog(AdminCommandBase):
 
     def _build_config_help_embed(self, guild_id: int) -> discord.Embed:
         theme = self.service.get_theme(guild_id)
-        current = self.get_entry_emoji(guild_id)
-        lines = [
-            f"Emoji tham gia: {current}",
-            "`ga config emoji <emoji>` đổi emoji react tham gia.",
-            "`ga config start <emoji>` đổi emoji tiêu đề bắt đầu.",
-            "`ga config ended <emoji>` đổi emoji tiêu đề kết thúc.",
-            "`ga config host <emoji>` đổi emoji host.",
-            "`ga config winner <emoji>` đổi emoji người thắng.",
-            "`ga config time <emoji>` đổi emoji thời gian.",
-            "`ga config title_start <nội dung>` đổi tiêu đề bắt đầu.",
-            "`ga config title_ended <nội dung>` đổi tiêu đề kết thúc.",
-            "`ga config join_text <nội dung>` đổi câu tham gia.",
-            "`ga config ended_text <nội dung>` đổi câu kết thúc.",
-            "`ga config time_text <text>` đổi chữ Đếm ngược.",
-            "`ga config host_text <text>` đổi chữ Host.",
-            "`ga config winner_text <text>` đổi chữ Người thắng.",
-            "`ga config <key> reset` để về mặc định.",
-        ]
-        changed = [
-            f"`{key}` = {value}"
-            for key, value in sorted(theme.items())
-            if key in GIVEAWAY_THEME_DEFAULTS
-        ]
-        if changed:
-            lines.append("\nĐang custom:\n" + "\n".join(changed[:15]))
-        return create_info_splash(f"{giveaway_icon('config')} Giveaway Config", "\n".join(lines))
+        return build_giveaway_config_embed(self.get_entry_emoji(guild_id), theme)
+
+    async def handle_giveaway_config_submit(
+        self,
+        interaction: discord.Interaction,
+        guild_id: int,
+        key: str,
+        value: str,
+    ):
+        try:
+            if key == "entry_emoji":
+                if value.strip().lower() in {"reset", "default"}:
+                    value = GIVEAWAY_DEFAULT_ENTRY_EMOJI
+                ok, message = await self._set_entry_emoji_config(interaction.guild, value)
+            else:
+                ok, message = await self._set_theme_config(interaction.guild, key, value)
+        except ValueError as exc:
+            await interaction.response.send_message(f"❌ {exc}", ephemeral=True)
+            return
+        await interaction.response.send_message(
+            message if ok else f"❌ {message}",
+            ephemeral=True,
+        )
 
     async def _set_entry_emoji_config(self, guild: discord.Guild, raw_emoji: str) -> tuple[bool, str]:
         if not str(raw_emoji or "").strip():
@@ -1084,7 +1053,10 @@ class AdministratorGiveawayCog(AdminCommandBase):
     async def _handle_config_command(self, ctx, content: str, action: str = "config"):
         raw = (content or "").strip()
         if not raw:
-            await ctx.send(embed=self._build_config_help_embed(ctx.guild.id))
+            await ctx.send(
+                embed=self._build_config_help_embed(ctx.guild.id),
+                view=GiveawayConfigView(self, ctx.guild.id),
+            )
             return
 
         first, _, rest = raw.partition(" ")
@@ -1183,6 +1155,7 @@ class AdministratorGiveawayCog(AdminCommandBase):
                 await self._send_interaction_splash(
                     interaction,
                     self._build_config_help_embed(interaction.guild.id),
+                    view=GiveawayConfigView(self, interaction.guild.id),
                 )
                 return
             try:

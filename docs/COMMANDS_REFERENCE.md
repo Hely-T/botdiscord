@@ -211,6 +211,11 @@ Trong docs dùng `{prefix}` để đại diện cho prefix hiện tại.
 - `{prefix}play c`
   - Xóa toàn bộ queue.
   - Có thể dùng `{prefix}play clear`.
+- `{prefix}play settings`
+  - Mở menu tùy chỉnh giao diện, nội dung card/message, nhãn nút, icon và reaction theo server.
+  - Mỗi lựa chọn có ví dụ; nhập `reset` để trả riêng mục đó về mặc định.
+  - Chỉ bot admin hoặc role có quyền `play settings`.
+  - Cấu hình player được lưu theo server; autoplay và loop vẫn chỉ áp dụng cho phiên hiện tại.
 
 ## Booking
 
@@ -330,6 +335,18 @@ Trong docs dùng `{prefix}` để đại diện cho prefix hiện tại.
 - `/command action:<enable|disable> command:<tên_lệnh>`
   - Slash command quản lý khóa lệnh theo channel.
   - Hard admin bỏ qua khóa; listener nền như log và level tracking vẫn hoạt động.
+
+### Giveaway
+
+- `{prefix}ga <time> <winners> <reward> [quantity]`
+  - Tạo một hoặc nhiều giveaway.
+- `{prefix}ga config`
+  - Mở menu sửa emoji tham gia, tiêu đề, nội dung kết quả, nhãn và icon theo server.
+  - Mỗi lựa chọn có ví dụ và danh sách biến hỗ trợ; nhập `reset` để trả riêng mục đó về mặc định.
+- `{prefix}ga config emoji <emoji>`
+  - Đổi nhanh emoji tham gia; cú pháp config trực tiếp cũ vẫn được hỗ trợ.
+- `/giveaway action:config`
+  - Mở cùng menu cấu hình bằng slash command.
 
 ### Economy
 
@@ -463,8 +480,11 @@ Placeholder auto response:
 
 - `{prefix}ticket`
   - Xem hướng dẫn nhanh hệ thống Ticket.
-- `{prefix}ticket manager`
+- `{prefix}ticket manager` hoặc `{prefix}ticket config`
   - Mở bảng cấu hình Ticket.
+  - Menu **Nội dung** sửa tiêu đề, mô tả, lời nhắc, tên loại Ticket và nhãn nút.
+  - Menu **Icon** sửa icon panel, loại Ticket và các nút điều khiển.
+  - Mỗi ô nhập có ví dụ; nhập `reset` để trả riêng mục đó về mặc định.
   - Quyền: bot admin hoặc role có quyền `ticket` trong `command_role.db`.
 - `{prefix}ticket panel`
   - Gửi mới hoặc refresh panel mở Ticket.

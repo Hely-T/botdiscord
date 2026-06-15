@@ -27,6 +27,9 @@ Trạng thái: đang phát triển, đã chuẩn hóa catalog cog, service/datab
 - Note có public/private, note cho người khác theo quyền, TXT popup và nội dung dài có thể thu gọn/phóng to.
 - Command có thể bị khóa theo từng channel; hỗ trợ khóa command gốc hoặc command con.
 - Music player lưu volume theo user, dùng đề xuất YouTube cho autoplay và chỉ giữ một card ở cuối chat.
+- Giveaway có menu `ga config` để sửa nội dung, icon và emoji tham gia theo server.
+- Ticket manager có menu riêng cho nội dung và icon theo server.
+- Music player có menu settings cho giao diện, nội dung, icon và reaction; autoplay/loop không được lưu.
 - Log system có `chat`, `voice`, `server`, `join` và `cash`.
 - Database tự tạo cho users, booking, role permission, admin, settings, guild settings, responsive, bank payments, AFK và log system.
 - Định dạng tiền VNĐ thống nhất.
@@ -71,7 +74,7 @@ Nên test thêm:
 2. Gộp các lệnh liên quan vào cùng một cog.
 3. Kế thừa `AdminCommandBase` nếu cần hard admin/admin DB/role DB.
 4. Tạo hoặc cập nhật service nếu có logic/database; dùng `CogDatabase`.
-5. Tách UI thành `components.py`, `ui.py`, `emoji.py` nếu có giao diện.
+5. Tách UI theo từng feature; lệnh có nhiều nội dung/icon phải có menu config riêng.
 6. Cập nhật `COMMANDS_REFERENCE.md` nếu thêm/sửa lệnh.
 7. Chạy compile/load test.
 8. Commit bằng tiếng Việt theo nhóm thay đổi.

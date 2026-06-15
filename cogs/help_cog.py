@@ -108,7 +108,7 @@ HELP_CATEGORIES = [
             {"name": "disable", "description": "Tắt command trong channel hiện tại", "usage": "<command>", "aliases": []},
             {"name": "emoji", "description": "Quản lý emoji", "usage": "a|r|list ...", "aliases": []},
             {"name": "form", "description": "Gửi mẫu form booking để booking tự điền", "usage": "[key]", "aliases": ["form<key>"]},
-            {"name": "giveaway", "description": "Tạo giveaway và cấu hình emoji tham gia", "usage": "<time> <winners> <reward> [quantity] | config emoji <emoji>", "aliases": ["ga"]},
+            {"name": "giveaway", "description": "Tạo giveaway và mở menu chỉnh nội dung/icon", "usage": "<time> <winners> <reward> [quantity] | config", "aliases": ["ga"]},
             {"name": "group", "description": "Quản lý bot join/leave server bằng splash", "usage": "join [invite] | leave", "aliases": ["g"]},
             {"name": "gitpull", "description": "Đồng bộ VPS với GitHub, hỗ trợ lịch sử bị force-push", "usage": "", "aliases": ["pull", "update"]},
             {"name": "gitstatus", "description": "Xem trạng thái git hiện tại", "usage": "", "aliases": ["status"]},
@@ -144,7 +144,7 @@ HELP_CATEGORIES = [
             {"name": "subcash", "description": "Trừ cash của user", "usage": "@user amount", "aliases": ["sc"]},
             {"name": "subluong", "description": "Trừ lương của booking", "usage": "@user amount", "aliases": ["sl"]},
             {"name": "subtime", "description": "Trừ giờ của user", "usage": "@user hours", "aliases": []},
-            {"name": "ticket", "description": "Quản lý và sử dụng hệ thống ticket", "usage": "manager|panel|add|remove|rename|transfer|unclaim|info|close", "aliases": []},
+            {"name": "ticket", "description": "Quản lý Ticket và tùy chỉnh nội dung/icon", "usage": "manager|config|panel|add|remove|rename|transfer|unclaim|info|close", "aliases": []},
             {"name": "tongluong", "description": "Xem tổng lương", "usage": "", "aliases": ["tl"]},
             {"name": "topstar", "description": "Xem top star", "usage": "[limit]", "aliases": []},
             {"name": "unban", "description": "Gỡ ban một thành viên", "usage": "user_id [reason]", "aliases": []},
@@ -578,7 +578,8 @@ class HelpView:
                 value=(
                     "`ga 1d 1 100k 10` - tạo 10 giveaway, mỗi giveaway 1 ngày, 1 winner, phần thưởng 100k.\n"
                     "`giveaway create 1h 2 Nitro 5` - tạo 5 giveaway Nitro, mỗi giveaway 2 winner.\n"
-                    "`ga config emoji 🎁` hoặc `ga emoji 🎁` - đổi emoji tham gia cho giveaway mới.\n"
+                    "`ga config` - mở menu sửa emoji, icon và toàn bộ nội dung giveaway.\n"
+                    "`ga config emoji 🎁` vẫn dùng được để đổi nhanh emoji tham gia.\n"
                     "Thứ tự `time`, `winners`, `reward` không bắt buộc; riêng số lượng giveaway nếu có thì để cuối."
                 ),
                 inline=False,
@@ -588,7 +589,7 @@ class HelpView:
                 value=(
                     "`/giveaway action:create reward:<nội dung> duration:<10m|1h|1d> winners:<số> quantity:<số lượng ga>`\n"
                     "`/giveaway action:end giveaway_id:<ID>` hoặc `action:reroll` để end/reroll.\n"
-                    "`/giveaway action:config emoji:<emoji>` để đổi emoji tham gia."
+                    "`/giveaway action:config` mở menu; thêm `emoji:<emoji>` để đổi nhanh emoji tham gia."
                 ),
                 inline=False,
             )
@@ -667,7 +668,8 @@ class HelpView:
                     "`play sh/shuffle` - trộn queue\n"
                     "`play a/autoplay` - bật/tắt autoplay\n"
                     "`play s/skip`, `play p/pause`, `play r/resume`, `play st/stop`, `play l/leave`\n"
-                    "`play n/now`, `play lo/loop`, `play v/vol <0-200>`, `play rm <số>`, `play c/clear`"
+                    "`play n/now`, `play lo/loop`, `play v/vol <0-200>`, `play rm <số>`, `play c/clear`\n"
+                    "`play settings` - menu sửa giao diện, nội dung, icon và reaction"
                 ),
                 inline=False,
             )

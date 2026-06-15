@@ -9,7 +9,7 @@ import json
 import time
 
 from utils import CogDatabase, get_timestamp
-from ui.administrator.emoji import GIVEAWAY_DEFAULT_ENTRY_EMOJI
+from ui.administrator.giveaway_emoji import GIVEAWAY_DEFAULT_ENTRY_EMOJI
 
 
 class GiveawayService:

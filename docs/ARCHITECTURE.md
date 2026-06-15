@@ -334,9 +334,12 @@ test/test_example.py
 Không bắt buộc tạo đủ mọi file:
 
 - Không có DB: không cần service.
-- Không có button/embed riêng: không cần folder UI.
+- Không có button/embed/menu riêng: không cần folder UI.
 - Chỉ tạo file thực sự có trách nhiệm rõ ràng.
 - Không tạo `helpers.py`, `permissions.py`, `resolvers.py` riêng nếu helper nhỏ chỉ dùng cho một cog.
+- Mỗi feature có UI riêng tương ứng với cog; không gom UI của nhiều command vào một module dùng chung.
+- Command có nhiều nội dung/icon tùy chỉnh phải có menu config và lưu cấu hình theo guild.
+- Cog không được khai báo `View`, `Button`, `Select`, `Modal` hoặc hardcode khối nội dung giao diện dài.
 
 ## Ticket là mẫu tham chiếu
 
@@ -366,8 +369,9 @@ ui/ticket/
 4. Command có cần admin hoặc role DB không?
 5. Nếu có quyền, key quyền dùng chung là gì?
 6. Có button/select/modal/embed không? Nếu có, tạo hoặc dùng `ui/<feature>/`.
-7. Có đang tạo file nhỏ chỉ để chứa một helper không cần thiết không?
-8. Help và command reference đã cập nhật chưa?
+7. Nội dung hoặc icon có nhiều mục cần sửa không? Nếu có, tạo menu config riêng trong UI.
+8. Có đang tạo file nhỏ chỉ để chứa một helper không cần thiết không?
+9. Help và command reference đã cập nhật chưa?
 
 ## Checklist trước khi commit
 

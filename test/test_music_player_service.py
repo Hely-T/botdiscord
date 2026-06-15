@@ -44,6 +44,44 @@ class MusicPlayerPreferencesTest(unittest.TestCase):
             0,
         )
 
+    def test_player_content_and_icon_theme_can_be_saved_and_reset(self):
+        theme = self.service.set_theme(
+            777,
+            button_play="Phát",
+            button_skip="Bỏ qua",
+            icon_skip="➡️",
+            reaction_search="🔎",
+        )
+        self.assertNotIn("button_play", theme)
+        self.assertEqual(theme["button_skip"], "Bỏ qua")
+        self.assertEqual(theme["icon_skip"], "➡️")
+        self.assertEqual(theme["reaction_search"], "🔎")
+
+        default = self.service.reset_theme_value(777, "button_skip")
+        self.assertEqual(default, "Skip")
+        self.assertEqual(self.service.get_theme(777)["button_skip"], "Skip")
+
+    def test_old_player_theme_table_is_migrated(self):
+        self.service.db.execute("DROP TABLE player_theme")
+        self.service.db.create_table(
+            "player_theme",
+            """
+            guild_id INTEGER PRIMARY KEY,
+            accent_color TEXT NOT NULL DEFAULT '#7f314d',
+            background_url TEXT DEFAULT '',
+            title_text TEXT NOT NULL DEFAULT 'BLACK LOUS MUSIC',
+            updated_at TEXT
+            """,
+        )
+        self.service._ensure_theme_columns()
+
+        columns = {
+            row["name"]
+            for row in self.service.db.fetch("PRAGMA table_info(player_theme)")
+        }
+        self.assertIn("button_skip", columns)
+        self.assertIn("reaction_error", columns)
+
 
 class MusicPlayerAutoplayTest(unittest.IsolatedAsyncioTestCase):
     async def test_autoplay_uses_first_unseen_youtube_radio_item(self):

@@ -23,9 +23,8 @@ from ui.ticket.components import (
     TicketPanelView,
     TicketTypeView,
 )
-from ui.ticket.emoji import ticket_emoji
+from ui.ticket.emoji import TICKET_THEME_DEFAULTS, ticket_emoji
 from ui.ticket.ui import (
-    TICKET_TYPES,
     build_ticket_closed_embed,
     build_ticket_created_embed,
     build_ticket_error_embed,
@@ -36,7 +35,9 @@ from ui.ticket.ui import (
     build_ticket_panel_embed,
     build_ticket_success_embed,
     defer_interaction,
+    format_ticket_template,
     safe_interaction_send,
+    ticket_types,
 )
 
 
@@ -133,6 +134,26 @@ class TicketCog(AdminCommandBase):
         self.service.update_single_config(interaction.guild.id, key, value)
         await safe_interaction_send(interaction, content=f"✅ {label} đã được cập nhật.", ephemeral=True)
 
+    async def handle_ticket_theme_submit(
+        self,
+        interaction: discord.Interaction,
+        key: str,
+        value: str,
+    ):
+        if not await self.require_role_or_admin_interaction(interaction, "ticket"):
+            return
+        if key not in TICKET_THEME_DEFAULTS:
+            await safe_interaction_send(interaction, content="❌ Mục cấu hình không hợp lệ.", ephemeral=True)
+            return
+        value = value.strip().replace("\\n", "\n")
+        if value.lower() in {"reset", "default"}:
+            self.service.reset_theme_value(interaction.guild.id, key)
+            message = f"✅ Đã reset `{key}`."
+        else:
+            self.service.set_theme_value(interaction.guild.id, key, value)
+            message = f"✅ Đã lưu `{key}`."
+        await safe_interaction_send(interaction, content=message, ephemeral=True)
+
     @ticket_group.command(name="manager", description="Mở bảng quản lý Ticket")
     async def slash_manager(self, interaction: discord.Interaction):
         if not await self.require_role_or_admin_interaction(interaction, "ticket"):
@@ -159,6 +180,12 @@ class TicketCog(AdminCommandBase):
 
     @ticket.command(name="manager", aliases=["setup"])
     async def ticket_manager(self, ctx):
+        if not await self.require_role_or_admin_ctx(ctx, "ticket"):
+            return
+        await ctx.send(embed=build_ticket_manager_embed(self, ctx.guild), view=TicketManagerView(self))
+
+    @ticket.command(name="config", aliases=["cfg"])
+    async def ticket_config(self, ctx):
         if not await self.require_role_or_admin_ctx(ctx, "ticket"):
             return
         await ctx.send(embed=build_ticket_manager_embed(self, ctx.guild), view=TicketManagerView(self))
@@ -217,33 +244,41 @@ class TicketCog(AdminCommandBase):
             await sender(embed=build_ticket_error_embed("Kênh Không Hợp Lệ", "Kênh panel không còn tồn tại."))
             return
 
-        embed = build_ticket_panel_embed(config)
+        theme = self.service.get_theme(guild.id)
+        embed = build_ticket_panel_embed(config, theme)
         message_id = config.get("panel_message_id")
         if message_id:
             try:
                 message = await channel.fetch_message(int(message_id))
-                await message.edit(embed=embed, view=TicketPanelView(self))
+                await message.edit(embed=embed, view=TicketPanelView(self, guild.id))
                 await sender(embed=build_ticket_success_embed("Refresh Panel", "Đã cập nhật panel hiện tại."))
                 return
             except (discord.NotFound, discord.HTTPException):
                 pass
-        message = await channel.send(embed=embed, view=TicketPanelView(self))
+        message = await channel.send(embed=embed, view=TicketPanelView(self, guild.id))
         self.service.update_single_config(guild.id, "panel_message_id", message.id)
         await sender(embed=build_ticket_success_embed("Đã Gửi Panel", f"Panel đã gửi ở {channel.mention}."))
 
     async def handle_panel_open(self, interaction: discord.Interaction):
+        theme = self.service.get_theme(interaction.guild.id)
         await safe_interaction_send(
             interaction,
-            embed=build_ticket_notice_embed("ticket", "Chọn Loại Ticket", "Chọn hạng mục cần hỗ trợ."),
-            view=TicketTypeView(self),
+            embed=build_ticket_notice_embed(
+                "ticket",
+                "Chọn Loại Ticket",
+                theme.get("type_prompt") or TICKET_THEME_DEFAULTS["type_prompt"],
+            ),
+            view=TicketTypeView(self, interaction.guild.id),
             ephemeral=True,
         )
 
     async def handle_ticket_type_selected(self, interaction: discord.Interaction, ticket_type: str):
-        label = TICKET_TYPES.get(ticket_type, ticket_type)
+        theme = self.service.get_theme(interaction.guild.id)
+        label = ticket_types(theme).get(ticket_type, ticket_type)
+        prompt = format_ticket_template(theme, "confirm_prompt", type=label)
         await interaction.response.edit_message(
-            embed=build_ticket_notice_embed("ticket", "Xác Nhận", f"Tạo ticket **{label}**?"),
-            view=TicketCreateConfirmView(self, ticket_type, interaction.user.id),
+            embed=build_ticket_notice_embed("ticket", "Xác Nhận", prompt),
+            view=TicketCreateConfirmView(self, ticket_type, interaction.user.id, interaction.guild.id),
         )
 
     async def handle_create_ticket(self, interaction: discord.Interaction, ticket_type: str):
@@ -328,10 +363,11 @@ class TicketCog(AdminCommandBase):
             return
 
         role_mentions = " ".join(role.mention for role in manager_roles)
+        theme = self.service.get_theme(interaction.guild.id)
         await channel.send(
             content=f"{interaction.user.mention} {role_mentions}".strip(),
-            embed=build_ticket_created_embed(interaction.user, ticket_type),
-            view=TicketControlView(self),
+            embed=build_ticket_created_embed(interaction.user, ticket_type, theme),
+            view=TicketControlView(self, interaction.guild.id),
         )
         await safe_interaction_send(interaction, content=f"✅ Đã tạo ticket: {channel.mention}", ephemeral=True)
 
