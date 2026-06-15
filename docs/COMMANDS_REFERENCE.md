@@ -167,7 +167,8 @@ Trong docs dùng `{prefix}` để đại diện cho prefix hiện tại.
   - Nếu bot chưa ở voice, người gọi `play` sẽ là người giữ quyền `play l/leave`.
   - Player hoạt động trong cả text channel và phần chat của voice channel.
   - Player cũ tự xóa và card mới được gửi xuống cuối chat khi thao tác hoặc chuyển bài.
-  - Card là ảnh đính kèm trực tiếp, không dùng embed và không render lại theo chu kỳ.
+  - Card là ảnh đính kèm trực tiếp, không dùng embed.
+  - Thanh thời gian chạy trong GIF của card, không edit/reload tin nhắn theo chu kỳ nên không bị giật.
   - Thời gian bắt đầu/kết thúc dùng timestamp động của Discord.
 - `{prefix}play q`
   - Xem queue.

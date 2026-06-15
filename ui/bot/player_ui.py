@@ -14,6 +14,8 @@ from PIL import Image, ImageDraw, ImageFilter, ImageFont, ImageOps
 CARD_WIDTH = 1000
 CARD_HEIGHT = 360
 CARD_FILENAME = "music-player.png"
+ANIMATED_CARD_FILENAME = "music-player.gif"
+MAX_PROGRESS_FRAMES = 300
 ASSET_DIR = Path(__file__).resolve().parent / "assets"
 THUMBNAIL_CACHE: dict[str, bytes] = {}
 
@@ -150,7 +152,7 @@ def _render_card(
     data: PlayerCardData,
     raw_thumbnail: bytes | None,
     raw_background: bytes | None,
-) -> io.BytesIO:
+) -> tuple[io.BytesIO, str]:
     cover = _cover_image(raw_thumbnail)
     background = _open_background(raw_background, cover)
     dark_layer = Image.new("RGBA", background.size, (29, 10, 18, 210))
@@ -191,13 +193,20 @@ def _render_card(
 
     status = data.status_paused_text if data.paused else data.status_playing_text
     status_color = "#c44c72" if data.paused else "#4f9b72"
-    draw.rounded_rectangle((355, 170, 500, 208), radius=16, fill=status_color)
-    draw.text((372, 177), status, font=status_font, fill="white")
+    status_width = min(
+        590,
+        max(90, int(draw.textlength(status, font=status_font)) + 34),
+    )
+    status_box = (355, 170, 355 + status_width, 210)
+    draw.rounded_rectangle(status_box, radius=18, fill=status_color)
+    status_bbox = draw.textbbox((0, 0), status, font=status_font)
+    status_height = status_bbox[3] - status_bbox[1]
+    status_y = status_box[1] + ((status_box[3] - status_box[1] - status_height) // 2) - status_bbox[1]
+    draw.text((372, status_y), status, font=status_font, fill="white")
 
     duration = max(0, int(data.duration or 0))
     duration_text = _time_text(duration) if duration else "Không rõ"
     draw.text((355, 235), data.duration_label, font=small_font, fill=muted)
-    draw.text((355, 263), duration_text, font=status_font, fill=accent)
 
     modes = [
         _format_ui_text(data.volume_text, volume=data.volume),
@@ -221,10 +230,62 @@ def _render_card(
         except OSError:
             pass
 
+    def progress_frame(elapsed: int) -> Image.Image:
+        frame = canvas.copy()
+        frame_draw = ImageDraw.Draw(frame)
+        current = min(duration, max(0, int(elapsed))) if duration else max(0, int(elapsed))
+        current_text = _time_text(current)
+        frame_draw.text((355, 263), current_text, font=small_font, fill=accent)
+        total_width = int(frame_draw.textlength(duration_text, font=small_font))
+        frame_draw.text((950 - total_width, 263), duration_text, font=small_font, fill=muted)
+
+        track_left = 425
+        track_right = 925 - total_width
+        track_top = 271
+        track_bottom = 281
+        if track_right > track_left:
+            frame_draw.rounded_rectangle(
+                (track_left, track_top, track_right, track_bottom),
+                radius=5,
+                fill="#ead4dc",
+            )
+            ratio = (current / duration) if duration else 0
+            fill_right = track_left + int((track_right - track_left) * min(1.0, ratio))
+            if fill_right > track_left:
+                frame_draw.rounded_rectangle(
+                    (track_left, track_top, fill_right, track_bottom),
+                    radius=5,
+                    fill=accent,
+                )
+        return frame.convert("P", palette=Image.Palette.ADAPTIVE, colors=128)
+
     output = io.BytesIO()
-    canvas.convert("RGB").save(output, format="PNG", optimize=True)
+    elapsed = max(0, int(data.elapsed))
+    remaining = max(0, duration - elapsed)
+    if duration and remaining and not data.paused:
+        frame_count = min(MAX_PROGRESS_FRAMES, remaining + 1)
+        frame_count = max(2, frame_count)
+        frames = [
+            progress_frame(elapsed + round((remaining * index) / (frame_count - 1)))
+            for index in range(frame_count)
+        ]
+        frame_duration = max(100, round((remaining * 1000) / (frame_count - 1)))
+        frames[0].save(
+            output,
+            format="GIF",
+            save_all=True,
+            append_images=frames[1:],
+            duration=frame_duration,
+            loop=0,
+            optimize=True,
+            disposal=1,
+        )
+        filename = ANIMATED_CARD_FILENAME
+    else:
+        progress_frame(elapsed).convert("RGB").save(output, format="PNG", optimize=True)
+        filename = CARD_FILENAME
     output.seek(0)
-    return output
+    return output, filename
 
 
 async def build_player_file(data: PlayerCardData) -> discord.File:
@@ -232,8 +293,13 @@ async def build_player_file(data: PlayerCardData) -> discord.File:
         _download_thumbnail(data.thumbnail),
         _download_thumbnail(data.background_url),
     )
-    buffer = await asyncio.to_thread(_render_card, data, raw_thumbnail, raw_background)
-    return discord.File(buffer, filename=CARD_FILENAME)
+    buffer, filename = await asyncio.to_thread(
+        _render_card,
+        data,
+        raw_thumbnail,
+        raw_background,
+    )
+    return discord.File(buffer, filename=filename)
 
 
 class PlayerVolumeModal(discord.ui.Modal, title="Chỉnh âm lượng"):
