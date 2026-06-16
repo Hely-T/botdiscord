@@ -114,7 +114,7 @@ class NapTienCog(UserCommandBase):
         if int(payment["guild_id"]) != guild.id:
             await target.send(embed=create_error_splash("❌ Sai Server", "Payment này không thuộc server hiện tại."))
             return
-        if int(payment["user_id"]) != user.id and not self.admins.is_admin(user.id):
+        if int(payment["user_id"]) != user.id and not self.can_manage_cash(target):
             await target.send(embed=create_error_splash("❌ Quyền Bị Từ Chối", "Bạn không thể kiểm tra payment của người khác."))
             return
 
@@ -137,7 +137,8 @@ class NapTienCog(UserCommandBase):
         if ctx.guild is None:
             await ctx.send(embed=create_error_splash("❌ Chỉ Dùng Trong Server", "Reload số dư ngân hàng chỉ hoạt động trong server."))
             return
-        if not await self.require_admin_ctx(ctx, "Chỉ bot admin mới được reload số dư tài khoản ngân hàng."):
+        if not self.can_manage_cash(ctx):
+            await ctx.send(embed=create_error_splash("❌ Quyền Bị Từ Chối", "Chỉ hard admin, cash-admin hoặc role có quyền `cash` mới được reload số dư tài khoản ngân hàng."))
             return
         if not self.bank.is_configured(ctx.guild.id):
             await ctx.send(
@@ -174,7 +175,8 @@ class NapTienCog(UserCommandBase):
         await interaction.followup.send(embed=create_error_splash("❌ Chưa Nhận Được Tiền", detail), ephemeral=True)
 
     async def _handle_config(self, ctx: commands.Context, args: tuple[str, ...]):
-        if not await self.require_admin_ctx(ctx, "Chỉ bot admin mới được cấu hình ngân hàng."):
+        if not self.can_manage_cash(ctx):
+            await ctx.send(embed=create_error_splash("❌ Quyền Bị Từ Chối", "Chỉ hard admin, cash-admin hoặc role có quyền `cash` mới được cấu hình ngân hàng."))
             return
         if not args or args[0].lower() in {"show", "status", "info"}:
             await ctx.send(embed=build_config_status_embed(self.bank.get_settings(ctx.guild.id) or {}))

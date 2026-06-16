@@ -240,9 +240,29 @@ class AdminCommandBase(commands.Cog):
             self._role_permissions = RolePermissionService()
         return self._role_permissions
 
+    @staticmethod
+    def _target_user(target):
+        return getattr(target, "author", None) or getattr(target, "user", None)
+
+    @staticmethod
+    def _target_guild_id(target) -> int | None:
+        guild = getattr(target, "guild", None)
+        return getattr(guild, "id", None)
+
     def is_admin(self, target) -> bool:
-        user = getattr(target, "author", None) or getattr(target, "user", None)
-        return bool(user and self.admins.is_admin(user.id))
+        user = self._target_user(target)
+        return bool(user and self.admins.is_admin(user.id, self._target_guild_id(target)))
+
+    def can_use_cash(self, ctx, guild_id: int | None = None) -> bool:
+        guild_id = guild_id if guild_id is not None else (ctx.guild.id if ctx.guild else None)
+        if guild_id is None:
+            return False
+        if self.admins.is_cash_admin(ctx.author.id, guild_id):
+            return True
+        if ctx.guild is None:
+            return False
+        user_roles = [role.id for role in ctx.author.roles if role.name != "@everyone"]
+        return self.role_permissions.user_can_use(ctx.guild.id, user_roles, "cash")
 
     async def require_admin_ctx(self, ctx, message: str = "Chỉ bot admin mới được dùng lệnh này.") -> bool:
         if self.is_admin(ctx):
@@ -278,17 +298,20 @@ class AdminCommandBase(commands.Cog):
         command_name: str,
         message: str | None = None,
     ) -> bool:
-        if self.is_admin(interaction):
+        resolved_command = normalize_permission_key(command_name)
+        if resolved_command != "cash" and self.is_admin(interaction):
             return True
         if interaction.guild is None or not isinstance(interaction.user, discord.Member):
             allowed = False
         else:
-            user_roles = [role.id for role in interaction.user.roles if role.name != "@everyone"]
-            allowed = self.role_permissions.user_can_use(interaction.guild.id, user_roles, normalize_permission_key(command_name))
+            if resolved_command == "cash" and self.admins.is_cash_admin(interaction.user.id, interaction.guild.id):
+                allowed = True
+            else:
+                user_roles = [role.id for role in interaction.user.roles if role.name != "@everyone"]
+                allowed = self.role_permissions.user_can_use(interaction.guild.id, user_roles, resolved_command)
         if allowed:
             return True
 
-        resolved_command = normalize_permission_key(command_name)
         detail = message or f"Chỉ bot admin hoặc role có quyền `{resolved_command}` trong DB mới dùng được lệnh này."
         if interaction.response.is_done():
             await interaction.followup.send(f"❌ {detail}", ephemeral=True)
@@ -297,12 +320,15 @@ class AdminCommandBase(commands.Cog):
         return False
 
     def can_use_role_or_admin(self, ctx, command_name: str) -> bool:
+        resolved_command = normalize_permission_key(command_name)
+        if resolved_command == "cash":
+            return self.can_use_cash(ctx)
         if self.is_admin(ctx):
             return True
         if ctx.guild is None:
             return False
         user_roles = [role.id for role in ctx.author.roles if role.name != "@everyone"]
-        return self.role_permissions.user_can_use(ctx.guild.id, user_roles, normalize_permission_key(command_name))
+        return self.role_permissions.user_can_use(ctx.guild.id, user_roles, resolved_command)
 
     @staticmethod
     def extract_user_id(raw_target: str | None) -> int | None:
@@ -384,8 +410,13 @@ class AdminCommandBase(commands.Cog):
         action_label: str,
         dm_title: str | None = None,
         dm_description: str | None = None,
+        guild_id: int | None = None,
     ):
-        if not await self.require_role_or_admin_ctx(ctx):
+        if field == "cash":
+            if not self.can_use_cash(ctx, guild_id):
+                await ctx.send(embed=create_error_splash("❌ Quyền Bị Từ Chối", "Chỉ hard admin, cash-admin hoặc role có quyền `cash` trong server này mới dùng lệnh này."))
+                return
+        elif not await self.require_role_or_admin_ctx(ctx):
             return
         if amount <= 0:
             await ctx.send(embed=create_error_splash("❌ Lỗi", "Số lượng phải lớn hơn 0."))
@@ -457,8 +488,9 @@ class AdminCommandBase(commands.Cog):
         if field == "cash":
             from cogs.cash_log_utils import send_cash_log
 
+            log_guild = ctx.guild or (self.bot.get_guild(guild_id) if guild_id else None)
             await send_cash_log(
-                ctx.guild,
+                log_guild,
                 title=f"✅ {action_label} Thành Công",
                 actor=ctx.author,
                 target=member,

@@ -1483,7 +1483,7 @@ class BotVoiceCog(commands.Cog):
         )
 
     def _can_manage_player_settings(self, member: discord.Member) -> bool:
-        if self.admins.is_admin(member.id):
+        if self.admins.is_admin(member.id, member.guild.id):
             return True
         role_ids = [role.id for role in member.roles if role.name != "@everyone"]
         return self.role_permissions.user_can_use(member.guild.id, role_ids, "play settings")

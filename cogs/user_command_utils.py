@@ -34,13 +34,25 @@ class UserCommandBase(commands.Cog):
     def can_view_other_profile(self, ctx) -> bool:
         if ctx.guild is None:
             return False
-        if self.admins.is_admin(ctx.author.id):
+        if self.admins.is_admin(ctx.author.id, ctx.guild.id):
             return True
         user_role_ids = [role.id for role in ctx.author.roles if role.name != "@everyone"]
         return self.role_permissions.user_can_use(ctx.guild.id, user_role_ids, "profile")
 
+    def can_manage_cash(self, target) -> bool:
+        guild = getattr(target, "guild", None)
+        user = getattr(target, "author", None) or getattr(target, "user", None)
+        if guild is None or user is None:
+            return False
+        if self.admins.is_cash_admin(user.id, guild.id):
+            return True
+        roles = getattr(user, "roles", [])
+        user_role_ids = [role.id for role in roles if role.name != "@everyone"]
+        return self.role_permissions.user_can_use(guild.id, user_role_ids, "cash")
+
     async def require_admin_ctx(self, ctx, message: str = "Chỉ bot admin mới được dùng lệnh này.") -> bool:
-        if self.admins.is_admin(ctx.author.id):
+        guild_id = ctx.guild.id if ctx.guild else None
+        if self.admins.is_admin(ctx.author.id, guild_id):
             return True
         await ctx.send(embed=create_error_splash("❌ Quyền Bị Từ Chối", message))
         return False

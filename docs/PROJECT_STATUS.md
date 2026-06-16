@@ -14,7 +14,7 @@ Trạng thái: đang phát triển, đã chuẩn hóa catalog cog, service/datab
 - Booking commands: `luong`, `star`, `tinhluong`, `topbook`, `topnap`, `topgift`.
 - Role commands: `addrole`, `removerole`, `setrole`, `perms`, `myroles`, `rolescommands`.
 - Administrator commands theo nhóm:
-  - Admin DB: `addadmin`, `rmadmin`.
+  - Admin DB theo server: `addadmin`, `rmadmin`; quyền cash riêng: `addcashadmin`, `rmcashadmin`.
   - Economy: `cash a|r|e`, `luong a|r|e`, `star a|r|e`, `points a|r|e`, `time a|r|e`, `tongluong`, `topstar`, `addtime a|r|e`, `subtime`, `addpoints a|r|e`.
   - Booking config: `bookconfig`, `setgiobook`, `setphantram`, `setan`.
   - Responsive: `ar`, `form`, `res`, `up`.
@@ -63,9 +63,9 @@ Nên test thêm:
 - `{prefix}luong` hiện bảng lương ở kênh hiện tại.
 - `{prefix}give @user 10k` chuyển được nếu đủ cash.
 - `{prefix}naptien 10k` tạo QR, bấm **Tôi đã chuyển tiền** hoặc `{prefix}naptien check`.
-- `{prefix}naptien reload` admin-only để xem số dư tài khoản ngân hàng ACB.
+- `{prefix}naptien reload` cần quyền cash để xem số dư tài khoản ngân hàng ACB; user thường vẫn tự nạp và auto cộng cash.
 - `{prefix}donate 10k` tạo QR donate, gửi cảm ơn nếu đã set channel.
-- `{prefix}donate config leaderboard #top-donate` set bảng xếp hạng và `{prefix}donate reset` reset bảng tháng.
+- `{prefix}donate config leaderboard #top-donate` set bảng xếp hạng và `{prefix}donate reset` reset bảng tháng bằng quyền cash.
 - `{prefix}disable ga` khóa giveaway tại channel hiện tại; `{prefix}enable ga` bật lại.
 - `{prefix}log cash #log-cash` nhận log tiền, nạp, donate và give. Nếu chưa set, bot tự tìm kênh `log_cash`, `log-cash` hoặc `cash-log`.
 - `{prefix}setrole @Booking booking` nhận role booking.

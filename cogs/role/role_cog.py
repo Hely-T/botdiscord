@@ -305,6 +305,9 @@ class RoleCog(RoleCommandBase):
             invalid_text = ", ".join(f"`{cmd}`" for cmd in invalid_commands)
             await ctx.send(embed=create_error_splash("❌ Lệnh Không Tồn Tại", f"{invalid_text} không tồn tại hoặc chưa được load trong bot/cog."))
             return
+        if "cash" in command_names and not self.admins.is_hard_admin(ctx.author.id):
+            await ctx.send(embed=create_error_splash("❌ Quyền Bị Từ Chối", "Chỉ hard admin trong env mới được cấp role quyền `cash`."))
+            return
 
         failed_roles: list[str] = []
         failed_commands: list[str] = []
@@ -364,6 +367,9 @@ class RoleCog(RoleCommandBase):
         if not command_names:
             invalid_text = ", ".join(f"`{cmd}`" for cmd in invalid_commands)
             await ctx.send(embed=create_error_splash("❌ Lệnh Không Tồn Tại", f"{invalid_text} không tồn tại hoặc chưa được load trong bot/cog."))
+            return
+        if "cash" in command_names and not self.admins.is_hard_admin(ctx.author.id):
+            await ctx.send(embed=create_error_splash("❌ Quyền Bị Từ Chối", "Chỉ hard admin trong env mới được xoá role quyền `cash`."))
             return
 
         for role in roles:

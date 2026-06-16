@@ -33,15 +33,25 @@ class RoleCommandBase(commands.Cog):
 
     def is_admin(self, target) -> bool:
         user = getattr(target, "author", None) or getattr(target, "user", None)
-        return bool(user and self.admins.is_admin(user.id))
+        guild = getattr(target, "guild", None)
+        guild_id = guild.id if guild else None
+        return bool(user and self.admins.is_admin(user.id, guild_id))
 
     def can_use_role_or_admin(self, ctx, command_name: str) -> bool:
+        resolved_command = normalize_permission_key(command_name)
+        if resolved_command == "cash":
+            if ctx.guild is None:
+                return False
+            if self.admins.is_cash_admin(ctx.author.id, ctx.guild.id):
+                return True
+            user_roles = [role.id for role in ctx.author.roles if role.name != "@everyone"]
+            return self.service.user_can_use(ctx.guild.id, user_roles, "cash")
         if self.is_admin(ctx):
             return True
         if ctx.guild is None:
             return False
         user_roles = [role.id for role in ctx.author.roles if role.name != "@everyone"]
-        return self.service.user_can_use(ctx.guild.id, user_roles, normalize_permission_key(command_name))
+        return self.service.user_can_use(ctx.guild.id, user_roles, resolved_command)
 
     async def require_admin_ctx(self, ctx, message: str = "Chỉ bot admin mới được dùng lệnh này.") -> bool:
         if self.is_admin(ctx):

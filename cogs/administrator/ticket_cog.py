@@ -114,7 +114,7 @@ class TicketCog(AdminCommandBase):
         bot.add_view(TicketLogView(self))
 
     def member_can_manage(self, member: discord.Member) -> bool:
-        if self.admins.is_admin(member.id):
+        if self.admins.is_admin(member.id, member.guild.id):
             return True
         role_ids = [role.id for role in member.roles if role.name != "@everyone"]
         return self.role_permissions.user_can_use(member.guild.id, role_ids, "ticket")
@@ -631,7 +631,7 @@ class TicketCog(AdminCommandBase):
         if ticket["status"] != "claimed":
             await adapter.send(content="❌ Ticket chưa có người nhận.", ephemeral=True)
             return
-        if int(ticket.get("claimed_by_user_id") or 0) != adapter.user.id and not self.admins.is_admin(adapter.user.id):
+        if int(ticket.get("claimed_by_user_id") or 0) != adapter.user.id and not self.admins.is_admin(adapter.user.id, adapter.guild.id):
             await adapter.send(content="❌ Bạn không thể unclaim Ticket của người khác.", ephemeral=True)
             return
         if self.service.unclaim_ticket(adapter.channel.id):

@@ -78,10 +78,10 @@ Trong docs dùng `{prefix}` để đại diện cho prefix hiện tại.
   - Xem người khác cần admin bot hoặc role có quyền `profile`.
 - `{prefix}cash [@user]`
   - Xem số dư cash.
-  - Xem người khác cần admin bot, role có quyền `cash` hoặc quyền `profile`.
+  - Xem người khác cần cash-admin, role có quyền `cash` hoặc quyền `profile`.
 - `{prefix}cash all`
   - Xem tất cả cash trong database.
-  - Quyền: admin bot hoặc role có quyền `cash`.
+  - Quyền: hard admin, cash-admin hoặc role có quyền `cash`.
 - `{prefix}cash a @user <money>`
   - Cộng cash cho user.
 - `{prefix}cash add @user <money>`
@@ -92,6 +92,7 @@ Trong docs dùng `{prefix}` để đại diện cho prefix hiện tại.
 - `{prefix}cash e @user <money>`
   - Set cash của user về số mới.
   - Có thể dùng `{prefix}cash edit @user <money>`.
+- Trong DM, quản trị cash dùng thêm server ID: `{prefix}cash a <user_id> <money> <server_id>`.
 - `{prefix}points [@user|all]`
   - Xem points của bạn, user khác hoặc tất cả.
   - Xem user khác/all cần admin bot hoặc role có quyền `points`.
@@ -115,11 +116,12 @@ Trong docs dùng `{prefix}` để đại diện cho prefix hiện tại.
   - Kiểm tra lại giao dịch đang chờ.
   - Có thể dùng nút **Tôi đã chuyển tiền** dưới QR.
   - Bot cũng tự kiểm tra các giao dịch đang chờ mỗi 5 giây.
+  - User tự check QR của mình; check QR người khác cần quyền `cash`.
 - `{prefix}naptien reload|sodu|balance`
-  - Admin-only: hiển thị số dư tài khoản ngân hàng ACB.
+  - Quyền `cash`: hiển thị số dư tài khoản ngân hàng ACB.
 - `{prefix}naptien config username|password|account|name|bank|decor|auto <value>`
   - Cài thông tin ACB/VietQR trực tiếp trong Discord.
-  - Quyền: bot admin hoặc role có quyền `naptien`.
+  - Quyền: hard admin, cash-admin hoặc role có quyền `cash`.
 - `/naptien amount:<money>`
   - Slash command tạo QR nạp cash.
 - `{prefix}donate|dnt <money>`
@@ -127,8 +129,9 @@ Trong docs dùng `{prefix}` để đại diện cho prefix hiện tại.
   - Ví dụ: `{prefix}donate 50k`.
 - `{prefix}donate check [id|code]`
   - Kiểm tra lại giao dịch donate đang chờ.
+  - User tự check QR của mình; check QR người khác cần quyền `cash`.
 - `{prefix}donate reload|sodu|balance`
-  - Admin-only: hiển thị số dư tài khoản ngân hàng ACB.
+  - Quyền `cash`: hiển thị số dư tài khoản ngân hàng ACB.
 - `{prefix}donate config channel #channel`
   - Set channel gửi lời cảm ơn donate.
   - Dùng `off` để tắt channel cảm ơn.
@@ -142,7 +145,7 @@ Trong docs dùng `{prefix}` để đại diện cho prefix hiện tại.
 - `{prefix}donate top`
   - Xem bảng xếp hạng donate tháng hiện tại.
 - `{prefix}donate reset`
-  - Admin-only: gửi bảng hiện tại vào DM admin rồi reset bảng tháng về trống.
+  - Quyền `cash`: gửi bảng hiện tại vào DM admin rồi reset bảng tháng về trống.
   - Không trừ cash và không xóa tổng donate tích lũy của user.
 - `/donate amount:<money>`
   - Slash command tạo QR donate.
@@ -329,11 +332,21 @@ Trong docs dùng `{prefix}` để đại diện cho prefix hiện tại.
 ### Bot admin
 
 - `{prefix}addadmin @user`
-  - Thêm admin bot vào DB.
+  - Thêm admin bot trong server hiện tại.
+  - Trong DM dùng `{prefix}addadmin <user_id> <server_id>`.
   - Alias: `{prefix}themadmin`.
 - `{prefix}rmadmin @user`
-  - Xóa admin bot khỏi DB.
+  - Xóa admin bot khỏi server hiện tại.
+  - Trong DM dùng `{prefix}rmadmin <user_id> <server_id>`.
   - Alias: `{prefix}xoaadmin`.
+- `{prefix}addcashadmin @user`
+  - Thêm quyền quản trị cash/naptien/donate trong server hiện tại.
+  - Trong DM dùng `{prefix}addcashadmin <user_id> <server_id>`.
+  - Alias: `{prefix}themcashadmin`, `{prefix}cashadmin`.
+- `{prefix}rmcashadmin @user`
+  - Xóa quyền quản trị cash/naptien/donate trong server hiện tại.
+  - Trong DM dùng `{prefix}rmcashadmin <user_id> <server_id>`.
+  - Alias: `{prefix}xoacashadmin`.
 
 ### Bật/tắt command theo channel
 

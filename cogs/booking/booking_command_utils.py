@@ -50,11 +50,12 @@ class BookingCommandBase(commands.Cog):
             self._role_permissions = RolePermissionService()
         return self._role_permissions
 
-    def is_admin(self, user_id: int) -> bool:
-        return self.admins.is_admin(user_id)
+    def is_admin(self, user_id: int, guild_id: int | None = None) -> bool:
+        return self.admins.is_admin(user_id, guild_id)
 
     def can_use_role_or_admin(self, ctx, command_name: str) -> bool:
-        if self.is_admin(ctx.author.id):
+        guild_id = ctx.guild.id if ctx.guild else None
+        if self.is_admin(ctx.author.id, guild_id):
             return True
         if ctx.guild is None:
             return False

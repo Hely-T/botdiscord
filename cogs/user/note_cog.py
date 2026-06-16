@@ -244,16 +244,16 @@ class NoteCog(commands.Cog):
 
     def _can_manage_notes(self, ctx) -> bool:
         if ctx.guild is None:
-            return self.admins.is_admin(ctx.author.id)
-        if self.admins.is_admin(ctx.author.id):
+            return self.admins.is_hard_admin(ctx.author.id)
+        if self.admins.is_admin(ctx.author.id, ctx.guild.id):
             return True
         role_ids = [role.id for role in ctx.author.roles if role.name != "@everyone"]
         return self.role_permissions.user_can_use(ctx.guild.id, role_ids, "note")
 
     def _can_manage_visibility(self, ctx, action: str) -> bool:
         if ctx.guild is None:
-            return self.admins.is_admin(ctx.author.id)
-        if self.admins.is_admin(ctx.author.id):
+            return self.admins.is_hard_admin(ctx.author.id)
+        if self.admins.is_admin(ctx.author.id, ctx.guild.id):
             return True
         command_name = "note public" if action in self.PUBLIC_ACTIONS else "note private"
         role_ids = [role.id for role in ctx.author.roles if role.name != "@everyone"]

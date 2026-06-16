@@ -111,27 +111,96 @@ class AdministratorOperatorCog(AdminCommandBase):
         cogs_text = "\n".join([f"  • {c}" for c in extensions]) if extensions else "  (Không có cog nào)"
         await ctx.send(embed=create_info_splash(f"📦 Cogs ({len(extensions)})", cogs_text))
 
+    async def _resolve_admin_target(self, ctx, raw_user: str | None, raw_guild_id: str | None = None):
+        if not raw_user:
+            await ctx.send(embed=create_error_splash("❌ Thiếu User", "Trong server dùng `@user`; trong DM dùng `<user_id> <server_id>`."))
+            return None, None
+
+        guild_id = ctx.guild.id if ctx.guild else None
+        if ctx.guild is None:
+            if not raw_guild_id or not str(raw_guild_id).isdigit():
+                await ctx.send(embed=create_error_splash("❌ Thiếu Server", "Trong DM dùng: `<user_id> <server_id>`."))
+                return None, None
+            guild_id = int(raw_guild_id)
+
+        user = None
+        if ctx.guild is not None:
+            try:
+                user = await commands.MemberConverter().convert(ctx, raw_user)
+            except Exception:
+                pass
+        if user is None:
+            cleaned = str(raw_user).strip().strip("<@!>")
+            if not cleaned.isdigit():
+                await ctx.send(embed=create_error_splash("❌ User Không Hợp Lệ", "Hãy nhập @user hoặc user ID."))
+                return None, None
+            try:
+                user = await self.bot.fetch_user(int(cleaned))
+            except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+                await ctx.send(embed=create_error_splash("❌ Không Tìm Thấy User", f"Không tìm thấy `{raw_user}`."))
+                return None, None
+
+        return user, guild_id
+
+    def _guild_label(self, guild_id: int) -> str:
+        guild = self.bot.get_guild(guild_id)
+        return f"{guild.name} (`{guild_id}`)" if guild else f"`{guild_id}`"
+
     @commands.command(name="addadmin", aliases=["themadmin"])
-    async def add_admin(self, ctx, member: discord.Member):
+    async def add_admin(self, ctx, member: str = None, guild_id: str = None):
         if not self.is_hard_admin(ctx.author.id):
             await ctx.send(embed=create_error_splash("❌ Quyền Bị Từ Chối", "Bạn không có quyền dùng lệnh này."))
             return
+        user, resolved_guild_id = await self._resolve_admin_target(ctx, member, guild_id)
+        if not user or resolved_guild_id is None:
+            return
         try:
-            self.admins.add_admin(member.id, ctx.author.id)
-            await ctx.send(embed=create_success_splash("✅ Thêm Admin Thành Công", f"{member.mention} đã trở thành bot admin."))
+            self.admins.add_admin(user.id, ctx.author.id, resolved_guild_id)
+            await ctx.send(embed=create_success_splash("✅ Thêm Admin Thành Công", f"{user.mention} đã trở thành bot admin trong server {self._guild_label(resolved_guild_id)}."))
         except Exception as e:
             await ctx.send(embed=create_error_splash("❌ Thêm Admin Thất Bại", str(e)))
 
     @commands.command(name="rmadmin", aliases=["xoaadmin"])
-    async def remove_admin(self, ctx, member: discord.Member):
+    async def remove_admin(self, ctx, member: str = None, guild_id: str = None):
         if not self.is_hard_admin(ctx.author.id):
             await ctx.send(embed=create_error_splash("❌ Quyền Bị Từ Chối", "Bạn không có quyền dùng lệnh này."))
             return
+        user, resolved_guild_id = await self._resolve_admin_target(ctx, member, guild_id)
+        if not user or resolved_guild_id is None:
+            return
         try:
-            self.admins.remove_admin(member.id)
-            await ctx.send(embed=create_success_splash("✅ Xoá Admin Thành Công", f"{member.mention} đã bị xoá khỏi danh sách bot admin."))
+            self.admins.remove_admin(user.id, resolved_guild_id)
+            await ctx.send(embed=create_success_splash("✅ Xoá Admin Thành Công", f"{user.mention} đã bị xoá khỏi danh sách bot admin của server {self._guild_label(resolved_guild_id)}."))
         except Exception as e:
             await ctx.send(embed=create_error_splash("❌ Xoá Admin Thất Bại", str(e)))
+
+    @commands.command(name="addcashadmin", aliases=["themcashadmin", "cashadmin"])
+    async def add_cash_admin(self, ctx, member: str = None, guild_id: str = None):
+        if not self.is_hard_admin(ctx.author.id):
+            await ctx.send(embed=create_error_splash("❌ Quyền Bị Từ Chối", "Bạn không có quyền dùng lệnh này."))
+            return
+        user, resolved_guild_id = await self._resolve_admin_target(ctx, member, guild_id)
+        if not user or resolved_guild_id is None:
+            return
+        try:
+            self.admins.add_cash_admin(user.id, ctx.author.id, resolved_guild_id)
+            await ctx.send(embed=create_success_splash("✅ Thêm Cash Admin Thành Công", f"{user.mention} được quản trị cash/naptien trong server {self._guild_label(resolved_guild_id)}."))
+        except Exception as e:
+            await ctx.send(embed=create_error_splash("❌ Thêm Cash Admin Thất Bại", str(e)))
+
+    @commands.command(name="rmcashadmin", aliases=["xoacashadmin"])
+    async def remove_cash_admin(self, ctx, member: str = None, guild_id: str = None):
+        if not self.is_hard_admin(ctx.author.id):
+            await ctx.send(embed=create_error_splash("❌ Quyền Bị Từ Chối", "Bạn không có quyền dùng lệnh này."))
+            return
+        user, resolved_guild_id = await self._resolve_admin_target(ctx, member, guild_id)
+        if not user or resolved_guild_id is None:
+            return
+        try:
+            self.admins.remove_cash_admin(user.id, resolved_guild_id)
+            await ctx.send(embed=create_success_splash("✅ Xoá Cash Admin Thành Công", f"{user.mention} đã bị xoá quyền cash/naptien trong server {self._guild_label(resolved_guild_id)}."))
+        except Exception as e:
+            await ctx.send(embed=create_error_splash("❌ Xoá Cash Admin Thất Bại", str(e)))
 
     @commands.command(name="prefix")
     async def prefix(self, ctx, new_prefix: str = None):

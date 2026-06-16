@@ -21,10 +21,8 @@ class CurrencyRateCog(AdminCommandBase):
 
     @commands.command(name="rate")
     async def rate(self, ctx, *args):
-        if not await self.require_admin_ctx(
-            ctx,
-            "Chỉ bot admin mới được xem hoặc thay đổi tỷ giá cash/OWO.",
-        ):
+        if not self.admins.is_hard_admin(ctx.author.id):
+            await ctx.send(embed=create_error_splash("❌ Quyền Bị Từ Chối", "Chỉ hard admin trong env mới được xem hoặc thay đổi tỷ giá cash/OWO global."))
             return
 
         if not args:

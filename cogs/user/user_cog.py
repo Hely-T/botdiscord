@@ -23,16 +23,24 @@ class UserCog(UserCommandBase):
         "edit": "edit",
     }
 
-    def _can_manage_stat(self, ctx, command_name: str) -> bool:
-        if self.admins.is_admin(ctx.author.id):
+    def _can_manage_stat(self, ctx, command_name: str, guild_id: int | None = None) -> bool:
+        guild_id = guild_id if guild_id is not None else (ctx.guild.id if ctx.guild else None)
+        if command_name == "cash":
+            if self.admins.is_cash_admin(ctx.author.id, guild_id):
+                return True
+            if ctx.guild is None:
+                return False
+            user_role_ids = [role.id for role in ctx.author.roles if role.name != "@everyone"]
+            return self.role_permissions.user_can_use(ctx.guild.id, user_role_ids, "cash")
+        if self.admins.is_admin(ctx.author.id, guild_id):
             return True
         if ctx.guild is None:
             return False
         user_role_ids = [role.id for role in ctx.author.roles if role.name != "@everyone"]
         return self.role_permissions.user_can_use(ctx.guild.id, user_role_ids, command_name)
 
-    def _can_view_other_stat(self, ctx, command_name: str) -> bool:
-        return self._can_manage_stat(ctx, command_name) or self.can_view_other_profile(ctx)
+    def _can_view_other_stat(self, ctx, command_name: str, guild_id: int | None = None) -> bool:
+        return self._can_manage_stat(ctx, command_name, guild_id) or self.can_view_other_profile(ctx)
 
     async def _resolve_member_arg(self, ctx, raw_member: str) -> discord.Member | None:
         if ctx.guild is None:
@@ -116,9 +124,10 @@ class UserCog(UserCommandBase):
         await ctx.send(embed=create_error_splash("❌ Không Tìm Thấy User", f"Không tìm thấy `{raw_user}`."))
         return None
 
-    async def _apply_cash_action(self, ctx, action: str, member, raw_amount: str):
-        if not self._can_manage_stat(ctx, "cash"):
-            await ctx.send(embed=create_error_splash("❌ Quyền Bị Từ Chối", "Chỉ bot admin hoặc role có quyền `cash` trong DB mới quản trị cash."))
+    async def _apply_cash_action(self, ctx, action: str, member, raw_amount: str, guild_id: int | None = None):
+        guild_id = guild_id if guild_id is not None else (ctx.guild.id if ctx.guild else None)
+        if not self._can_manage_stat(ctx, "cash", guild_id):
+            await ctx.send(embed=create_error_splash("❌ Quyền Bị Từ Chối", "Chỉ hard admin, cash-admin hoặc role có quyền `cash` trong server này mới quản trị cash."))
             return
 
         try:
@@ -142,8 +151,9 @@ class UserCog(UserCommandBase):
             return
 
         await ctx.send(embed=create_success_splash(title, detail))
+        log_guild = ctx.guild or (self.bot.get_guild(guild_id) if guild_id else None)
         await send_cash_log(
-            ctx.guild,
+            log_guild,
             title=title,
             actor=ctx.author,
             target=member,
@@ -272,16 +282,23 @@ class UserCog(UserCommandBase):
             if args:
                 action = self.STAT_ACTIONS.get(args[0].lower())
                 if action:
-                    if len(args) != 3:
-                        await ctx.send(embed=create_error_splash("❌ Sai Cú Pháp", "Dùng: `cash a/add @user <money>`, `cash r/rm/remove/d/delete @user <money>` hoặc `cash e/edit @user <money>`."))
-                        return
-                    if ctx.guild is None and not self.admins.is_admin(ctx.author.id):
-                        await ctx.send(embed=create_error_splash("❌ Quyền Bị Từ Chối", "Chỉ bot admin mới được quản trị cash trong DMs."))
+                    if ctx.guild is None:
+                        if len(args) != 4 or not str(args[3]).isdigit():
+                            await ctx.send(embed=create_error_splash("❌ Sai Cú Pháp", "Trong DM dùng: `cash a/add <user_id> <money> <server_id>`, `cash r/rm/remove <user_id> <money> <server_id>` hoặc `cash e/edit <user_id> <money> <server_id>`."))
+                            return
+                        guild_id = int(args[3])
+                    else:
+                        if len(args) != 3:
+                            await ctx.send(embed=create_error_splash("❌ Sai Cú Pháp", "Dùng: `cash a/add @user <money>`, `cash r/rm/remove/d/delete @user <money>` hoặc `cash e/edit @user <money>`."))
+                            return
+                        guild_id = ctx.guild.id
+                    if not self._can_manage_stat(ctx, "cash", guild_id):
+                        await ctx.send(embed=create_error_splash("❌ Quyền Bị Từ Chối", "Chỉ hard admin, cash-admin hoặc role có quyền `cash` trong server này mới quản trị cash."))
                         return
                     member = await self._resolve_cash_target(ctx, args[1])
                     if not member:
                         return
-                    await self._apply_cash_action(ctx, action, member, args[2])
+                    await self._apply_cash_action(ctx, action, member, args[2], guild_id)
                     return
 
                 if args[0].lower() == "all":

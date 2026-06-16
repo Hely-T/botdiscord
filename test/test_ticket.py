@@ -64,6 +64,7 @@ class TestTicketPermissions(unittest.TestCase):
         self.cog._admins.is_admin.return_value = True
 
         self.assertTrue(self.cog.member_can_manage(self.member))
+        self.cog._admins.is_admin.assert_called_once_with(123, 777)
         self.cog._role_permissions.user_can_use.assert_not_called()
 
     def test_role_database_controls_ticket_permission(self):

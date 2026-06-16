@@ -173,11 +173,12 @@ class AdministratorGroupCog(AdminCommandBase):
     JOIN_ACTIONS = {"join", "j", "vao", "vào", "add", "invite"}
     LEAVE_ACTIONS = {"leave", "leaev", "l", "out", "roi", "rời", "thoat", "thoát", "remove", "rm"}
 
-    def is_admin_user(self, user_id: int) -> bool:
-        return self.admins.is_admin(int(user_id))
+    def is_admin_user(self, user_id: int, guild_id: int | None = None) -> bool:
+        return self.admins.is_admin(int(user_id), guild_id)
 
     async def require_admin_ctx(self, ctx) -> bool:
-        if self.is_admin_user(ctx.author.id):
+        guild_id = ctx.guild.id if ctx.guild else None
+        if self.is_admin_user(ctx.author.id, guild_id):
             return True
         await ctx.send(embed=create_error_splash("❌ Quyền Bị Từ Chối", "Chỉ bot admin mới được dùng lệnh này."))
         return False
@@ -189,7 +190,8 @@ class AdministratorGroupCog(AdminCommandBase):
                 ephemeral=True,
             )
             return False
-        if self.is_admin_user(interaction.user.id):
+        guild_id = interaction.guild.id if interaction.guild else None
+        if self.is_admin_user(interaction.user.id, guild_id):
             return True
         await interaction.response.send_message(
             embed=create_error_splash("❌ Quyền Bị Từ Chối", "Chỉ bot admin mới được dùng thao tác này."),
