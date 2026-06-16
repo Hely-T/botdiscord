@@ -3,6 +3,8 @@ import unittest
 from unittest.mock import MagicMock, patch
 
 from cogs.admin_command_utils import AdminCommandBase
+from cogs.help_cog import _role_management_commands
+from cogs.role.role_cog import RoleCog
 from services.admin_service import AdminService
 
 
@@ -104,6 +106,33 @@ class TestAdminCommandBaseCashPermissions(unittest.TestCase):
 
         self.assertTrue(base.can_use_role_or_admin(self.make_ctx(), "cash"))
         base._role_permissions.user_can_use.assert_called_once_with(777, [456], "cash")
+
+
+class TestRoleHelpPermissions(unittest.TestCase):
+    def test_help_role_includes_admin_permission_commands(self):
+        command_names = {command["name"] for command in _role_management_commands()}
+
+        self.assertIn("addadmin", command_names)
+        self.assertIn("rmadmin", command_names)
+        self.assertIn("addcashadmin", command_names)
+        self.assertIn("rmcashadmin", command_names)
+
+    def test_admin_permission_commands_resolve_to_role_group(self):
+        cog = RoleCog.__new__(RoleCog)
+        cog.bot = MagicMock()
+        command_names = {
+            "addadmin",
+            "rmadmin",
+            "addcashadmin",
+            "rmcashadmin",
+        }
+        cog.bot.get_command.side_effect = lambda name: (
+            SimpleNamespace(name=name) if name in command_names else None
+        )
+
+        for command_name in command_names:
+            with self.subTest(command_name=command_name):
+                self.assertEqual(cog._resolve_command_name(command_name), "role")
 
 
 if __name__ == "__main__":

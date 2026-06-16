@@ -201,7 +201,19 @@ def _is_role_management_key(command_name: str) -> bool:
 
 
 def _role_management_commands() -> list[dict]:
-    role_command_names = {"role", "addrole", "removerole", "setrole", "perms", "myroles", "rolescommands"}
+    role_command_names = {
+        "role",
+        "addrole",
+        "removerole",
+        "setrole",
+        "perms",
+        "myroles",
+        "rolescommands",
+        "addadmin",
+        "rmadmin",
+        "addcashadmin",
+        "rmcashadmin",
+    }
     admin_category = _find_category("administrator")
     if not admin_category:
         return []

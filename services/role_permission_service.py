@@ -11,8 +11,12 @@ from typing import List, Dict
 ROLE_PERMISSION_GROUP = {
     "role",
     "addrole",
+    "addadmin",
+    "addcashadmin",
     "themrole",
     "removerole",
+    "rmadmin",
+    "rmcashadmin",
     "rmrole",
     "xoarole",
     "setrole",

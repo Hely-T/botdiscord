@@ -33,7 +33,11 @@ SYSTEM_ROLE_OPTIONS = {
 ROLE_PERMISSION_COMMANDS = {
     "role",
     "addrole",
+    "addadmin",
+    "addcashadmin",
     "removerole",
+    "rmadmin",
+    "rmcashadmin",
     "setrole",
     "perms",
     "myroles",
