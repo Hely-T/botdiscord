@@ -17,7 +17,7 @@ from ui.event.ui import (
     event_theme_value,
     event_emoji,
 )
-from utils import create_error_splash, create_success_splash
+from utils import create_error_splash, create_info_splash, create_success_splash
 
 
 LEADERBOARD_PAGE_SIZE = 10

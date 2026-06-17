@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib
 import discord
 from discord import app_commands
 from discord.ext import commands
@@ -12,6 +13,10 @@ from cogs.admin_command_utils import (
     format_duration_seconds,
     parse_duration,
 )
+
+import services.level_service as level_service_module
+importlib.reload(level_service_module)
+
 from services.level_service import LevelService
 from utils import append_discord_timestamp
 
