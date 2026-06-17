@@ -2,15 +2,15 @@ from __future__ import annotations
 
 import discord
 
-from ui.event.emoji import event_emoji, event_theme_value, event_text
+from ui.event.emoji import event_emoji, event_text, event_theme_value
 from utils import create_info_splash, create_success_splash
 
 
 def build_manager_selection_embed(events: list[dict], theme: dict | None = None) -> discord.Embed:
     """Builds the initial embed for the event manager, asking to create or select an event."""
     embed = create_info_splash(
-        event_text('event', event_theme_value(theme, 'title_manager')),
-        event_theme_value(theme, 'desc_manager'),
+        event_text("event", event_theme_value(theme, "title_manager"), theme),
+        event_theme_value(theme, "desc_manager"),
     )
     if not events:
         embed.description += f"\n\n{event_theme_value(theme, 'label_no_event')}"
@@ -19,9 +19,9 @@ def build_manager_selection_embed(events: list[dict], theme: dict | None = None)
         active_events = [f"▶️ `{event['name']}`" for event in events if event["status"] == "active"]
         draft_events = [f"📝 `{event['name']}`" for event in events if event["status"] == "draft"]
         if active_events:
-            embed.add_field(name=event_theme_value(theme, 'label_active'), value="\n".join(active_events), inline=False)
+            embed.add_field(name=event_theme_value(theme, "label_active"), value="\n".join(active_events), inline=False)
         if draft_events:
-            embed.add_field(name=event_theme_value(theme, 'label_draft'), value="\n".join(draft_events), inline=False)
+            embed.add_field(name=event_theme_value(theme, "label_draft"), value="\n".join(draft_events), inline=False)
     return embed
 
 
@@ -39,7 +39,7 @@ def build_event_dashboard_embed(event: dict, theme: dict | None = None) -> disco
         "link": "Chỉ Link (Tiktok, Youtube...)",
     }
     embed = create_info_splash(
-        f"{event_emoji('manage')} Quản lý: {event['name']}",
+        f"{event_emoji('manage', theme)} Quản lý: {event['name']}",
         f"ID sự kiện: `{event['event_id']}`",
     )
     embed.add_field(name="Trạng thái", value=status_map.get(event["status"], event["status"]), inline=True)
@@ -60,7 +60,7 @@ def build_leaderboard_embed(
 ) -> discord.Embed:
     """Builds the leaderboard embed for an event."""
     embed = create_success_splash(
-        event_text('leaderboard', f"{event_theme_value(theme, 'title_leaderboard')}: {event['name']}"),
+        event_text("leaderboard", f"{event_theme_value(theme, 'title_leaderboard')}: {event['name']}", theme),
         f"Cập nhật lúc: <t:{int(discord.utils.utcnow().timestamp())}:R>",
     )
     if not entries:

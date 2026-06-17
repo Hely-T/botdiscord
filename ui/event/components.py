@@ -3,7 +3,7 @@ from __future__ import annotations
 import discord
 from discord.ui import Button, ChannelSelect, Modal, Select, TextInput, View
 
-from ui.event.emoji import event_emoji, event_theme_value, EVENT_THEME_DEFAULTS
+from ui.event.emoji import EVENT_THEME_DEFAULTS, event_emoji, event_theme_value
 from ui.event.ui import build_event_dashboard_embed
 
 class EventThemeModal(Modal):
@@ -113,7 +113,7 @@ class EventSelect(Select):
         if not event:
             await interaction.response.edit_message(content="❌ Sự kiện không còn tồn tại.", embed=None, view=None)
             return
-        theme = self.cog.service.get_theme(self.guild_id)
+        theme = self.cog.service.get_theme(interaction.guild.id)
         await interaction.response.edit_message(
             embed=build_event_dashboard_embed(event, theme),
             view=EventConfigView(self.cog, event),
@@ -126,6 +126,18 @@ class EventConfigView(View):
         self.cog = cog
         self.event = event
         self._update_start_stop_button()
+
+        theme = self.cog.service.get_theme(self.event["guild_id"])
+        mapping = {
+            "event_config:back": ("button_back", "back"),
+            "event_config:edit_name": ("button_edit_name", "✏️"),
+            "event_config:set_emoji": ("button_emoji", "emoji"),
+            "event_config:delete": ("button_delete", "delete"),
+            "event_config:view_lb": ("button_leaderboard", "leaderboard"),
+        }
+        for child in self.children:
+            if isinstance(child, discord.ui.Button) and child.custom_id in mapping:
+                child.emoji = event_emoji(mapping[child.custom_id][1], theme) if mapping[child.custom_id][1] != "✏️" else "✏️"
 
     def _update_start_stop_button(self):
         theme = self.cog.service.get_theme(self.event["guild_id"])
@@ -141,11 +153,11 @@ class EventConfigView(View):
             start_stop_button.emoji = event_emoji("start")
             start_stop_button.style = discord.ButtonStyle.success
 
-    @discord.ui.button(label="Back", style=discord.ButtonStyle.secondary, emoji=event_emoji("back"), row=4)
+    @discord.ui.button(label="Back", style=discord.ButtonStyle.secondary, row=4, custom_id="event_config:back")
     async def back(self, interaction: discord.Interaction, button: Button):
         await self.cog.show_event_manager(interaction)
 
-    @discord.ui.button(label="Tên", style=discord.ButtonStyle.secondary, emoji="✏️")
+    @discord.ui.button(label="Tên", style=discord.ButtonStyle.secondary, emoji="✏️", custom_id="event_config:edit_name")
     async def edit_name(self, interaction: discord.Interaction, button: Button):
         await interaction.response.send_modal(EditEventNameModal(self.cog, self.event))
 
@@ -153,7 +165,7 @@ class EventConfigView(View):
     async def set_channel(self, interaction: discord.Interaction, select: ChannelSelect):
         await self.cog.handle_update_event_value(interaction, self.event, "channel_id", select.values[0].id)
 
-    @discord.ui.button(label="Emoji", style=discord.ButtonStyle.secondary, emoji=event_emoji("emoji"))
+    @discord.ui.button(label="Emoji", style=discord.ButtonStyle.secondary, custom_id="event_config:set_emoji")
     async def set_emoji(self, interaction: discord.Interaction, button: Button):
         await interaction.response.send_modal(EmojiModal(self.cog, self.event))
 
@@ -169,15 +181,15 @@ class EventConfigView(View):
     async def set_filter(self, interaction: discord.Interaction, select: Select):
         await self.cog.handle_update_event_value(interaction, self.event, "filter_mode", select.values[0])
 
-    @discord.ui.button(label="Bắt đầu sự kiện", style=discord.ButtonStyle.success, emoji=event_emoji("start"), custom_id="event:start_stop")
+    @discord.ui.button(label="Bắt đầu sự kiện", style=discord.ButtonStyle.success, custom_id="event:start_stop")
     async def start_stop(self, interaction: discord.Interaction, button: Button):
         await self.cog.handle_toggle_event_status(interaction, self.event)
 
-    @discord.ui.button(label="Leaderboard", style=discord.ButtonStyle.primary, emoji=event_emoji("leaderboard"), row=4)
+    @discord.ui.button(label="Leaderboard", style=discord.ButtonStyle.primary, row=4, custom_id="event_config:view_lb")
     async def view_lb(self, interaction: discord.Interaction, button: Button):
         await self.cog.show_leaderboard_page(interaction, self.event, 1)
 
-    @discord.ui.button(label="Xóa", style=discord.ButtonStyle.danger, emoji=event_emoji("delete"), row=4)
+    @discord.ui.button(label="Xóa", style=discord.ButtonStyle.danger, row=4, custom_id="event_config:delete")
     async def delete(self, interaction: discord.Interaction, button: Button):
         await self.cog.handle_delete_event(interaction, self.event)
 
@@ -189,11 +201,21 @@ class EventManagerDashboard(View):
         if events:
             self.add_item(EventSelect(cog, events))
 
-    @discord.ui.button(label="Tạo Sự kiện", style=discord.ButtonStyle.success, emoji=event_emoji("create"))
+        theme = self.cog.service.get_theme(events[0]["guild_id"]) if events else {}
+        for child in self.children:
+            if isinstance(child, discord.ui.Button):
+                if child.custom_id == "event_manager:create":
+                    child.label = event_theme_value(theme, "button_create")
+                    child.emoji = event_emoji("create", theme)
+                elif child.custom_id == "event_manager:theme":
+                    child.label = event_theme_value(theme, "button_theme")
+                    child.emoji = event_emoji("theme", theme)
+
+    @discord.ui.button(label="Tạo Sự kiện", style=discord.ButtonStyle.success, custom_id="event_manager:create")
     async def create(self, interaction: discord.Interaction, button: Button):
         await interaction.response.send_modal(CreateEventModal(self.cog))
 
-    @discord.ui.button(label="Giao diện (Theme)", style=discord.ButtonStyle.secondary, emoji=event_emoji("theme"))
+    @discord.ui.button(label="Giao diện (Theme)", style=discord.ButtonStyle.secondary, custom_id="event_manager:theme")
     async def config_theme(self, interaction: discord.Interaction, button: Button):
         await interaction.response.send_message(content="Chọn mục text cần tùy chỉnh cấu hình:", view=EventThemeView(self.cog, interaction.guild.id), ephemeral=True)
 
