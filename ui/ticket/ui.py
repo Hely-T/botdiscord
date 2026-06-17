@@ -82,7 +82,11 @@ def build_ticket_help_embed(prefix: str) -> discord.Embed:
             f"`{prefix}ticket add|remove @user`\n"
             f"`{prefix}ticket rename <tên>`\n"
             f"`{prefix}ticket transfer @user`\n"
-            f"`{prefix}ticket unclaim|info|close [lý do]`"
+            f"`{prefix}ticket unclaim|info|close [lý do]`\n\n"
+            f"**Lệnh tắt (Dùng thẳng trong ticket):**\n"
+            f"`{prefix}tickclose [lý do]` - Đóng ticket nhanh\n"
+            f"`{prefix}ticksetname <tên>` - Đổi tên ticket nhanh\n"
+            f"`{prefix}tickremind` - Nhắc user đóng ticket"
         ),
     )
 
@@ -172,7 +176,7 @@ def build_ticket_panel_embed(config: dict, theme: dict | None = None) -> discord
 
 def build_ticket_created_embed(user: discord.Member, ticket_type: str, theme: dict | None = None) -> discord.Embed:
     type_label = ticket_types(theme).get(ticket_type, ticket_type)
-    return discord.Embed(
+    embed = discord.Embed(
         title=ticket_text(
             "ticket",
             format_ticket_template(theme, "created_title", type=type_label),
@@ -186,6 +190,10 @@ def build_ticket_created_embed(user: discord.Member, ticket_type: str, theme: di
         ),
         color=discord.Color.green(),
     )
+    auto_res = ticket_theme_value(theme, f"autoresponse_{ticket_type}")
+    if auto_res:
+        embed.add_field(name="📌 Yêu cầu tự động", value=auto_res, inline=False)
+    return embed
 
 
 def build_ticket_info_embed(ticket: dict) -> discord.Embed:

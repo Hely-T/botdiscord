@@ -487,6 +487,41 @@ class TicketMentionTypeView(View):
         self.add_item(TicketMentionTypeSelect(cog, guild_id))
 
 
+class TicketAutoResponseSelect(Select):
+    def __init__(self, cog, guild_id: int):
+        self.cog = cog
+        self.guild_id = guild_id
+        theme = cog.service.get_theme(guild_id)
+        options = [
+            discord.SelectOption(
+                label=label[:100],
+                value=f"autoresponse_{value}",
+                description="Sửa lời yêu cầu tự động cho mục này...",
+                emoji=ticket_emoji(value, theme),
+            )
+            for value, label in ticket_types(theme).items()
+        ]
+        super().__init__(
+            placeholder="Chọn mục Ticket để sửa Auto-res...",
+            min_values=1,
+            max_values=1,
+            options=options,
+        )
+
+    async def callback(self, interaction: discord.Interaction):
+        if not await self.cog.require_role_or_admin_interaction(interaction, "ticket"):
+            return
+        key = self.values[0]
+        theme = self.cog.service.get_theme(self.guild_id)
+        await interaction.response.send_modal(TicketThemeModal(self.cog, self.guild_id, key, ticket_theme_value(theme, key)))
+
+
+class TicketAutoResponseView(View):
+    def __init__(self, cog, guild_id: int):
+        super().__init__(timeout=600)
+        self.add_item(TicketAutoResponseSelect(cog, guild_id))
+
+
 class TicketManagerView(View):
     def __init__(self, cog):
         super().__init__(timeout=300)
@@ -515,6 +550,15 @@ class TicketManagerView(View):
             interaction,
             content="Chọn nội dung Ticket cần tùy chỉnh. Modal sẽ có ví dụ trong ô nhập.",
             view=TicketThemeView(self.cog, interaction.guild.id, "content"),
+            ephemeral=True,
+        )
+
+    @discord.ui.button(label="Yêu cầu tự động (Auto-res)", style=discord.ButtonStyle.secondary, emoji="💬")
+    async def auto_responses(self, interaction: discord.Interaction, button: Button):
+        await safe_interaction_send(
+            interaction,
+            content="Chọn mục Ticket để cài đặt lời yêu cầu tự động (vd: xin bill, xin ảnh oxp/olvl...):",
+            view=TicketAutoResponseView(self.cog, interaction.guild.id),
             ephemeral=True,
         )
 

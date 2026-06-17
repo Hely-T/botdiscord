@@ -5,6 +5,7 @@ import io
 import logging
 import re
 import uuid
+import asyncio
 from datetime import datetime
 
 import discord
@@ -508,7 +509,10 @@ class TicketCog(AdminCommandBase):
             ticket_type,
             ticket_code,
         ):
-            await channel.delete(reason="Không ghi được ticket vào database")
+            try:
+                await channel.delete(reason="Không ghi được ticket vào database")
+            except discord.HTTPException:
+                logger.warning(f"Could not delete orphaned ticket channel {channel.id}")
             await safe_interaction_send(interaction, content="❌ Không ghi được Ticket vào database.", ephemeral=True)
             return
 
@@ -576,14 +580,17 @@ class TicketCog(AdminCommandBase):
         if overwrite.view_channel is True:
             await adapter.send(content="❌ Thành viên này đã có trong ticket.", ephemeral=True)
             return
-        await adapter.channel.set_permissions(
-            member,
+            
+        new_overwrite = discord.PermissionOverwrite(
             view_channel=True,
             read_messages=True,
             send_messages=True,
             attach_files=True,
             read_message_history=True,
+            embed_links=True,
+            use_external_emojis=True,
         )
+        await adapter.channel.set_permissions(member, overwrite=new_overwrite)
         self.service.log_event(ticket["ticket_id"], adapter.guild.id, adapter.channel.id, "user_added", adapter.user.id, member.id)
         await adapter.send(content=f"✅ Đã thêm {member.mention} vào ticket.")
 
@@ -668,6 +675,10 @@ class TicketCog(AdminCommandBase):
         )
 
     async def handle_confirm_close(self, interaction: discord.Interaction, reason: str):
+        # Ngăn lỗi "Interaction Failed" do tải history (Transcript) tốn nhiều thời gian
+        if not interaction.response.is_done():
+            await interaction.response.defer()
+            
         ticket = self.service.get_ticket(interaction.channel.id)
         if not ticket:
             return
@@ -690,7 +701,7 @@ class TicketCog(AdminCommandBase):
                 opened_text = f"<t:{int(created_at.timestamp())}:F>"
             except (TypeError, ValueError):
                 opened_text = str(ticket.get("created_at", "Không rõ"))
-            file = discord.File(io.StringIO(transcript), filename=f"transcript-{ticket['ticket_id']}.txt")
+            file = discord.File(io.BytesIO(transcript.encode("utf-8")), filename=f"transcript-{ticket['ticket_id']}.txt")
             await log_channel.send(
                 embed=build_ticket_closed_embed(ticket, interaction.user, opened_text, reason),
                 file=file,
@@ -736,6 +747,49 @@ class TicketCog(AdminCommandBase):
                 getattr(self.bot.user, "id", 0),
             )
 
+    # ---------------------------------------------------------
+    # Thêm lệnh thao tác nhanh (fast alias) ở cấp root
+    # ---------------------------------------------------------
+    @commands.command(name="tickclose", aliases=["tclose"], description="Đóng nhanh ticket hiện tại")
+    async def close_root_command(self, ctx, *, reason: str = ""):
+        await self.core_close_request(ContextAdapter(ctx), reason)
+        
+    @commands.command(name="ticksetname", aliases=["trename"], description="Đổi tên nhanh ticket hiện tại")
+    async def rename_root_command(self, ctx, *, name: str):
+        await self.core_rename(ContextAdapter(ctx), name)
+        
+    @commands.command(name="tickremind", aliases=["tremind"], description="Nhắc nhở người dùng đóng tất cả ticket đang mở")
+    async def remind_root_command(self, ctx):
+        if not await self.require_role_or_admin_ctx(ctx, "ticket"):
+            return
+            
+        active_tickets = self.service.get_all_active_tickets(ctx.guild.id)
+        remind_tickets = [t for t in active_tickets if t["status"] in {"open", "claimed"}]
+        
+        if not remind_tickets:
+            await ctx.send(embed=build_ticket_error_embed("Không Có Ticket", "Hiện không có ticket nào đang hoạt động để nhắc nhở."))
+            return
+
+        prefix = ctx.clean_prefix
+        count = 0
+        
+        msg = await ctx.send(embed=build_ticket_notice_embed("ticket", "Đang Gửi Lời Nhắc", f"Đang tiến hành gửi lời nhắc cho `{len(remind_tickets)}` ticket..."))
+
+        for ticket in remind_tickets:
+            channel = ctx.guild.get_channel(int(ticket["channel_id"]))
+            if channel and isinstance(channel, discord.TextChannel):
+                owner_id = ticket["owner_user_id"]
+                try:
+                    await channel.send(
+                        content=f"<@{owner_id}>",
+                        embed=build_ticket_notice_embed("ticket", "Nhắc nhở đóng Ticket", f"Nếu vấn đề của bạn đã được giải quyết xong, xin hãy sử dụng lệnh `{prefix}tickclose` để đóng ticket này nhé! Cảm ơn bạn rất nhiều.")
+                    )
+                    count += 1
+                    await asyncio.sleep(0.5)
+                except discord.HTTPException:
+                    pass
+                    
+        await msg.edit(embed=build_ticket_success_embed("Gửi Thành Công", f"Đã gửi lời nhắc vào `{count}/{len(remind_tickets)}` ticket đang hoạt động."))
 
 async def setup(bot):
     await bot.add_cog(TicketCog(bot))
