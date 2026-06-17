@@ -22,6 +22,7 @@ Trạng thái: đang phát triển, đã chuẩn hóa catalog cog, service/datab
   - Operator: `gitpull`, `gitstatus`, `reload`, `load`, `unload`, `cogs`, `prefix`.
   - Command channel: `command`, `enable`, `disable`.
   - Slash: `/antiraid`, `/giveaway`, `/group`, `/level`, `/naptien`, `/donate`, `/ticket`.
+- Event contest: quản lý sự kiện thi ảnh/video/meme, tự động kiểm duyệt bài thi, bảng xếp hạng real-time chống rate-limit.
 - Bank/VietQR: tạo QR nạp tiền/donate, kiểm tra giao dịch mỗi 5 giây, admin reload số dư ACB, cộng cash và gửi log cash.
 - Donate có kênh cảm ơn, bảng xếp hạng tháng 1-50, phân trang 10 người và reset không ảnh hưởng cash/tổng donate.
 - Note có public/private, note cho người khác theo quyền, TXT popup và nội dung dài có thể thu gọn/phóng to.

@@ -30,6 +30,7 @@ class LevelService:
             voice_xp_per_minute INTEGER DEFAULT 5,
             xp_mode TEXT DEFAULT 'normal',
             xp_base INTEGER DEFAULT 100,
+            announce_template TEXT,
             updated_at TEXT NOT NULL
             """,
         )
@@ -108,6 +109,8 @@ class LevelService:
         columns = {row["name"] for row in rows}
         if "xp_mode" not in columns:
             self.db.execute("ALTER TABLE level_settings ADD COLUMN xp_mode TEXT DEFAULT 'normal'")
+        if "announce_template" not in columns:
+            self.db.execute("ALTER TABLE level_settings ADD COLUMN announce_template TEXT")
         if "xp_base" not in columns:
             self.db.execute("ALTER TABLE level_settings ADD COLUMN xp_base INTEGER DEFAULT 100")
 
@@ -276,6 +279,7 @@ class LevelService:
                 "voice_xp_per_minute": self.VOICE_XP_PER_MINUTE_DEFAULT,
                 "xp_mode": "normal",
                 "xp_base": self.XP_MODE_BASE["normal"],
+                "announce_template": None,
                 "updated_at": get_timestamp(),
             },
         )
@@ -286,6 +290,15 @@ class LevelService:
         self.db.update(
             "level_settings",
             {"announce_channel_id": channel_id, "updated_at": get_timestamp()},
+            "guild_id = ?",
+            (guild_id,),
+        )
+
+    def set_announce_template(self, guild_id: int, template: str):
+        self.get_settings(guild_id)
+        self.db.update(
+            "level_settings",
+            {"announce_template": template, "updated_at": get_timestamp()},
             "guild_id = ?",
             (guild_id,),
         )

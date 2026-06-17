@@ -415,7 +415,11 @@ class LevelCog(AdminCommandBase):
         if channel is None:
             return
 
-        description = f"🎉 {member.mention} đã lên **Level {new_level}**! `{old_level}` → `{new_level}`"
+        template = settings.get("announce_template") or "🎉 {user} đã lên **Level {new_level}**! `{old_level}` → `{new_level}`"
+        try:
+            description = template.format(user=member.mention, old_level=old_level, new_level=new_level)
+        except (KeyError, ValueError):
+            description = f"🎉 {member.mention} đã lên **Level {new_level}**! `{old_level}` → `{new_level}`"
         if granted_roles:
             description += "\nNhận role: " + ", ".join(role.mention for role in granted_roles)
         await channel.send(description)
@@ -501,7 +505,8 @@ class LevelCog(AdminCommandBase):
 
         lines = []
         for index, row in enumerate(rows, 1):
-            user_text = f"<@{int(row['user_id'])}>"
+            username = row.get("username") or "Unknown"
+            user_text = f"<@{int(row['user_id'])}> `{username}`"
             if metric == "voice":
                 score_text = format_duration_seconds(int(row["score"] or 0))
             elif metric == "messages":
@@ -627,6 +632,14 @@ class LevelCog(AdminCommandBase):
             self.service.set_enabled(ctx.guild.id, False)
             await ctx.send(embed=create_success_splash("✅ Level Đã Tắt", "Bot tạm ngưng count level trong server này."))
             return
+        if action in {"template", "announce", "noidung", "nội dung"}:
+            if len(args) < 2:
+                await ctx.send(embed=create_error_splash("❌ Thiếu Nội Dung", "Dùng: `level setup template <nội dung>`.\nPlaceholder: `{user}`, `{old_level}`, `{new_level}`."))
+                return
+            template = " ".join(args[1:])
+            self.service.set_announce_template(ctx.guild.id, template)
+            await ctx.send(embed=create_success_splash("✅ Đã Set Template Level-up", f"Câu thông báo mới:\n{template}"))
+            return
         if action in {"messagexp", "msgxp"} and len(args) >= 2:
             try:
                 message_xp = int(args[1])
@@ -699,7 +712,7 @@ class LevelCog(AdminCommandBase):
             await ctx.send(
                 embed=create_error_splash(
                     "❌ Sai Cú Pháp",
-                    "Dùng: `level setup #channel`, `level setup on/off`, `level setup messagexp 10`, `level setup voicexp 5`, `level setup xp easy|normal|hard|manual`, `level setup levelxp <level> <xp>`.",
+                    "Dùng: `level setup #channel`, `level setup on/off`, `level setup messagexp 10`, `level setup voicexp 5`, `level setup xp ...`, `level setup levelxp ...`, `level setup template ...`.",
                 )
             )
             return
@@ -882,6 +895,13 @@ class LevelCog(AdminCommandBase):
             return
         period = normalize_period(args[1] if len(args) >= 2 else "total")
         await self.send_profile_ctx(ctx, member, period)
+
+    @commands.command(name="lvlconfig")
+    async def lvlconfig(self, ctx: commands.Context, *args: str):
+        if ctx.guild is None:
+            await ctx.send(embed=create_error_splash("❌ Chỉ Dùng Trong Server", "Level chỉ hoạt động trong server."))
+            return
+        await self.handle_setup_ctx(ctx, args)
 
     async def open_manual_modal(self, interaction: discord.Interaction, member: discord.Member, mode: str):
         if interaction.guild is None:
