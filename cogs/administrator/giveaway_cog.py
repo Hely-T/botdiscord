@@ -864,6 +864,8 @@ class AdministratorGiveawayCog(AdminCommandBase):
         giveaway = self.service.get_giveaway(giveaway_id)
         if not giveaway:
             return False, "Giveaway không tồn tại."
+        if giveaway["status"] == "ending":
+            return False, "Giveaway đang xử lý kết thúc."
         if giveaway["status"] == "ended":
             existing_winner_ids = self.service.decode_winner_ids(giveaway)
             if existing_winner_ids:
@@ -903,6 +905,8 @@ class AdministratorGiveawayCog(AdminCommandBase):
         )
         selected_winner_ids = self.service.decode_selected_winner_ids(giveaway)
         winner_ids = selected_winner_ids or self._pick_winners(participants, int(giveaway["winners_count"]))
+        if not self.service.claim_ending(giveaway_id):
+            return False, "Giveaway đang xử lý hoặc đã kết thúc."
         self.service.mark_ended(giveaway_id, winner_ids)
         updated = self.service.get_giveaway(giveaway_id)
 

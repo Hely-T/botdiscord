@@ -222,6 +222,27 @@ class GiveawayService:
             (giveaway_id,),
         )
 
+    def claim_ending(self, giveaway_id: int) -> bool:
+        """Atomically reserve an active giveaway for final payout."""
+        try:
+            self.db._ensure_connection()
+            cursor = self.db.conn.cursor()
+            cursor.execute(
+                """
+                UPDATE giveaways
+                SET status = 'ending',
+                    updated_at = ?
+                WHERE giveaway_id = ?
+                  AND status = 'active'
+                """,
+                (get_timestamp(), int(giveaway_id)),
+            )
+            self.db.conn.commit()
+            return cursor.rowcount == 1
+        except Exception as exc:
+            print(f"❌ Lỗi claim ending giveaway {giveaway_id}: {exc}")
+            return False
+
     def update_ends_at(self, giveaway_id: int, ends_at: int):
         self.db.update(
             "giveaways",
