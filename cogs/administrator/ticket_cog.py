@@ -778,12 +778,22 @@ class TicketCog(AdminCommandBase):
         for ticket in remind_tickets:
             channel = ctx.guild.get_channel(int(ticket["channel_id"]))
             if channel and isinstance(channel, discord.TextChannel):
-                owner_id = ticket["owner_user_id"]
+                mentions = []
+                owner_id = ticket.get("owner_user_id")
+                if owner_id:
+                    mentions.append(f"<@{owner_id}>")
+
+                if ticket.get("status") == "claimed":
+                    claimer_id = ticket.get("claimed_by_user_id")
+                    if claimer_id:
+                        mentions.append(f"<@{claimer_id}>")
+                
+                content_to_send = " ".join(list(dict.fromkeys(mentions)))
+                if not content_to_send:
+                    continue
                 try:
-                    await channel.send(
-                        content=f"<@{owner_id}>",
-                        embed=build_ticket_notice_embed("ticket", "Nhắc nhở đóng Ticket", f"Nếu vấn đề của bạn đã được giải quyết xong, xin hãy sử dụng lệnh `{prefix}tickclose` để đóng ticket này nhé! Cảm ơn bạn rất nhiều.")
-                    )
+                    embed = build_ticket_notice_embed("ticket", "Nhắc nhở đóng Ticket", f"Nếu vấn đề của bạn đã được giải quyết xong, xin hãy sử dụng lệnh `{prefix}tickclose` để đóng ticket này nhé! Cảm ơn bạn rất nhiều.")
+                    await channel.send(content=content_to_send, embed=embed)
                     count += 1
                     await asyncio.sleep(0.5)
                 except discord.HTTPException:
