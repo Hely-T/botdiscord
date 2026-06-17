@@ -613,7 +613,7 @@ class TicketCog(AdminCommandBase):
         if not safe_name:
             await adapter.send(content="❌ Tên ticket không hợp lệ.", ephemeral=True)
             return
-        final_name = f"ticket-{safe_name}"[:95]
+        final_name = safe_name[:100]
         await adapter.channel.edit(name=final_name, reason=f"Đổi bởi {adapter.user}")
         self.service.log_event(ticket["ticket_id"], adapter.guild.id, adapter.channel.id, "renamed", adapter.user.id, message=final_name)
         await adapter.send(content=f"✅ Đã đổi tên kênh thành `{final_name}`.")
