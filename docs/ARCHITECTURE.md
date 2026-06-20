@@ -280,11 +280,13 @@ Quy tắc:
 - QR/card/embed nằm trong `ui/user/payment_ui.py`.
 - Button xác nhận chuyển tiền dùng callback trong `cogs/user/payment_common.py`; reload số dư ngân hàng là luồng admin-only trong cog nạp/donate.
 - `naptien_cog.py` duy trì vòng quét giao dịch đang chờ mỗi 5 giây. Button chỉ yêu cầu kiểm tra ngay, không tự cộng tiền khi ngân hàng chưa ghi nhận giao dịch.
-- Giao dịch thành công phải cộng vào `UserService` để toàn server dùng chung cash.
-- Donate cộng thêm `total_donate` để profile/top sau này có thể đọc cùng nguồn.
+- `naptien` bank thành công cộng `cash` và `total_money` trong `UserService` để toàn server dùng chung ví.
+- `donate` bank không cộng cash; chỉ cộng `total_donate` và BXH donate của server.
+- `donate cash` trừ cash hiện có của user, sau đó cộng `total_donate` và BXH donate của server.
 - Bảng xếp hạng donate theo tháng nằm trong `bank_payments.db`; reset chỉ xóa dữ liệu bảng tháng, không trừ cash và không xóa tổng donate của user.
 - Kênh cảm ơn và kênh bảng xếp hạng donate là hai cấu hình độc lập. Nạp tiền không dùng bảng xếp hạng hoặc thông báo cảm ơn.
-- Ảnh nền được đặt riêng tại `ui/user/assets/naptien/` và `ui/user/assets/donate/`; không nhúng file ảnh vào cog.
+- Ảnh nền được đặt riêng tại `ui/user/assets/naptien/` và `ui/user/assets/donate/`; dùng tên `card.png` hoặc `background.png` (khuyến nghị 980x620), không nhúng file ảnh vào cog.
+- Admin cũng có thể thay nền runtime bằng `naptien config decor` / `donate config decor` với URL hoặc ảnh đính kèm.
 - Log nạp, donate, chuyển, cộng/trừ cash gửi về channel `log cash` qua `LogService`.
 - Nếu chưa set `log cash`, helper log tiền tự tìm kênh `log_cash`, `log-cash` hoặc `cash-log`.
 - Không tạo DB cash riêng cho bank và không cộng tiền bằng SQL trực tiếp trong cog.

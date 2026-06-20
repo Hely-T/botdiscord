@@ -129,9 +129,14 @@ async def finalize_paid_payment(
         return None
     if latest.get("status") == "paid":
         if interaction:
+            already_text = (
+                "Donation này đã được ghi nhận trước đó."
+                if latest.get("kind") == "donate"
+                else "Payment này đã được cộng cash trước đó."
+            )
             await send_interaction_notice(
                 interaction,
-                embed=create_success_splash("✅ Đã Thanh Toán", "Payment này đã được cộng cash trước đó."),
+                embed=create_success_splash("✅ Đã Thanh Toán", already_text),
             )
         return latest
 
@@ -140,15 +145,21 @@ async def finalize_paid_payment(
         current = bank.get_payment(int(latest["id"]))
         if current and current.get("status") == "paid":
             if interaction:
+                already_text = (
+                    "Donation này đã được ghi nhận trước đó."
+                    if current.get("kind") == "donate"
+                    else "Payment này đã được cộng cash trước đó."
+                )
                 await send_interaction_notice(
                     interaction,
-                    embed=create_success_splash("✅ Đã Thanh Toán", "Payment này đã được cộng cash trước đó."),
+                    embed=create_success_splash("✅ Đã Thanh Toán", already_text),
                 )
             return current
         if interaction:
+            failure_title = "❌ Không Thể Ghi Nhận Donate" if latest.get("kind") == "donate" else "❌ Không Thể Cộng Cash"
             await send_interaction_notice(
                 interaction,
-                embed=create_error_splash("❌ Không Thể Cộng Cash", "Payment này không còn ở trạng thái chờ."),
+                embed=create_error_splash(failure_title, "Payment này không còn ở trạng thái chờ."),
             )
         return current
 
@@ -156,16 +167,18 @@ async def finalize_paid_payment(
     user = await _resolve_payment_user(bot, guild, paid)
     username = getattr(user, "display_name", paid.get("username") or str(paid["user_id"]))
     users.get_or_create_user(int(paid["user_id"]), username)
-    users.add_cash(int(paid["user_id"]), int(paid["amount"]))
-    users.add_total_money(int(paid["user_id"]), int(paid["amount"]))
-    if paid.get("kind") == "donate":
+    is_donate = paid.get("kind") == "donate"
+    if is_donate:
         users.add_total_donate(int(paid["user_id"]), int(paid["amount"]))
         bank.add_donate_leaderboard(int(paid["guild_id"]), int(paid["user_id"]), username, int(paid["amount"]))
+    else:
+        users.add_cash(int(paid["user_id"]), int(paid["amount"]))
+        users.add_total_money(int(paid["user_id"]), int(paid["amount"]))
 
     await _edit_payment_message(bot, paid, user)
     await _send_payment_success_dm(paid, user, guild)
     await _send_donate_thanks(bot, bank, paid, user)
-    if paid.get("kind") == "donate":
+    if is_donate:
         await refresh_donate_leaderboard(bot, bank, guild)
 
     tx_id = bank._transaction_id(transaction or {}) if transaction else paid.get("bank_transaction_id")
@@ -183,14 +196,66 @@ async def finalize_paid_payment(
     )
 
     if interaction:
-        await send_interaction_notice(
-            interaction,
-            embed=create_success_splash(
+        if is_donate:
+            notice = create_success_splash(
+                "✅ Donate Thành Công",
+                f"Đã ghi nhận `{format_vnd(int(paid['amount']))} VNĐ` donate từ {user.mention if user else paid['username']}. Không cộng vào cash.",
+            )
+        else:
+            notice = create_success_splash(
                 "✅ Đã Cộng Cash",
                 f"Đã cộng `{format_vnd(int(paid['amount']))} VNĐ` vào cash của {user.mention if user else paid['username']}.",
-            ),
+            )
+        await send_interaction_notice(
+            interaction,
+            embed=notice,
         )
     return paid
+
+
+async def finalize_cash_donation(
+    bot: commands.Bot,
+    bank: BankPaymentService,
+    users: UserService,
+    guild: discord.Guild,
+    user: discord.Member,
+    amount: int,
+    donor_message: str = "",
+) -> dict:
+    username = user.display_name
+    profile = users.touch_user(user.id, username)
+    if int(profile.cash) < int(amount):
+        raise ValueError(
+            f"Bạn không đủ cash. Hiện có `{format_vnd(int(profile.cash))} VNĐ`, "
+            f"cần `{format_vnd(int(amount))} VNĐ`."
+        )
+
+    users.remove_cash(user.id, int(amount))
+    users.add_total_donate(user.id, int(amount))
+    bank.add_donate_leaderboard(guild.id, user.id, username, int(amount))
+    donation = {
+        "id": 0,
+        "guild_id": guild.id,
+        "user_id": user.id,
+        "username": username,
+        "kind": "donate_cash",
+        "amount": int(amount),
+        "code": "CASH",
+        "donor_message": str(donor_message or "")[:500],
+    }
+    await _send_donate_thanks(bot, bank, donation, user)
+    await refresh_donate_leaderboard(bot, bank, guild)
+    await send_cash_log(
+        guild,
+        title="💝 Donate Cash Thành Công",
+        actor=user,
+        target=user,
+        amount=int(amount),
+        action="donate cash",
+        code="CASH",
+        note=str(donor_message or "")[:500] or None,
+    )
+    return donation
 
 
 async def _send_payment_success_dm(payment: dict, user, guild: discord.Guild | None) -> None:
@@ -222,7 +287,7 @@ async def _edit_payment_message(bot: commands.Bot, payment: dict, user) -> None:
 
 
 async def _send_donate_thanks(bot: commands.Bot, bank: BankPaymentService, payment: dict, user) -> None:
-    if payment.get("kind") != "donate":
+    if payment.get("kind") not in {"donate", "donate_cash"}:
         return
     guild = bot.get_guild(int(payment["guild_id"]))
     if not guild:
@@ -238,6 +303,8 @@ async def _send_donate_thanks(bot: commands.Bot, bank: BankPaymentService, payme
     mention = user.mention if user else f"<@{int(payment['user_id'])}>"
     username = getattr(user, "display_name", payment.get("username") or str(payment["user_id"]))
     template = settings.get("donate_thank_template") or "Cảm ơn {user} đã donate {amount} VNĐ cho {server}!"
+    donor_message = str(payment.get("donor_message") or "").strip()
+    method = "Cash" if payment.get("kind") == "donate_cash" else "Bank/QR"
     try:
         text = template.format(
             user=mention,
@@ -245,12 +312,24 @@ async def _send_donate_thanks(bot: commands.Bot, bank: BankPaymentService, payme
             amount=format_vnd(int(payment["amount"])),
             server=guild.name,
             code=payment.get("code") or "",
+            message=donor_message,
+            method=method,
         )
     except KeyError:
         text = f"Cảm ơn {mention} đã donate {format_vnd(int(payment['amount']))} VNĐ cho {guild.name}!"
 
+    if donor_message and "{message}" not in template:
+        text += f"\n💬 **Lời nhắn:** {donor_message}"
+
     try:
-        await channel.send(text)
+        await channel.send(
+            text,
+            allowed_mentions=discord.AllowedMentions(
+                users=[user] if user else False,
+                roles=False,
+                everyone=False,
+            ),
+        )
     except (discord.Forbidden, discord.HTTPException):
         pass
 

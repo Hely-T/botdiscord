@@ -144,6 +144,7 @@ class BankPaymentService:
             qr_url TEXT,
             bank_transaction_id TEXT,
             bank_description TEXT,
+            donor_message TEXT,
             created_at TEXT,
             updated_at TEXT,
             paid_at TEXT
@@ -190,6 +191,7 @@ class BankPaymentService:
         self._ensure_column("bank_payments", "qr_url", "TEXT")
         self._ensure_column("bank_payments", "bank_transaction_id", "TEXT")
         self._ensure_column("bank_payments", "bank_description", "TEXT")
+        self._ensure_column("bank_payments", "donor_message", "TEXT")
         self._ensure_column("bank_payments", "paid_at", "TEXT")
 
     def ensure_settings(self, guild_id: int) -> dict:
@@ -386,7 +388,15 @@ class BankPaymentService:
             f"?amount={int(amount)}&addInfo={add_info}&accountName={account_name}"
         )
 
-    def create_payment(self, guild_id: int, user_id: int, username: str, kind: str, amount: int) -> dict:
+    def create_payment(
+        self,
+        guild_id: int,
+        user_id: int,
+        username: str,
+        kind: str,
+        amount: int,
+        donor_message: str = "",
+    ) -> dict:
         if amount <= 0:
             raise ValueError("Số tiền phải lớn hơn 0 VNĐ")
         settings = self.get_settings(guild_id) or {}
@@ -397,10 +407,21 @@ class BankPaymentService:
         cursor.execute(
             """
             INSERT INTO bank_payments
-                (guild_id, user_id, username, kind, amount, code, status, qr_url, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?)
+                (guild_id, user_id, username, kind, amount, code, status, qr_url, donor_message, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?)
             """,
-            (guild_id, user_id, username, kind, int(amount), code, qr_url, now, now),
+            (
+                guild_id,
+                user_id,
+                username,
+                kind,
+                int(amount),
+                code,
+                qr_url,
+                str(donor_message or "")[:500],
+                now,
+                now,
+            ),
         )
         self.db.conn.commit()
         return self.get_payment(int(cursor.lastrowid))

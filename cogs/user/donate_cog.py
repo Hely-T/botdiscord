@@ -10,6 +10,7 @@ from cogs.admin_command_utils import create_error_splash, create_success_splash,
 from cogs.user.payment_common import (
     DonateLeaderboardView,
     PaymentReloadView,
+    finalize_cash_donation,
     finalize_paid_payment,
     refresh_donate_leaderboard,
 )
@@ -22,6 +23,7 @@ from ui.user.payment_ui import (
     build_payment_embed,
     render_payment_card,
 )
+from ui.user.donate_ui import DonateFormLauncherView, DonateModal, DonateModeView
 
 
 CHECK_WORDS = {"check", "kiemtra", "kiểmtra", "kt", "xacnhan", "xácnhận"}
@@ -29,6 +31,8 @@ BALANCE_WORDS = {"reload", "sodu", "sốdư", "số-dư", "balance", "bank", "ba
 CONFIG_WORDS = {"config", "cfg", "setup", "cauhinh", "cấuhình", "cấu-hình"}
 TOP_WORDS = {"top", "bxh", "rank", "leaderboard", "bangxephang", "bảngxếphạng"}
 RESET_WORDS = {"reset", "rs", "clear", "monthlyreset", "resetmonth", "resetthang", "resettháng"}
+BANK_WORDS = {"bank", "banking", "qr", "ck", "chuyenkhoan", "chuyểnkhoản"}
+CASH_WORDS = {"cash", "c"}
 
 
 class DonateCog(UserCommandBase):
@@ -57,29 +61,37 @@ class DonateCog(UserCommandBase):
         except asyncio.CancelledError:
             return
 
-    async def _send_payment(self, target, amount_text: str):
+    async def _send_payment(self, target, amount_text: str, donor_message: str = ""):
         guild = target.guild
         if guild is None:
-            await target.send(embed=create_error_splash("❌ Chỉ Dùng Trong Server", "Lệnh donate chỉ hoạt động trong server."))
+            await self._send_target_embed(target, create_error_splash("❌ Chỉ Dùng Trong Server", "Lệnh donate chỉ hoạt động trong server."))
             return None
         if not self.bank.is_configured(guild.id):
-            await target.send(
-                embed=create_error_splash(
+            await self._send_target_embed(
+                target,
+                create_error_splash(
                     "❌ Chưa Cấu Hình ACB",
                     "Bot admin cần dùng `donate config username|password|account|name ...` trước.",
-                )
+                ),
             )
             return None
 
         try:
             amount = parse_vnd_amount(amount_text)
         except ValueError as exc:
-            await target.send(embed=create_error_splash("❌ Số Tiền Không Hợp Lệ", str(exc)))
+            await self._send_target_embed(target, create_error_splash("❌ Số Tiền Không Hợp Lệ", str(exc)))
             return None
 
         settings = self.bank.get_settings(guild.id) or {}
         user = target.author if isinstance(target, commands.Context) else target.user
-        payment = self.bank.create_payment(guild.id, user.id, user.display_name, "donate", amount)
+        payment = self.bank.create_payment(
+            guild.id,
+            user.id,
+            user.display_name,
+            "donate",
+            amount,
+            donor_message=donor_message,
+        )
         card = await asyncio.to_thread(render_payment_card, payment, settings, "donate")
         embed = build_payment_embed(payment, settings, "donate", card is not None)
         view = PaymentReloadView(self, int(payment["id"]), user.id)
@@ -94,6 +106,74 @@ class DonateCog(UserCommandBase):
             )
         self.bank.mark_message(int(payment["id"]), message.channel.id, message.id)
         return payment
+
+    async def _send_target_embed(self, target, embed: discord.Embed, *, view: discord.ui.View | None = None):
+        if isinstance(target, commands.Context):
+            return await target.send(embed=embed, view=view)
+        if target.response.is_done():
+            return await target.followup.send(embed=embed, view=view, wait=True)
+        await target.response.send_message(embed=embed, view=view)
+        return await target.original_response()
+
+    async def process_donation(self, target, mode: str, amount_text: str, donor_message: str = ""):
+        guild = target.guild
+        if guild is None:
+            await self._send_target_embed(
+                target,
+                create_error_splash("❌ Chỉ Dùng Trong Server", "Lệnh donate chỉ hoạt động trong server."),
+            )
+            return None
+
+        mode = "cash" if str(mode).lower() == "cash" else "bank"
+        donor_message = str(donor_message or "").strip()[:500]
+        if mode == "bank":
+            return await self._send_payment(target, amount_text, donor_message)
+
+        try:
+            amount = parse_vnd_amount(amount_text)
+        except ValueError as exc:
+            await self._send_target_embed(target, create_error_splash("❌ Số Tiền Không Hợp Lệ", str(exc)))
+            return None
+
+        user = target.author if isinstance(target, commands.Context) else target.user
+        if not isinstance(user, discord.Member):
+            user = guild.get_member(user.id)
+        if not user:
+            await self._send_target_embed(target, create_error_splash("❌ Không Tìm Thấy User", "Không lấy được member để trừ cash."))
+            return None
+
+        try:
+            donation = await finalize_cash_donation(
+                self.bot,
+                self.bank,
+                self.service,
+                guild,
+                user,
+                amount,
+                donor_message,
+            )
+        except ValueError as exc:
+            await self._send_target_embed(target, create_error_splash("❌ Donate Cash Thất Bại", str(exc)))
+            return None
+
+        detail = f"Đã trừ `{format_vnd(amount)} VNĐ` cash và ghi nhận donate cho **{guild.name}**."
+        if donor_message:
+            detail += f"\nLời nhắn: {donor_message}"
+        await self._send_target_embed(target, create_success_splash("✅ Donate Cash Thành Công", detail))
+        return donation
+
+    async def _show_donate_form(self, ctx: commands.Context, mode: str | None = None):
+        if mode:
+            label = "Cash" if mode == "cash" else "Bank / QR"
+            await ctx.send(
+                embed=create_success_splash("💝 Biểu Mẫu Donate", f"Bấm nút bên dưới để nhập số tiền và lời nhắn bằng **{label}**."),
+                view=DonateFormLauncherView(self, ctx.author.id, mode),
+            )
+            return
+        await ctx.send(
+            embed=create_success_splash("💝 Chọn Hình Thức Donate", "Chọn **Bank / QR** hoặc **Cash**, sau đó nhập số tiền và lời nhắn."),
+            view=DonateModeView(self, ctx.author.id),
+        )
 
     async def _resolve_payment_for_check(self, guild_id: int, user_id: int, raw: str | None) -> dict | None:
         if raw:
@@ -134,7 +214,7 @@ class DonateCog(UserCommandBase):
                 transaction=result.get("transaction"),
             )
             if paid:
-                await target.send(embed=create_success_splash("✅ Đã Cộng Cash", "Donate đã được xác nhận và cộng vào cash."))
+                await target.send(embed=create_success_splash("✅ Donate Thành Công", "Donation đã được xác nhận và ghi nhận cho server. Khoản này không cộng vào cash."))
             return
         detail = result.get("error") or "Chưa thấy giao dịch khớp số tiền và nội dung chuyển khoản."
         await target.send(embed=create_error_splash("❌ Chưa Nhận Được Tiền", detail))
@@ -254,7 +334,7 @@ class DonateCog(UserCommandBase):
         if key in {"channel", "thankchannel", "thankschannel", "kenh", "kênh"}:
             if not value or value.lower() in {"off", "none", "xoa", "xoá"}:
                 self.bank.set_donate_channel(ctx.guild.id, None)
-                await ctx.send(embed=create_success_splash("✅ Đã Tắt Kênh Cảm Ơn", "Donate vẫn cộng cash nhưng không gửi lời cảm ơn ra kênh."))
+                await ctx.send(embed=create_success_splash("✅ Đã Tắt Kênh Cảm Ơn", "Donate vẫn được ghi nhận nhưng không gửi lời cảm ơn ra kênh."))
                 return
             try:
                 channel = await commands.TextChannelConverter().convert(ctx, value)
@@ -268,7 +348,7 @@ class DonateCog(UserCommandBase):
         if key in {"leaderboard", "top", "rank", "bxh", "leaderboardchannel", "topchannel", "rankchannel"}:
             if not value or value.lower() in {"off", "none", "xoa", "xoá"}:
                 self.bank.set_donate_leaderboard_channel(ctx.guild.id, None)
-                await ctx.send(embed=create_success_splash("✅ Đã Tắt BXH Donate", "Donate vẫn cộng cash nhưng không cập nhật bảng xếp hạng."))
+                await ctx.send(embed=create_success_splash("✅ Đã Tắt BXH Donate", "Donate vẫn được ghi nhận nhưng không cập nhật bảng xếp hạng."))
                 return
             try:
                 channel = await commands.TextChannelConverter().convert(ctx, value)
@@ -285,7 +365,7 @@ class DonateCog(UserCommandBase):
                 await ctx.send(
                     embed=create_error_splash(
                         "❌ Thiếu Nội Dung",
-                        "Dùng: `donate config thanks Cảm ơn {user} đã donate {amount} VNĐ!`.",
+                        "Dùng: `donate config thanks Cảm ơn {user} đã donate {amount} VNĐ! {message}`.",
                     )
                 )
                 return
@@ -295,6 +375,8 @@ class DonateCog(UserCommandBase):
 
         if key == "decor":
             key = "donate_decor"
+            if not value and ctx.message.attachments:
+                value = ctx.message.attachments[0].url
         if key == "auto":
             value = value or "on"
         if not value:
@@ -314,7 +396,7 @@ class DonateCog(UserCommandBase):
             await ctx.send(embed=create_error_splash("❌ Chỉ Dùng Trong Server", "Lệnh donate chỉ hoạt động trong server."))
             return
         if not args:
-            await ctx.send(embed=create_error_splash("❌ Thiếu Số Tiền", "Dùng: `donate 100k`, `donate check` hoặc `donate reload`."))
+            await self._show_donate_form(ctx)
             return
 
         first = args[0].lower()
@@ -333,16 +415,58 @@ class DonateCog(UserCommandBase):
         if first in CHECK_WORDS:
             await self._check_payment(ctx, args[1] if len(args) > 1 else None)
             return
-        await self._send_payment(ctx, " ".join(args))
+        if first in BANK_WORDS | CASH_WORDS:
+            mode = "cash" if first in CASH_WORDS else "bank"
+            if len(args) == 1:
+                await self._show_donate_form(ctx, mode)
+                return
+            amount_text = args[1]
+            donor_message = " ".join(args[2:])
+        else:
+            amount_text = args[0]
+            if len(args) > 1 and args[1].lower() in CASH_WORDS:
+                mode = "cash"
+                donor_message = " ".join(args[2:])
+            else:
+                mode = "bank"
+                donor_message = " ".join(args[1:])
+        await self.process_donation(ctx, mode, amount_text, donor_message)
 
     @app_commands.command(name="donate", description="Tạo QR donate")
-    @app_commands.describe(amount="Số tiền donate, ví dụ 100k hoặc 100,000")
-    async def slash_donate(self, interaction: discord.Interaction, amount: str):
+    @app_commands.describe(
+        amount="Số tiền donate, ví dụ 100k hoặc 100,000",
+        method="Hình thức donate",
+        message="Lời nhắn gửi tới server",
+    )
+    @app_commands.choices(
+        method=[
+            app_commands.Choice(name="Bank / QR", value="bank"),
+            app_commands.Choice(name="Cash", value="cash"),
+        ]
+    )
+    async def slash_donate(
+        self,
+        interaction: discord.Interaction,
+        amount: str | None = None,
+        method: app_commands.Choice[str] | None = None,
+        message: str | None = None,
+    ):
         if interaction.guild is None:
             await interaction.response.send_message("❌ Chỉ dùng trong server.", ephemeral=True)
             return
+        selected_mode = method.value if method else "bank"
+        if not amount:
+            if method:
+                await interaction.response.send_modal(DonateModal(self, selected_mode))
+            else:
+                await interaction.response.send_message(
+                    embed=create_success_splash("💝 Chọn Hình Thức Donate", "Chọn **Bank / QR** hoặc **Cash** để mở biểu mẫu."),
+                    view=DonateModeView(self, interaction.user.id),
+                    ephemeral=True,
+                )
+            return
         await interaction.response.defer(thinking=True)
-        await self._send_payment(interaction, amount)
+        await self.process_donation(interaction, selected_mode, amount, message or "")
 
 
 async def setup(bot):

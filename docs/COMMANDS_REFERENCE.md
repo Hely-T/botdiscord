@@ -122,11 +122,19 @@ Trong docs dùng `{prefix}` để đại diện cho prefix hiện tại.
 - `{prefix}naptien config username|password|account|name|bank|decor|auto <value>`
   - Cài thông tin ACB/VietQR trực tiếp trong Discord.
   - Quyền: hard admin, cash-admin hoặc role có quyền `cash`.
+  - Gửi kèm ảnh và dùng `{prefix}naptien config decor` để thay nền card; dùng `decor off` để về mặc định.
 - `/naptien amount:<money>`
   - Slash command tạo QR nạp cash.
-- `{prefix}donate|dnt <money>`
-  - Tạo QR donate theo số tiền, cộng cash và cộng tổng donate khi giao dịch thành công.
-  - Ví dụ: `{prefix}donate 50k`.
+- `{prefix}donate|dnt`
+  - Không nhập tham số: mở menu Bank/QR hoặc Cash và biểu mẫu nhập số tiền + lời nhắn.
+- `{prefix}dnt bank|qr <money> [nội dung]`
+  - Tạo QR donate cho server. Khi giao dịch khớp chỉ ghi nhận tổng donate/BXH, không cộng cash.
+  - Ví dụ: `{prefix}dnt qr 50k Chúc server phát triển`.
+- `{prefix}dnt cash <money> [nội dung]`
+  - Trừ cash của người dùng, ghi nhận tổng donate/BXH và gửi thông báo vào channel đã setup.
+  - Ví dụ: `{prefix}dnt cash 50k Cảm ơn mọi người`.
+- `{prefix}dnt <money> [cash] [nội dung]`
+  - Không ghi hình thức: mặc định tạo QR bank. Có thể dùng `{prefix}dnt 50k cash lời nhắn` để donate cash.
 - `{prefix}donate check [id|code]`
   - Kiểm tra lại giao dịch donate đang chờ.
   - User tự check QR của mình; check QR người khác cần quyền `cash`.
@@ -139,16 +147,17 @@ Trong docs dùng `{prefix}` để đại diện cho prefix hiện tại.
   - Set kênh bảng xếp hạng donate tháng, tối đa 50 người và 10 người mỗi trang.
 - `{prefix}donate config thanks <template>`
   - Set nội dung cảm ơn donate.
-  - Placeholder: `{user}`, `{amount}`, `{code}`.
+  - Placeholder: `{user}`, `{username}`, `{amount}`, `{code}`, `{message}`, `{method}`, `{server}`.
 - `{prefix}donate config decor <url|off>`
   - Set ảnh decorate card QR donate.
+  - Có thể gửi kèm ảnh rồi dùng `{prefix}donate config decor`; dùng `off` để về mặc định.
 - `{prefix}donate top`
   - Xem bảng xếp hạng donate tháng hiện tại.
 - `{prefix}donate reset`
   - Quyền `cash`: gửi bảng hiện tại vào DM admin rồi reset bảng tháng về trống.
   - Không trừ cash và không xóa tổng donate tích lũy của user.
-- `/donate amount:<money>`
-  - Slash command tạo QR donate.
+- `/donate [amount] [method] [message]`
+  - Chọn Bank/QR hoặc Cash; bỏ trống amount để mở biểu mẫu.
 - `{prefix}topusers [limit]`
   - Xem top user theo points.
 

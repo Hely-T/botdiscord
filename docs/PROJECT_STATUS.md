@@ -65,7 +65,8 @@ Nên test thêm:
 - `{prefix}give @user 10k` chuyển được nếu đủ cash.
 - `{prefix}naptien 10k` tạo QR, bấm **Tôi đã chuyển tiền** hoặc `{prefix}naptien check`.
 - `{prefix}naptien reload` cần quyền cash để xem số dư tài khoản ngân hàng ACB; user thường vẫn tự nạp và auto cộng cash.
-- `{prefix}donate 10k` tạo QR donate, gửi cảm ơn nếu đã set channel.
+- `{prefix}dnt bank 10k [lời nhắn]` tạo QR donate nhưng không cộng cash; `{prefix}dnt cash 10k [lời nhắn]` trừ cash và ghi nhận donate.
+- `{prefix}dnt` mở menu + biểu mẫu chọn Bank/QR hoặc Cash.
 - `{prefix}donate config leaderboard #top-donate` set bảng xếp hạng và `{prefix}donate reset` reset bảng tháng bằng quyền cash.
 - `{prefix}disable ga` khóa giveaway tại channel hiện tại; `{prefix}enable ga` bật lại.
 - `{prefix}log cash #log-cash` nhận log tiền, nạp, donate và give. Nếu chưa set, bot tự tìm kênh `log_cash`, `log-cash` hoặc `cash-log`.

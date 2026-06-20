@@ -44,7 +44,7 @@ HELP_CATEGORIES = [
             {"name": "cash", "description": "Xem số dư hoặc quản trị cash", "usage": "[@user|all] | a|r|e @user amount", "aliases": []},
             {"name": "avatar", "description": "Xem avatar user bằng mention, ID hoặc chính bạn", "usage": "[@user|id]", "aliases": ["av", "ava", "avata"]},
             {"name": "banner", "description": "Xem banner/bìa user hoặc bìa server", "usage": "[@user|id]", "aliases": ["bn", "bia", "bìa"]},
-            {"name": "donate", "description": "Tạo QR donate, kiểm tra giao dịch và bảng xếp hạng", "usage": "<amount> | check [id|code] | top | reset | config ...", "aliases": ["dn", "dnt"]},
+            {"name": "donate", "description": "Donate cho server bằng QR/bank hoặc cash", "usage": "[bank|qr|cash] [amount] [nội dung] | check | top | config ...", "aliases": ["dn", "dnt"]},
             {"name": "give", "description": "Chuyển cash cho user khác", "usage": "@user amount hoặc amount @user", "aliases": []},
             {"name": "math", "description": "Tính toán nhanh với số có dấu phẩy hoặc dấu chấm", "usage": "<biểu thức>", "aliases": ["calc", "tinh", "tính"]},
             {"name": "naptien", "description": "Tạo QR nạp cash, kiểm tra giao dịch và admin xem số dư ACB", "usage": "<amount> | check [id|code] | reload|sodu|balance | config ...", "aliases": ["nap"]},
@@ -473,6 +473,18 @@ class HelpView:
                     "`cash a/add @user <money>` - cộng cash\n"
                     "`cash r/rm/remove/d/delete @user <money>` - trừ cash\n"
                     "`cash e/edit @user <money>` - set cash về số mới"
+                ),
+                inline=False,
+            )
+        if command["name"] == "donate":
+            embed.add_field(
+                name="Cách dùng",
+                value=(
+                    "`dnt` - mở menu chọn Bank/QR hoặc Cash và biểu mẫu nhập tiền\n"
+                    "`dnt bank 100k lời nhắn` hoặc `dnt qr 100k lời nhắn` - tạo QR; không cộng cash khi thanh toán\n"
+                    "`dnt cash 100k lời nhắn` - trừ cash và ghi nhận donate\n"
+                    "`dnt 100k` - mặc định tạo QR bank\n"
+                    "`dnt 100k cash lời nhắn` - cú pháp cash dạng đảo vị trí"
                 ),
                 inline=False,
             )

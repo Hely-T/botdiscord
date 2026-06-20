@@ -184,6 +184,10 @@ class NapTienCog(UserCommandBase):
 
         key = args[0].lower()
         value = " ".join(args[1:]).strip()
+        if key == "decor":
+            key = "deposit_decor"
+            if not value and ctx.message.attachments:
+                value = ctx.message.attachments[0].url
         if key == "auto":
             value = value or "on"
         if not value:
