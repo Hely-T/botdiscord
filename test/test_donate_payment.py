@@ -155,6 +155,33 @@ class PaymentCardTest(unittest.TestCase):
         self.assertEqual(rendered.size, CARD_SIZE)
         self.assertEqual(CARD_SIZE, (980, 620))
 
+    def test_card_preserves_full_tall_qr_image(self):
+        payment = {
+            "id": 2,
+            "amount": 100_000,
+            "code": "BL123456789012345678901234567890",
+            "qr_url": "https://example.com/qr.png",
+        }
+        settings = {
+            "bank_code": "ACB",
+            "account_number": "50126497",
+            "account_name": "PHAN THANH LOI",
+        }
+        qr = Image.new("RGBA", (200, 400), "red")
+        qr.paste("blue", (0, 200, 200, 400))
+
+        with (
+            patch("ui.user.payment_ui._fetch_image", side_effect=[None, qr]),
+            patch("ui.user.payment_ui._local_decor", return_value=None),
+        ):
+            card = render_payment_card(payment, settings, "naptien")
+
+        rendered = Image.open(card.fp).convert("RGB")
+        top = rendered.getpixel((288, 170))
+        bottom = rendered.getpixel((288, 490))
+        self.assertGreater(top[0], top[2], "Phần trên của QR/VietQR đã bị crop")
+        self.assertGreater(bottom[2], bottom[0], "Phần dưới của QR đã bị crop")
+
     def test_donate_embeds_explain_no_cash_credit(self):
         payment = {
             "id": 1,

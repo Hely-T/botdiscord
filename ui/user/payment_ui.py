@@ -114,14 +114,18 @@ def render_payment_card(payment: dict, settings: dict, kind: str) -> discord.Fil
     panel = (64, 62, 558, 545)
     _rounded_rect(draw, panel, 32, (255, 255, 255, 224), accent, 4)
 
-    qr = ImageOps.fit(qr, (330, 330), method=Image.Resampling.LANCZOS)
     qr_box = (104, 145, 474, 515)
     _rounded_rect(draw, qr_box, 30, white, accent, 5)
-    canvas.alpha_composite(qr, (124, 165))
+    qr = ImageOps.contain(qr, (330, 330), method=Image.Resampling.LANCZOS)
+    qr_x = 124 + ((330 - qr.width) // 2)
+    qr_y = 165 + ((330 - qr.height) // 2)
+    canvas.alpha_composite(qr, (qr_x, qr_y))
 
     draw.text((92, 72), "scan here", font=_font(50, True), fill=accent)
-    draw.text((625, 62), title, font=_font(52, True), fill=white if background else dark)
-    draw.text((625, 120), subtitle, font=_font(26, True), fill=white if background else dark)
+    info_x = 590
+    info_right = 950
+    draw.text((info_x, 62), title, font=_font(52, True), fill=white if background else dark)
+    draw.text((info_x, 120), subtitle, font=_font(26, True), fill=white if background else dark)
 
     amount_text = f"{format_vnd(int(payment['amount']))} VNĐ"
     code = payment["code"]
@@ -137,11 +141,11 @@ def render_payment_card(payment: dict, settings: dict, kind: str) -> discord.Fil
         ("STK", account),
         ("Tên tài khoản", account_name),
     ]:
-        draw.text((625, info_y), label, font=_font(21, True), fill=white if background else (75, 70, 86, 255))
-        _rounded_rect(draw, (625, info_y + 25, 930, info_y + 61), 12, (255, 255, 255, 224), accent, 2)
+        draw.text((info_x, info_y), label, font=_font(21, True), fill=white if background else (75, 70, 86, 255))
+        _rounded_rect(draw, (info_x, info_y + 25, info_right, info_y + 61), 12, (255, 255, 255, 224), accent, 2)
         value_text = str(value)
-        value_font = _fit_font(value_text, 272, start_size=22, min_size=14)
-        draw.text((642, info_y + 29), value_text, font=value_font, fill=dark)
+        value_font = _fit_font(value_text, info_right - info_x - 34, start_size=22, min_size=10)
+        draw.text((info_x + 17, info_y + 29), value_text, font=value_font, fill=dark)
         info_y += 72
 
     draw.text((98, 552), "Bleck Lous • Bank QR", font=_font(20, True), fill=accent)

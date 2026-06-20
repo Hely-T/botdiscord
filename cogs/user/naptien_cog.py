@@ -1,10 +1,20 @@
 from __future__ import annotations
 
 import asyncio
+import importlib
 
 import discord
 from discord import app_commands
 from discord.ext import commands
+
+import cogs.user.payment_common as payment_common_module
+import services.bank_service as bank_service_module
+import ui.user.payment_ui as payment_ui_module
+
+# Keep bank/payment dependencies fresh when this extension is hot-reloaded.
+importlib.reload(bank_service_module)
+importlib.reload(payment_ui_module)
+importlib.reload(payment_common_module)
 
 from cogs.admin_command_utils import create_error_splash, create_success_splash, parse_vnd_amount
 from cogs.user.payment_common import PaymentReloadView, finalize_paid_payment
