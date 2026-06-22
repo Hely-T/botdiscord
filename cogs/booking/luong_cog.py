@@ -103,17 +103,18 @@ class BookingLuongCog(BookingCommandBase):
             return
 
         try:
+            service = self.service_for(ctx)
             amount = parse_vnd_amount_or_zero(raw_amount) if action == "edit" else parse_vnd_amount(raw_amount)
             if action == "add":
-                self.service.add_admin_salary(member.id, member.display_name, amount)
+                service.add_admin_salary(member.id, member.display_name, amount)
                 title = "✅ Cộng Lương Thành Công"
                 detail = f"Đã cộng `{format_vnd(amount)} VNĐ` lương cho {member.mention}."
             elif action == "remove":
-                self.service.deduct_admin_salary(member.id, member.display_name, amount)
+                service.deduct_admin_salary(member.id, member.display_name, amount)
                 title = "✅ Trừ Lương Thành Công"
                 detail = f"Đã trừ `{format_vnd(amount)} VNĐ` lương của {member.mention}."
             else:
-                self.service.set_admin_salary_current(member.id, member.display_name, amount)
+                service.set_admin_salary_current(member.id, member.display_name, amount)
                 title = "✅ Sửa Lương Thành Công"
                 detail = f"Đã set lương của {member.mention} thành `{format_vnd(amount)} VNĐ`."
         except Exception as exc:
@@ -145,20 +146,20 @@ class BookingLuongCog(BookingCommandBase):
             "user": user,
             "payments": payments,
             "paid_amount": sum(int(payment["paid_amount"]) for payment in payments),
-            "hour_details": self.service.get_booking_hour_details(user_id),
+            "hour_details": self.service_for(ctx).get_booking_hour_details(user_id),
         }
 
-    def _salary_row(self, booking: dict) -> dict:
+    def _salary_row(self, ctx, booking: dict) -> dict:
         row = dict(booking)
-        row["admin_salary_amount"] = self.service.get_admin_salary_amount(int(row["user_id"]))
+        row["admin_salary_amount"] = self.service_for(ctx).get_admin_salary_amount(int(row["user_id"]))
         return row
 
-    def _salary_rows(self) -> list:
-        return [self._salary_row(row) for row in self.service.get_all_bookings()]
+    def _salary_rows(self, ctx) -> list:
+        return [self._salary_row(ctx, row) for row in self.service_for(ctx).get_all_bookings()]
 
     async def _pay_salary_for_booking_user(self, ctx, user_id: int, username: str) -> dict | None:
         try:
-            payment = self.service.pay_booking_salary(user_id)
+            payment = self.service_for(ctx).pay_booking_salary(user_id)
         except Exception:
             return None
         payment["source"] = "booking"
@@ -212,7 +213,7 @@ class BookingLuongCog(BookingCommandBase):
             await ctx.send(embed=create_error_splash("❌ Quyền Bị Từ Chối", "Chỉ bot admin hoặc role có quyền `traluong`/`luong` trong DB mới trả lương tất cả."))
             return
 
-        booking_rows = self.service.get_payable_bookings()
+        booking_rows = self.service_for(ctx).get_payable_bookings()
         user_ids = {}
         for row in booking_rows:
             user_ids[int(row["user_id"])] = row["username"]
@@ -282,8 +283,9 @@ class BookingLuongCog(BookingCommandBase):
         try:
             content = (content or "").strip()
             if not content:
-                booking = self._salary_row(self.service.get_or_create_booking(ctx.author.id, ctx.author.display_name))
-                hour_details = self.service.get_booking_hour_details(ctx.author.id)
+                service = self.service_for(ctx)
+                booking = self._salary_row(ctx, service.get_or_create_booking(ctx.author.id, ctx.author.display_name))
+                hour_details = service.get_booking_hour_details(ctx.author.id)
                 await ctx.send(embed=self.build_tinhluong_dm_embed(ctx.author, booking, hour_details))
                 return
 
@@ -304,7 +306,7 @@ class BookingLuongCog(BookingCommandBase):
                 if not self.can_use_role_or_admin(ctx, "luong") and not self.can_use_role_or_admin(ctx, "tinhluong"):
                     await ctx.send(embed=create_error_splash("❌ Quyền Bị Từ Chối", "Chỉ admin bot hoặc role có quyền `luong` trong DB mới xem được tất cả."))
                     return
-                rows = self._salary_rows()
+                rows = self._salary_rows(ctx)
                 await ctx.send(embed=self.build_tinhluong_all_embed(rows))
                 return
 
@@ -313,8 +315,9 @@ class BookingLuongCog(BookingCommandBase):
                 if member.id != ctx.author.id and not (self.can_use_role_or_admin(ctx, "luong") or self.can_use_role_or_admin(ctx, "tinhluong")):
                     await ctx.send(embed=create_error_splash("❌ Quyền Bị Từ Chối", "Chỉ admin bot hoặc role có quyền `luong` trong DB mới xem lương người khác."))
                     return
-                booking = self._salary_row(self.service.get_or_create_booking(member.id, member.display_name))
-                hour_details = self.service.get_booking_hour_details(member.id)
+                service = self.service_for(ctx)
+                booking = self._salary_row(ctx, service.get_or_create_booking(member.id, member.display_name))
+                hour_details = service.get_booking_hour_details(member.id)
                 await ctx.send(embed=self.build_tinhluong_dm_embed(member, booking, hour_details))
                 return
 
@@ -338,7 +341,7 @@ class BookingLuongCog(BookingCommandBase):
                 if not self.can_use_role_or_admin(ctx, "tinhluong"):
                     await ctx.send(embed=create_error_splash("❌ Quyền Bị Từ Chối", "Chỉ admin bot hoặc role có quyền `tinhluong` trong DB mới xem được tất cả."))
                     return
-                rows = self._salary_rows()
+                rows = self._salary_rows(ctx)
                 await self._send_private_salary(ctx, self.build_tinhluong_all_embed(rows))
                 return
 
@@ -354,8 +357,9 @@ class BookingLuongCog(BookingCommandBase):
                 await ctx.send(embed=create_error_splash("❌ Quyền Bị Từ Chối", "Chỉ admin bot hoặc role có quyền `tinhluong` trong DB mới xem booking của người khác."))
                 return
 
-            booking = self._salary_row(self.service.get_or_create_booking(member.id, member.display_name))
-            hour_details = self.service.get_booking_hour_details(member.id)
+            service = self.service_for(ctx)
+            booking = self._salary_row(ctx, service.get_or_create_booking(member.id, member.display_name))
+            hour_details = service.get_booking_hour_details(member.id)
             await self._send_private_salary(ctx, self.build_tinhluong_dm_embed(member, booking, hour_details))
         except Exception as e:
             await ctx.send(f"{ERROR_MESSAGE} {str(e)}")

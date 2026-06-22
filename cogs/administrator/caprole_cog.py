@@ -59,7 +59,7 @@ class AdministratorCapRoleCog(AdminCommandBase):
     def _sync_booking_member_if_needed(self, ctx, member: discord.Member, role: discord.Role) -> str:
         if member.bot or not self._is_booking_system_role(ctx, role):
             return ""
-        BookingService().get_or_create_booking(member.id, member.display_name)
+        BookingService(ctx.guild.id).get_or_create_booking(member.id, member.display_name)
         return "\nĐã sync user vào `booking.db` vì role này là role `booking`."
 
     @commands.command(name="role")

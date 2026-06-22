@@ -210,7 +210,7 @@ class UserUtilityCog(commands.Cog):
         if message.guild is None or message.author.bot:
             return
 
-        prefix = get_prefix()
+        prefix = get_prefix(message.guild.id)
         content = message.content.strip()
         invoked = ""
         if match_case_insensitive_prefix(content, prefix):

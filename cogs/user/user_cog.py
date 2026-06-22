@@ -191,7 +191,7 @@ class UserCog(UserCommandBase):
         if not self._can_manage_stat(ctx, command_name):
             await ctx.send(embed=create_error_splash("❌ Quyền Bị Từ Chối", f"Chỉ bot admin hoặc role có quyền `{command_name}` trong DB mới xem được tất cả."))
             return
-        rows = self.service.get_users_by_stat(field_name, 25)
+        rows = self.service.get_users_by_stat(field_name, 25, ctx.guild.id if ctx.guild else None)
         if not rows:
             await ctx.send(embed=create_error_splash("❌ Chưa Có Dữ Liệu", "Chưa có user nào trong database."))
             return
@@ -208,23 +208,23 @@ class UserCog(UserCommandBase):
         try:
             amount = self._parse_int_amount(raw_amount, allow_zero=action == "edit", label="Points")
             if action in {"add", "edit"}:
-                self.service.get_or_create_user(member.id, member.display_name)
+                self.service.get_or_create_user(member.id, member.display_name, ctx.guild.id)
             if action == "add":
-                self.service.add_points(member.id, amount)
+                self.service.add_points(member.id, amount, ctx.guild.id)
                 title = "✅ Cộng Points Thành Công"
                 detail = f"Đã cộng `{amount:,}` points cho {member.mention}."
             elif action == "remove":
-                self.service.remove_points(member.id, amount)
+                self.service.remove_points(member.id, amount, ctx.guild.id)
                 title = "✅ Trừ Points Thành Công"
                 detail = f"Đã trừ `{amount:,}` points của {member.mention}."
             else:
-                self.service.set_points(member.id, amount)
+                self.service.set_points(member.id, amount, ctx.guild.id)
                 title = "✅ Sửa Points Thành Công"
                 detail = f"Đã set points của {member.mention} thành `{amount:,}`."
         except Exception as exc:
             await ctx.send(embed=create_error_splash("❌ Cập Nhật Thất Bại", str(exc)))
             return
-        current_points = self.service.get_user(member.id).points
+        current_points = self.service.get_user(member.id, ctx.guild.id).points
         await ctx.send(embed=create_success_splash(title, f"{detail}\nPoints hiện tại: `{int(current_points):,}`"))
 
     async def _apply_time_action(self, ctx, action: str, member: discord.Member, raw_amount: str):
@@ -379,7 +379,7 @@ class UserCog(UserCommandBase):
             if member.id != ctx.author.id and not self._can_view_other_stat(ctx, "points"):
                 await ctx.send("❌ Bạn chỉ được xem points người khác khi là admin bot **hoặc** role của bạn có quyền dùng lệnh `points`.")
                 return
-            user = self.service.get_or_create_user(member.id, member.display_name)
+            user = self.service.get_or_create_user(member.id, member.display_name, ctx.guild.id)
             embed = discord.Embed(
                 title="POINTS",
                 description=f"⭐ | {member.mention} hiện đang có **{int(user.points):,} points**.",
@@ -524,7 +524,10 @@ class UserCog(UserCommandBase):
         try:
             if limit < 1 or limit > 100:
                 limit = 10
-            top = self.service.get_top_users(limit)
+            if ctx.guild is None:
+                await ctx.send("Lệnh này chỉ dùng trong server.")
+                return
+            top = self.service.get_top_users(limit, ctx.guild.id)
             if not top:
                 await ctx.send("Chưa có ai trong database!")
                 return

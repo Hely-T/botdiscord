@@ -960,7 +960,7 @@ class AdministratorResponsiveCog(AdminCommandBase):
         await channel.send(embed=self._build_form_embed(key, profiles))
 
     async def _send_form_template(self, ctx, key: str | None = None):
-        prefix = get_prefix()
+        prefix = get_prefix(ctx.guild.id if ctx.guild else None)
         title = "Form booking"
         profile_key = None
         profile_number = None
@@ -1032,7 +1032,7 @@ class AdministratorResponsiveCog(AdminCommandBase):
         if not content:
             return
 
-        prefix = get_prefix()
+        prefix = get_prefix(message.guild.id)
         lowered = content.lower()
         if match_case_insensitive_prefix(content, prefix):
             invoked = content[len(prefix):].strip().split(maxsplit=1)[0].lower()

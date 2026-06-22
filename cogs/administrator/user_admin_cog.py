@@ -43,24 +43,24 @@ class AdministratorUserAdminCog(AdminCommandBase):
             elif amount <= 0:
                 raise ValueError("Points phải lớn hơn 0")
             if action in {"add", "edit"}:
-                self.users.get_or_create_user(member.id, member.display_name)
+                self.users.get_or_create_user(member.id, member.display_name, ctx.guild.id)
             if action == "add":
-                self.users.add_points(member.id, amount)
+                self.users.add_points(member.id, amount, ctx.guild.id)
                 title = "✅ Cộng Points Thành Công"
                 detail = f"Đã cộng `{amount:,}` points cho {member.mention}."
             elif action == "remove":
-                self.users.remove_points(member.id, amount)
+                self.users.remove_points(member.id, amount, ctx.guild.id)
                 title = "✅ Trừ Points Thành Công"
                 detail = f"Đã trừ `{amount:,}` points của {member.mention}."
             else:
-                self.users.set_points(member.id, amount)
+                self.users.set_points(member.id, amount, ctx.guild.id)
                 title = "✅ Sửa Points Thành Công"
                 detail = f"Đã set points của {member.mention} thành `{amount:,}`."
         except Exception as exc:
             await ctx.send(embed=create_error_splash("❌ Cập Nhật Thất Bại", str(exc)))
             return
 
-        current_points = self.users.get_user(member.id).points
+        current_points = self.users.get_user(member.id, ctx.guild.id).points
         await ctx.send(embed=create_success_splash(title, f"{detail}\nPoints hiện tại: `{int(current_points):,}`"))
 
 

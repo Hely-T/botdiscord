@@ -85,8 +85,9 @@ class BookingStarCog(BookingCommandBase):
     @commands.command(name="star")
     async def star(self, ctx, *args):
         try:
+            service = self.service_for(ctx)
             if not args:
-                booking = self.service.get_or_create_booking(ctx.author.id, ctx.author.display_name)
+                booking = service.get_or_create_booking(ctx.author.id, ctx.author.display_name)
                 await ctx.send(embed=self.build_star_embed(ctx.author, booking))
                 return
 
@@ -118,8 +119,8 @@ class BookingStarCog(BookingCommandBase):
                 if not (self.can_use_role_or_admin(ctx, "topbook") or self.can_use_role_or_admin(ctx, "topnap")):
                     await ctx.send(embed=create_error_splash("❌ Quyền Bị Từ Chối", "Chỉ admin hoặc role trong DB mới dùng `star top`."))
                     return
-                hour_rows = self.service.get_top_booking_hours(10)
-                recharge_rows = self.service.get_top_recharges(10)
+                hour_rows = service.get_top_booking_hours(10)
+                recharge_rows = service.get_top_recharges(10)
                 hour_lines = [
                     f"**#{index}** `{row['username']}` - `{format_hours(row['booking_hours'])}`"
                     for index, row in enumerate(hour_rows, 1)
@@ -156,8 +157,8 @@ class BookingStarCog(BookingCommandBase):
                     return
 
                 amount = parse_vnd_amount(args[1])
-                self.service.add_booking_received_money(target.id, target.display_name, amount)
-                booking = self.service.get_or_create_booking(target.id, target.display_name)
+                service.add_booking_received_money(target.id, target.display_name, amount)
+                booking = service.get_or_create_booking(target.id, target.display_name)
                 await ctx.send(embed=create_success_splash("✅ Ghi Nhận Tiền Nạp", f"Đã cộng `{format_vnd(amount)} VNĐ` cho {target.mention}."))
                 return
 
@@ -166,7 +167,7 @@ class BookingStarCog(BookingCommandBase):
                 if target.id != ctx.author.id and not self.can_use_role_or_admin(ctx, "star"):
                     await ctx.send(embed=create_error_splash("❌ Quyền Bị Từ Chối", "Chỉ admin bot hoặc role có quyền `star` trong DB mới xem booking của người khác."))
                     return
-                booking = self.service.get_or_create_booking(target.id, target.display_name)
+                booking = service.get_or_create_booking(target.id, target.display_name)
                 await ctx.send(embed=self.build_star_embed(target, booking))
                 return
 

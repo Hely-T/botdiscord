@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from decimal import Decimal, ROUND_HALF_UP
 
+from services.guild_scope_utils import get_single_configured_guild_id
 from utils import CogDatabase, get_timestamp
 
 
@@ -24,8 +25,10 @@ DEFAULT_BOOKING_SETTINGS = {
 
 
 class BookingService:
-    def __init__(self):
-        self.db = CogDatabase("booking")
+    def __init__(self, guild_id: int | None = None):
+        self.guild_id = int(guild_id) if guild_id is not None else None
+        database_name = f"booking_{self.guild_id}" if self.guild_id is not None else "booking"
+        self.db = CogDatabase(database_name)
         self._init_database()
 
     def _init_database(self):
@@ -95,7 +98,59 @@ class BookingService:
         self._ensure_schema_columns()
         self._seed_default_settings()
         self._seed_default_gifts()
-        self._migrate_legacy_user_luong()
+        if self.guild_id is None:
+            self._migrate_legacy_user_luong()
+        else:
+            self._migrate_legacy_global_booking()
+
+    def _migrate_legacy_global_booking(self):
+        migration_key = "legacy_global_booking_to_guild_v1"
+        if self.db.select_one("booking_migrations", "migration_key = ?", (migration_key,)):
+            return
+        if get_single_configured_guild_id() != self.guild_id:
+            return
+
+        legacy = CogDatabase("booking")
+        try:
+            tables = {
+                row["name"]
+                for row in legacy.fetch("SELECT name FROM sqlite_master WHERE type = 'table'")
+            }
+            for table_name in ("booking_stats", "booking_hour_details", "booking_admin_salary_details"):
+                if table_name not in tables:
+                    continue
+                for source_row in legacy.fetch(f"SELECT * FROM {table_name}"):
+                    payload = dict(source_row)
+                    payload.pop("id", None)
+                    self.db.insert(table_name, payload)
+
+            if "booking_settings" in tables:
+                for row in legacy.fetch("SELECT setting_key, setting_value FROM booking_settings"):
+                    self.set_setting(row["setting_key"], row["setting_value"])
+
+            if "gift_inventory" in tables:
+                for row in legacy.fetch("SELECT gift_key, gift_name, amount FROM gift_inventory"):
+                    existing = self.db.select_one("gift_inventory", "gift_key = ?", (row["gift_key"],))
+                    payload = {
+                        "gift_name": row["gift_name"],
+                        "amount": int(row["amount"]),
+                        "updated_at": get_timestamp(),
+                    }
+                    if existing:
+                        self.db.update("gift_inventory", payload, "gift_key = ?", (row["gift_key"],))
+                    else:
+                        self.db.insert("gift_inventory", {
+                            "gift_key": row["gift_key"],
+                            **payload,
+                            "created_at": get_timestamp(),
+                        })
+
+            self.db.insert("booking_migrations", {
+                "migration_key": migration_key,
+                "migrated_at": get_timestamp(),
+            })
+        finally:
+            legacy.close()
 
     def _ensure_schema_columns(self):
         columns = {row["name"] for row in self.db.fetch("PRAGMA table_info(booking_stats)")}

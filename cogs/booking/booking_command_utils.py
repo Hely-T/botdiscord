@@ -15,6 +15,7 @@ class BookingCommandBase(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
         self._service = None
+        self._guild_services = {}
         self._users = None
         self._guild_settings = None
         self._admins = None
@@ -25,6 +26,15 @@ class BookingCommandBase(commands.Cog):
         if self._service is None:
             self._service = BookingService()
         return self._service
+
+    def service_for(self, source) -> BookingService:
+        guild = getattr(source, "guild", source)
+        if guild is None:
+            raise ValueError("Booking chỉ hoạt động trong server")
+        guild_id = int(getattr(guild, "id", guild))
+        if guild_id not in self._guild_services:
+            self._guild_services[guild_id] = BookingService(guild_id)
+        return self._guild_services[guild_id]
 
     @property
     def users(self) -> UserService:

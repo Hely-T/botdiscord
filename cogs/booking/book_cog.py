@@ -93,7 +93,8 @@ class BookingBookCog(BookingCommandBase):
                 await ctx.send(embed=create_error_splash("❌ Sai Cú Pháp", str(exc)))
                 return
 
-            session_money = [self.service.calculate_session_money(hours) for hours in hours_list]
+            service = self.service_for(ctx)
+            session_money = [service.calculate_session_money(hours) for hours in hours_list]
             total_spent = sum(item["spent_money"] for item in session_money)
             total_received = sum(item["received_money"] for item in session_money)
 
@@ -106,7 +107,7 @@ class BookingBookCog(BookingCommandBase):
 
             try:
                 for hours in hours_list:
-                    self.service.add_booking_session(booking_member.id, booking_member.display_name, hours)
+                    service.add_booking_session(booking_member.id, booking_member.display_name, hours)
             except Exception:
                 if payment_method == "cash" and total_spent > 0:
                     self.users.add_cash(payer.id, total_spent)

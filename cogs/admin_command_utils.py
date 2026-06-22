@@ -430,11 +430,14 @@ class AdminCommandBase(commands.Cog):
                     self.users.add_cash(member.id, int(amount))
                 new_value = self.users.get_user(member.id).cash
             elif field == "luong":
+                resolved_guild_id = guild_id or (ctx.guild.id if ctx.guild else None)
+                if resolved_guild_id is None:
+                    raise ValueError("guild_id là bắt buộc cho lương")
                 if action_label.startswith("Trừ"):
-                    self.users.remove_luong(member.id, int(amount))
+                    self.users.remove_luong(member.id, int(amount), resolved_guild_id)
                 else:
-                    self.users.add_luong(member.id, int(amount))
-                new_value = self.users.get_user(member.id).luong
+                    self.users.add_luong(member.id, int(amount), resolved_guild_id)
+                new_value = self.users.get_user(member.id, resolved_guild_id).luong
             elif field == "star":
                 if action_label.startswith("Trừ"):
                     self.users.remove_star(member.id, int(amount))

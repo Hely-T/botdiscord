@@ -13,7 +13,7 @@ class BookingTopCog(BookingCommandBase):
                 await ctx.send(embed=create_warning_splash("❌ Quyền Bị Từ Chối", "Chỉ admin hoặc role trong DB mới xem được bảng xếp hạng này."))
                 return
             limit = 10 if limit < 1 else min(limit, 25)
-            rows = self.service.get_top_booking_hours(limit)
+            rows = self.service_for(ctx).get_top_booking_hours(limit)
             if not rows:
                 await ctx.send(embed=create_warning_splash("⚠️ Top Book", "Chưa có dữ liệu booking nào."))
                 return
@@ -32,7 +32,7 @@ class BookingTopCog(BookingCommandBase):
                 await ctx.send(embed=create_warning_splash("❌ Quyền Bị Từ Chối", "Chỉ admin hoặc role trong DB mới xem được bảng xếp hạng này."))
                 return
             limit = 10 if limit < 1 else min(limit, 25)
-            rows = self.service.get_top_recharges(limit)
+            rows = self.service_for(ctx).get_top_recharges(limit)
             if not rows:
                 await ctx.send(embed=create_warning_splash("⚠️ Top Nạp", "Chưa có dữ liệu nạp tiền nào."))
                 return
@@ -47,8 +47,8 @@ class BookingTopCog(BookingCommandBase):
     @commands.command(name="topgift")
     async def topgift(self, ctx):
         try:
-            gifts = self.service.get_gifts()
-            total_gifts = self.service.get_total_gifts()
+            gifts = self.service_for(ctx).get_gifts()
+            total_gifts = self.service_for(ctx).get_total_gifts()
             if not gifts:
                 await ctx.send(embed=create_warning_splash("🎁 Top Gift", "Chưa có quà nào trong kho."))
                 return

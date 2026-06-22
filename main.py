@@ -79,7 +79,8 @@ async def sync_slash_commands(bot):
 
 
 def prefix_callable(bot, message):
-    prefix = get_prefix()
+    guild_id = message.guild.id if message.guild else None
+    prefix = get_prefix(guild_id)
     typed_prefix = match_case_insensitive_prefix(message.content, prefix)
     return commands.when_mentioned_or(typed_prefix or prefix)(bot, message)
 
@@ -117,7 +118,7 @@ def get_prefix_command_candidates(ctx: commands.Context) -> list[str]:
         ).strip().lower()
 
     candidates: list[str] = []
-    prefix = get_prefix()
+    prefix = get_prefix(ctx.guild.id if ctx.guild else None)
     content = str(getattr(ctx.message, "content", "") or "")
     if match_case_insensitive_prefix(content, prefix):
         tokens = content[len(prefix):].strip().split()
@@ -239,7 +240,7 @@ async def main():
 
     @bot.event
     async def on_command_error(ctx, error):
-        current_prefix = get_prefix()
+        current_prefix = get_prefix(ctx.guild.id if ctx.guild else None)
         if isinstance(error, CommandsLocked):
             await ctx.send(embed=create_error_splash("Bot đang khoá quyền dùng lệnh."))
         elif isinstance(error, ChannelCommandDisabled):

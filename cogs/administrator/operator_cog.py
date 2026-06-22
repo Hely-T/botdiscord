@@ -206,13 +206,15 @@ class AdministratorOperatorCog(AdminCommandBase):
     async def prefix(self, ctx, new_prefix: str = None):
         if not await self._require_owner(ctx):
             return
+        if ctx.guild is None:
+            await ctx.send(embed=create_error_splash("❌ Chỉ Dùng Trong Server", "Prefix được cấu hình riêng cho từng server."))
+            return
         if new_prefix is None:
-            await ctx.send(embed=create_info_splash("📌 Prefix Hiện Tại", f"Prefix hiện tại của bot là `{self.settings.get_prefix()}`"))
+            await ctx.send(embed=create_info_splash("📌 Prefix Hiện Tại", f"Prefix của server này là `{self.settings.get_prefix(ctx.guild.id)}`"))
             return
         try:
-            self.settings.set_prefix(new_prefix)
-            await ctx.send(embed=create_success_splash("✅ Đổi Prefix Thành Công", f"Prefix mới của bot là `{new_prefix}`"))
-            await self.bot.change_presence(activity=discord.Activity(type=discord.ActivityType.watching, name=f"{new_prefix}help"))
+            self.settings.set_prefix(ctx.guild.id, new_prefix)
+            await ctx.send(embed=create_success_splash("✅ Đổi Prefix Thành Công", f"Prefix mới của server này là `{new_prefix}`"))
         except Exception as exc:
             await ctx.send(embed=create_error_splash("❌ Đổi Prefix Thất Bại", str(exc)))
 

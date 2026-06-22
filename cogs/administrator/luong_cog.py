@@ -8,13 +8,13 @@ from services.booking_service import BookingService
 class AdministratorLuongCog(AdminCommandBase):
     def __init__(self, bot):
         super().__init__(bot)
-        self._booking_service = None
+        self._booking_services = {}
 
-    @property
-    def booking_service(self) -> BookingService:
-        if self._booking_service is None:
-            self._booking_service = BookingService()
-        return self._booking_service
+    def booking_service(self, guild_id: int) -> BookingService:
+        guild_id = int(guild_id)
+        if guild_id not in self._booking_services:
+            self._booking_services[guild_id] = BookingService(guild_id)
+        return self._booking_services[guild_id]
 
     async def _require_booking_user(self, ctx, member: discord.Member) -> bool:
         system_role = self.guild_settings.get_system_role(ctx.guild.id, "booking")
@@ -40,7 +40,7 @@ class AdministratorLuongCog(AdminCommandBase):
             await ctx.send(embed=create_error_splash("❌ Số Tiền Không Hợp Lệ", str(exc)))
             return
         try:
-            self.booking_service.add_admin_salary(member.id, member.display_name, parsed_amount)
+            self.booking_service(ctx.guild.id).add_admin_salary(member.id, member.display_name, parsed_amount)
         except Exception as exc:
             await ctx.send(embed=create_error_splash("❌ Cập Nhật Thất Bại", str(exc)))
             return
@@ -62,7 +62,7 @@ class AdministratorLuongCog(AdminCommandBase):
             await ctx.send(embed=create_error_splash("❌ Số Tiền Không Hợp Lệ", str(exc)))
             return
         try:
-            self.booking_service.deduct_admin_salary(member.id, member.display_name, parsed_amount)
+            self.booking_service(ctx.guild.id).deduct_admin_salary(member.id, member.display_name, parsed_amount)
         except Exception as exc:
             await ctx.send(embed=create_error_splash("❌ Cập Nhật Thất Bại", str(exc)))
             return
@@ -76,8 +76,9 @@ class AdministratorLuongCog(AdminCommandBase):
     async def tongluong(self, ctx):
         if not await self.require_role_or_admin_ctx(ctx):
             return
-        total_luong = self.booking_service.get_total_current_salary()
-        users_count = self.booking_service.get_current_salary_users_count()
+        service = self.booking_service(ctx.guild.id)
+        total_luong = service.get_total_current_salary()
+        users_count = service.get_current_salary_users_count()
         await ctx.send(
             embed=create_info_splash(
                 "📊 Tổng Lương",

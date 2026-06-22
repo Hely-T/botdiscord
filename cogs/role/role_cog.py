@@ -145,7 +145,7 @@ class RoleCog(RoleCommandBase):
         if not members:
             return 0, attempted
 
-        booking_service = BookingService()
+        booking_service = BookingService(guild.id)
         created_count = 0
         for member in members:
             existed = booking_service.get_booking(member.id) is not None
@@ -161,7 +161,7 @@ class RoleCog(RoleCommandBase):
     async def _sync_member_if_booking_role(self, member: discord.Member, role: discord.Role) -> bool:
         if member.bot or not self._is_booking_system_role(member.guild.id, role.id):
             return False
-        BookingService().get_or_create_booking(member.id, member.display_name)
+        BookingService(member.guild.id).get_or_create_booking(member.id, member.display_name)
         return True
 
     async def _resolve_role(self, ctx, raw_role: str | None) -> discord.Role | None:

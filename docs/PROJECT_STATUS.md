@@ -37,6 +37,8 @@ Trạng thái: đang phát triển, đã chuẩn hóa catalog cog, service/datab
 - Music player có menu settings cho giao diện, nội dung, icon và reaction; autoplay/loop không được lưu.
 - Log system có `chat`, `voice`, `server`, `join` và `cash`.
 - Database tự tạo cho users, booking, role permission, admin, settings, guild settings, responsive, bank payments, AFK và log system.
+- Multi-server: `points`, lương, toàn bộ booking và prefix được tách riêng theo server; `cash` vẫn global dùng chung mọi server.
+- Dữ liệu global cũ chỉ tự migrate khi bot xác định đúng một server đã cấu hình, tránh nhân dữ liệu nhầm sang nhiều server.
 - Định dạng tiền VNĐ thống nhất.
 - Ticket dùng một cog tại `cogs/administrator/ticket_cog.py`.
 - Ticket dùng `TicketService` và `ticket_system.db`.

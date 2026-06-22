@@ -569,7 +569,7 @@ class RolePermissionManager:
 # PREFIX & CONFIGURATION HELPERS
 # ============================================
 
-def get_prefix():
+def get_prefix(guild_id: int | None = None):
     """
     Lấy prefix hiện tại của bot
     
@@ -583,7 +583,7 @@ def get_prefix():
             from services.settings_service import SettingsService
 
             _SETTINGS_SERVICE_CACHE = SettingsService()
-        return _SETTINGS_SERVICE_CACHE.get_prefix()
+        return _SETTINGS_SERVICE_CACHE.get_prefix(guild_id)
     except Exception:
         from config import BOT_PREFIX
 

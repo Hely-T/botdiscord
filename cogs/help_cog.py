@@ -220,9 +220,9 @@ def _role_management_commands() -> list[dict]:
     return [command for command in admin_category["commands"] if command["name"] in role_command_names]
 
 
-def _format_usage(command: dict) -> str:
+def _format_usage(command: dict, guild_id: int | None = None) -> str:
     usage = command["usage"].strip()
-    prefix = get_prefix()
+    prefix = get_prefix(guild_id)
     command_text = f"{prefix}{command['name']}"
     if usage:
         command_text = f"{command_text} {usage}"
@@ -341,7 +341,7 @@ class CategoryView(discord.ui.View):
 class HelpView:
     @staticmethod
     def build_index_embed(guild: discord.Guild | None = None) -> discord.Embed:
-        prefix = get_prefix()
+        prefix = get_prefix(guild.id if guild else None)
         title_name = guild.name if guild else APP_NAME
         embed = discord.Embed(
             title=f"{title_name} Commands Directory",
@@ -370,7 +370,7 @@ class HelpView:
 
     @staticmethod
     def build_category_embed(category: dict, guild: discord.Guild | None = None) -> discord.Embed:
-        prefix = get_prefix()
+        prefix = get_prefix(guild.id if guild else None)
         category_title = category["title"]
         embed = discord.Embed(
             title=f"{category['emoji']} {category_title}",
@@ -405,7 +405,7 @@ class HelpView:
                     alias_text = f"\nAliases: {alias_list}"
 
                 embed.add_field(
-                    name=_format_usage(command),
+                    name=_format_usage(command, guild.id if guild else None),
                     value=f"{command['description']}{alias_text}",
                     inline=False,
                 )
@@ -423,12 +423,12 @@ class HelpView:
 
     @staticmethod
     def build_command_embed(category: dict, command: dict, guild: discord.Guild | None = None) -> discord.Embed:
-        prefix = get_prefix()
+        prefix = get_prefix(guild.id if guild else None)
         embed = discord.Embed(
             title=f"{category['emoji']} {command['name']}",
             color=ACCENT_COLOR,
         )
-        embed.add_field(name="Cú pháp", value=_format_usage(command), inline=False)
+        embed.add_field(name="Cú pháp", value=_format_usage(command, guild.id if guild else None), inline=False)
         embed.add_field(name="Mô tả", value=command["description"], inline=False)
         embed.add_field(name="Category", value=category["title"], inline=True)
         if command.get("aliases"):
@@ -913,7 +913,7 @@ class HelpView:
 
     @staticmethod
     def build_role_management_embed(guild: discord.Guild | None = None) -> discord.Embed:
-        prefix = get_prefix()
+        prefix = get_prefix(guild.id if guild else None)
         commands = _role_management_commands()
         embed = discord.Embed(
             title="🧩 Role Management",
@@ -926,7 +926,7 @@ class HelpView:
                 alias_list = ", ".join(f"`{prefix}{alias}`" for alias in command["aliases"])
                 alias_text = f"\nAliases: {alias_list}"
             embed.add_field(
-                name=_format_usage(command),
+                name=_format_usage(command, guild.id if guild else None),
                 value=f"{command['description']}{alias_text}",
                 inline=False,
             )

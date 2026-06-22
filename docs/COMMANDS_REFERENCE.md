@@ -1,5 +1,7 @@
 # Commands Reference
 
+> Phạm vi dữ liệu: prefix, points, lương và booking độc lập theo từng server. Cash là ví global dùng chung giữa các server.
+
 Prefix lấy từ database `bot_settings.db`, mặc định theo `BOT_PREFIX` trong `.env`.
 Prefix không phân biệt chữ hoa/chữ thường.
 Trong docs dùng `{prefix}` để đại diện cho prefix hiện tại.
